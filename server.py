@@ -35,7 +35,7 @@ if _errs:
         print('  -', e)
     sys.exit(1)
 
-PIN = str(secrets.randbelow(9000) + 1000)
+PIN = "0400"
 lock = threading.Lock()
 state = {
     'teams': ['1-jamoa', '2-jamoa', '3-jamoa', '4-jamoa'],
