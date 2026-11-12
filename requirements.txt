@@ -1,0 +1,2 @@
+# Render.com uchun. server.py faqat Python standart kutubxonasidan foydalanadi,
+# shuning uchun tashqi paketlar kerak emas.
