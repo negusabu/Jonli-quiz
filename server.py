@@ -34,8 +34,8 @@ if _errs:
     for e in _errs:
         print('  -', e)
     sys.exit(1)
-
-PIN = "0400"
+    
+PIN = ("0400")
 lock = threading.Lock()
 state = {
     'teams': ['1-jamoa', '2-jamoa', '3-jamoa', '4-jamoa'],
