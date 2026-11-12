@@ -1,0 +1,318 @@
+[
+ {
+  "cat": "Nazariya",
+  "pts": 100,
+  "q": "Variatsiya ko‘rsatkichi ma‘lumotlarning nimasini bildiradi?",
+  "exp": "Variatsiya ko‘rsatkichlari qiymatlar o‘rtacha atrofida qanchalik tarqalganini ko‘rsatadi.",
+  "opts": [
+   "O‘rtacha qiymatni",
+   "Ma‘lumotlar bir-biridan qanchalik farq qilishini",
+   "Ma‘lumotlar sonini",
+   "Eng katta qiymatni"
+  ],
+  "c": 1
+ },
+ {
+  "cat": "Nazariya",
+  "pts": 200,
+  "q": "Faqat o‘rtachaga qarab xulosa chiqarish nega xavfli?",
+  "exp": "O‘rtacha markazni ko‘rsatadi, lekin qiymatlar qanchalik tarqalganini ko‘rsatmaydi.",
+  "opts": [
+   "O‘rtacha doim noto‘g‘ri bo‘ladi",
+   "O‘rtacha manfiy sonlarni hisobga olmaydi",
+   "O‘rtacha faqat toq sonlar uchun ishlaydi",
+   "Bir xil o‘rtachaga ega ma‘lumotlar juda xilma-xil bo‘lishi mumkin"
+  ],
+  "c": 2
+ },
+ {
+  "cat": "Nazariya",
+  "pts": 300,
+  "q": "Eng katta va eng kichik qiymat orasidagi farq qanday ataladi?",
+  "exp": "Variatsiya oralig‘i — eng katta va eng kichik qiymatlar orasidagi masofa.",
+  "opts": [
+   "Mediana",
+   "Moda",
+   "Variatsiya oralig‘i",
+   "O‘rtacha"
+  ],
+  "c": 0
+ },
+ {
+  "cat": "Nazariya",
+  "pts": 400,
+  "q": "Standart chetlanishning dispersiyadan asosiy afzalligi nimada?",
+  "opts": [
+   "U ma‘lumotlar bilan bir xil birlikda o‘lchanadi",
+   "U faqat musbat sonlar uchun ishlaydi",
+   "U chetlanishlarni hisoblamaydi",
+   "U doim katta son bo‘ladi"
+  ],
+  "c": 0,
+  "exp": "Dispersiya birlikning kvadratida o‘lchanadi. Standart chetlanish esa asl birlikka qaytadi."
+ },
+ {
+  "cat": "Nazariya",
+  "pts": 500,
+  "q": "Nega tarqoqlik ko‘rsatkichlari hech qachon manfiy bo‘lmaydi?",
+  "exp": "Chetlanish musbat yoki manfiy bo‘lishidan qat‘i nazar, uning kvadrati doim nomanfiy.",
+  "opts": [],
+  "ans": "Chunki ular chetlanishlarning kvadratlariga asoslanadi, kvadrat esa manfiy bo‘lmaydi."
+ },
+ {
+  "cat": "Asosiy tushunchalar",
+  "pts": 100,
+  "q": "Mediana tartiblangan ma‘lumotlarning o‘rtasidagi qiymatdir.",
+  "exp": "Ma‘lumotlar kichikdan kattagacha tartiblanganda, o‘rtadagi qiymat medianadir.",
+  "opts": [
+   "To‘g‘ri",
+   "Noto‘g‘ri"
+  ],
+  "c": 1
+ },
+ {
+  "cat": "Asosiy tushunchalar",
+  "pts": 200,
+  "q": "Chetlanuvchi qiymat (outlier) nima?",
+  "opts": [
+   "Ma‘lumotlarning o‘rtacha qiymati",
+   "Eng ko‘p uchraydigan qiymat",
+   "Barcha qiymatlarning yig‘indisi",
+   "Qolgan ma‘lumotlardan keskin farq qiladigan qiymat"
+  ],
+  "c": 3,
+  "exp": "Chetlanuvchi qiymat odatiy qiymatlardan juda uzoqda turadi."
+ },
+ {
+  "cat": "Asosiy tushunchalar",
+  "pts": 300,
+  "q": "To‘plamga juda katta bitta qiymat qo‘shilsa, tarqoqlik qanday o‘zgaradi?",
+  "opts": [
+   "Kamayadi",
+   "Faqat o‘rtacha o‘zgaradi",
+   "Hech qanday ta‘sir qilmaydi",
+   "Oshadi"
+  ],
+  "c": 3,
+  "exp": "Bitta juda katta qiymat ma‘lumotlarni bir-biridan uzoqlashtiradi, shuning uchun tarqoqlik oshadi."
+ },
+ {
+  "cat": "Asosiy tushunchalar",
+  "pts": 400,
+  "q": "Turli birlikdagi ma‘lumotlarning tarqoqligini solishtirish uchun qaysi ko‘rsatkich qulay?",
+  "opts": [
+   "Mediana",
+   "Variatsiya oralig‘i",
+   "Moda",
+   "Variatsiya koeffitsiyenti"
+  ],
+  "c": 3,
+  "exp": "Variatsiya koeffitsiyenti tarqoqlikni o‘rtachaga nisbatan foizda ko‘rsatadi, shuning uchun birlikka bog‘liq emas."
+ },
+ {
+  "cat": "Asosiy tushunchalar",
+  "pts": 500,
+  "q": "Juda katta yoki juda kichik bitta qiymat qaysi ko‘rsatkichni kam o‘zgartiradi?",
+  "opts": [
+   "Ma‘lumotlar soni",
+   "Mediana",
+   "Qiymatlar yig‘indisi",
+   "O‘rtacha"
+  ],
+  "c": 1,
+  "exp": "Mediana o‘rtadagi qiymat bo‘lgani uchun chetdagi qiymatlar uni deyarli o‘zgartirmaydi."
+ },
+ {
+  "cat": "Hayotiy misollar",
+  "pts": 100,
+  "q": "Ikki sinfda imtihon ballarining o‘rtachasi 70. 1-sinfda ballar 68–72 oralig‘ida, 2-sinfda esa 40–95 oralig‘ida. Qaysi sinfda ballar ko‘proq farq qiladi?",
+  "opts": [
+   "Ikkalasida bir xil",
+   "2-sinfda",
+   "1-sinfda",
+   "Ma‘lumot yetarli emas"
+  ],
+  "c": 1,
+  "exp": "2-sinfda ballar o‘rtachadan ancha uzoqqa tarqalgan."
+ },
+ {
+  "cat": "Hayotiy misollar",
+  "pts": 200,
+  "q": "Ikki avtobus o‘rtacha 10 daqiqada keladi. 1-avtobus 9–11 daqiqada, 2-avtobus 2–18 daqiqada keladi. Qaysi avtobusga ishonsa bo‘ladi?",
+  "opts": [
+   "Hech biriga",
+   "1-avtobusga",
+   "Ikkalasiga bir xil",
+   "2-avtobusga"
+  ],
+  "c": 1,
+  "exp": "1-avtobus deyarli bir vaqtda keladi, shuning uchun uni oldindan rejalashtirish osonroq."
+ },
+ {
+  "cat": "Hayotiy misollar",
+  "pts": 300,
+  "q": "Ikki shaharning yillik o‘rtacha harorati bir xil, lekin birida harorat yil davomida keskin o‘zgaradi. Bu farqni qaysi ko‘rsatkich ko‘rsatadi?",
+  "opts": [
+   "O‘rtacha",
+   "Moda",
+   "Tarqoqlik ko‘rsatkichi",
+   "Mediana"
+  ],
+  "c": 2,
+  "exp": "O‘rtacha ikkala shaharda bir xil. Harorat o‘zgaruvchanligini tarqoqlik ko‘rsatkichi ko‘rsatadi."
+ },
+ {
+  "cat": "Hayotiy misollar",
+  "pts": 400,
+  "q": "Zavodda mahsulot og‘irligi tekshiriladi. Nega og‘irliklarning bir-biridan farq qilishini kuzatish muhim?",
+  "opts": [
+   "Ishlab chiqarish sifatining barqarorligini bilish uchun",
+   "Ishchilar maoshini hisoblash uchun",
+   "Mahsulotlar sonini hisoblash uchun",
+   "Narxni aniqlash uchun"
+  ],
+  "c": 0,
+  "exp": "Og‘irliklar bir-biriga yaqin bo‘lsa, mahsulot sifati barqaror demakdir."
+ },
+ {
+  "cat": "Hayotiy misollar",
+  "pts": 500,
+  "q": "Ikki investitsiya fondi o‘rtacha 10% foyda beradi. 1-fondda foyda har yili 9–11% atrofida. 2-fondda esa ba‘zan katta zarar, ba‘zan katta foyda bo‘ladi. Qaysi fond xavfliroq?",
+  "opts": [
+   "Ma‘lumot yetarli emas",
+   "1-fond",
+   "Ikkalasi bir xil",
+   "2-fond"
+  ],
+  "c": 3,
+  "exp": "O‘rtacha foyda bir xil, ammo 2-fondda natijalar keskin farq qiladi. Natijalar qancha farq qilsa, xavf shuncha yuqori."
+ },
+ {
+  "cat": "Mantiqiy savollar",
+  "pts": 100,
+  "q": "Agar barcha qiymatlar bir xil bo‘lsa, variatsiya oralig‘i qanday bo‘ladi?",
+  "opts": [
+   "Nolga teng",
+   "Eng katta qiymatga teng",
+   "Birga teng",
+   "Manfiy bo‘ladi"
+  ],
+  "c": 0,
+  "exp": "Eng katta va eng kichik qiymat bir xil bo‘lsa, ularning farqi nolga teng."
+ },
+ {
+  "cat": "Mantiqiy savollar",
+  "pts": 200,
+  "q": "Mavjud eng katta qiymatdan ham kattaroq yangi kuzatuv qo‘shildi. Variatsiya oralig‘i qanday o‘zgaradi?",
+  "opts": [
+   "O‘zgarmaydi",
+   "Doim nolga teng bo‘ladi",
+   "Oshadi",
+   "Kamayadi"
+  ],
+  "c": 2,
+  "exp": "Eng katta qiymat ortdi, eng kichigi o‘zgarmadi. Demak, oraliq kattalashdi."
+ },
+ {
+  "cat": "Mantiqiy savollar",
+  "pts": 300,
+  "q": "Ikki to‘plamning variatsiya oralig‘i bir xil. Bu ularning ichki qiymatlari ham bir xil ekanini anglatadimi?",
+  "opts": [
+   "Ha, albatta",
+   "Yo‘q, oraliq faqat eng chetki qiymatlarga bog‘liq",
+   "Ma‘lumot yetarli emas",
+   "Ha, agar o‘rtachalar teng bo‘lsa"
+  ],
+  "c": 1,
+  "exp": "Oraliq ichki qiymatlarni hisobga olmaydi, shuning uchun ichki tarqalish turlicha bo‘lishi mumkin."
+ },
+ {
+  "cat": "Mantiqiy savollar",
+  "pts": 400,
+  "q": "Qaysi holatda mediana o‘rtachadan ko‘proq foydali bo‘ladi?",
+  "opts": [
+   "Ma‘lumotlar faqat bitta qiymatdan iborat bo‘lsa",
+   "Ma‘lumotlarda juda katta yoki kichik qiymatlar bo‘lsa",
+   "Ma‘lumotlar juda kam bo‘lsa",
+   "Ma‘lumotlar bir-biriga juda yaqin bo‘lsa"
+  ],
+  "c": 1,
+  "exp": "Chetdagi qiymatlar o‘rtachani siljitadi, mediana esa bunday qiymatlarga kam bog‘liq."
+ },
+ {
+  "cat": "Mantiqiy savollar",
+  "pts": 500,
+  "q": "Agar to‘plamdagi eng katta qiymat o‘chirilsa, variatsiya oralig‘i qanday o‘zgaradi?",
+  "opts": [
+   "Hech qachon o‘zgarmaydi",
+   "Doim ortadi",
+   "Kamayadi yoki o‘zgarmaydi",
+   "Doim nolga teng bo‘ladi"
+  ],
+  "c": 2,
+  "exp": "Eng katta qiymat olib tashlansa, yangi eng katta qiymat kichikroq bo‘ladi. Agar u ikki marta uchrasa, oraliq o‘zgarmaydi."
+ },
+ {
+  "cat": "Super savol",
+  "pts": 100,
+  "q": "Agar ma‘lumotlar bir-biriga juda yaqin joylashgan bo‘lsa, tarqoqlik ko‘rsatkichlari qanday bo‘ladi?",
+  "opts": [
+   "Manfiy bo‘ladi",
+   "Hisoblab bo‘lmaydi",
+   "Kichik bo‘ladi",
+   "Katta bo‘ladi"
+  ],
+  "c": 2,
+  "exp": "Qiymatlar bir-biriga yaqin bo‘lsa, ular orasidagi farq ham kichik bo‘ladi."
+ },
+ {
+  "cat": "Super savol",
+  "pts": 200,
+  "q": "1-to‘plamda qiymatlar o‘rtacha atrofida. 2-to‘plamda esa qiymatlar o‘rtachadan uzoqda. O‘rtachalar teng. Qaysi to‘plamning tarqoqligi katta?",
+  "opts": [
+   "Ikkalasiniki bir xil",
+   "1-to‘plamning",
+   "2-to‘plamning",
+   "Ma‘lumot yetarli emas"
+  ],
+  "c": 2,
+  "exp": "Qiymatlar o‘rtachadan uzoqroq tarqalgan to‘plamning tarqoqligi katta."
+ },
+ {
+  "cat": "Super savol",
+  "pts": 300,
+  "q": "Ma‘lumotlar o‘rtasi atrofida ikki tomonga teng tarqalgan bo‘lsa, o‘rtacha va mediana qanday bo‘ladi?",
+  "opts": [
+   "Ular teng yoki deyarli teng",
+   "Ular har doim turlicha",
+   "O‘rtacha doim katta",
+   "Mediana doim katta"
+  ],
+  "c": 0,
+  "exp": "Ma‘lumotlar ikki tomonga teng tarqalsa, o‘rtacha va mediana bir joyda birlashadi."
+ },
+ {
+  "cat": "Super savol",
+  "pts": 400,
+  "q": "Agar standart chetlanish nolga teng bo‘lsa, barcha qiymatlar bir-biriga teng bo‘ladi.",
+  "opts": [
+   "To‘g‘ri",
+   "Noto‘g‘ri"
+  ],
+  "c": 0,
+  "exp": "Tarqoqlik nol bo‘lsa, hech bir qiymat o‘rtachadan farq qilmaydi. Demak, hamma qiymatlar bir xil."
+ },
+ {
+  "cat": "Super savol",
+  "pts": 500,
+  "q": "Ikki to‘plamning o‘rtachasi va tarqoqligi bir xil bo‘lsa ham, ular bir-biriga o‘xshamasligi mumkinmi?",
+  "opts": [
+   "Ha, faqat nol qiymatda",
+   "Yo‘q, bu mumkin emas",
+   "Yo‘q, chunki ular doim bir xil bo‘ladi",
+   "Ha, qiymatlar boshqacha taqsimlangan bo‘lishi mumkin"
+  ],
+  "c": 3,
+  "exp": "O‘rtacha va tarqoqlik bir xil bo‘lsa ham, qiymatlarning joylashishi turlicha bo‘lishi mumkin."
+ }
+]

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="uz"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Statistika Quiz</title>
+<style>
+body{margin:0;background:#08102B;color:#fff;font-family:Arial,Helvetica,sans-serif;min-height:100vh}
+.w{max-width:640px;margin:0 auto;padding:14px}
+h1{color:#FFC72C;text-align:center;font-size:26px;margin:8px 0 14px}
+.card{background:#13245C;border-radius:14px;padding:18px;margin-bottom:14px}
+.meta{display:flex;justify-content:space-between;color:#2F8BFF;font-weight:bold;font-size:17px;margin-bottom:8px}
+.meta span:last-child{color:#FFC72C}
+.big{font-size:23px;font-weight:bold;line-height:1.35}
+button{display:block;width:100%;font:inherit;font-size:19px;color:#fff;background:#1B3180;border:none;border-radius:10px;padding:15px;margin:8px 0;text-align:left;cursor:pointer}
+button:disabled{cursor:default}
+button.sel{background:#2F8BFF}
+input{font:inherit;font-size:20px;width:100%;box-sizing:border-box;padding:14px;border-radius:10px;border:none;margin:10px 0}
+.logout{font-size:14px;color:#B8C4E0;cursor:pointer;text-decoration:underline;margin-left:8px}
+button.ok{background:#1E8E4E}
+button.bad{background:#B3261E}
+.teamb{text-align:center;background:#1E63D6;font-weight:bold;font-size:22px}
+.muted{color:#B8C4E0;text-align:center;font-size:18px}
+.exp{border-left:5px solid #FFC72C;padding:10px 12px;background:#0c1842;border-radius:8px;margin-top:12px;font-size:18px;line-height:1.4}
+table{width:100%;border-collapse:collapse;font-size:18px}
+td{padding:8px 4px;border-bottom:1px solid #1B3180}
+tr.me td{color:#FFC72C;font-weight:bold}
+.right{text-align:right}
+.chg{font-size:14px;color:#B8C4E0;text-align:center;margin-top:6px;cursor:pointer;text-decoration:underline}
+</style></head>
+<body><div class="w">
+<h1>STATISTIKA QUIZ</h1>
+<div id="app"></div>
+</div>
+<script>
+let S = null, team = localStorage.getItem('team'), mine = null, lastCur = undefined, qKey = '';
+const L = ['A','B','C','D'];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function poll(){
+  try { S = await (await fetch('/api/state', {cache:'no-store'})).json(); if (S.cur !== lastCur){ mine = null; lastCur = S.cur; qKey = ''; } render(); }
+  catch(e){ document.getElementById('app').dataset.err = '1'; }
+}
+
+function chooseTeam(i){ team = String(i); localStorage.setItem('team', team); sendLogin(); qKey=''; render(); }
+function changeTeam(){ localStorage.removeItem('team'); team = null; sendLogin(); qKey=''; render(); }
+function logout(){ localStorage.removeItem('name'); localStorage.removeItem('team'); team = null; qKey=''; render(); }
+async function sendLogin(){
+  const name = localStorage.getItem('name');
+  if (!name) return;
+  try { await fetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name: name, team: team===null ? null : Number(team)})}); } catch(e){}
+}
+async function doLogin(){
+  const v = document.getElementById('nm').value.trim();
+  if (v.length < 2){ alert('Ismingizni to‘liq yozing'); return; }
+  localStorage.setItem('name', v);
+  await sendLogin();
+  render();
+}
+
+async function answer(c){
+  if (mine !== null || !S || S.revealed || S.cur === null) return;
+  mine = c; qKey = ''; render();
+  await fetch('/api/answer', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({team: Number(team), choice: c})});
+}
+
+function render(){
+  const app = document.getElementById('app');
+  if (!S) return;
+  if (!localStorage.getItem('name')){
+    if (!document.getElementById('nm')){
+      app.innerHTML = '<div class="card"><div class="big" style="text-align:center">Ismingizni yozing</div><input id="nm" maxlength="30" placeholder="Ism va familiya" onkeydown="if(event.key===\'Enter\')doLogin()"><button class="teamb" onclick="doLogin()">KIRISH</button></div>';
+    }
+    return;
+  }
+  if (team === null || team === undefined || team === '' || Number(team) >= S.teams.length){
+    app.innerHTML = '<div class="card"><div class="big" style="text-align:center">Jamoangizni tanlang</div></div>' +
+      S.teams.map((t,i)=>`<button class="teamb" onclick="chooseTeam(${i})">${esc(t)}</button>`).join('');
+    return;
+  }
+  const t = Number(team);
+  if (!document.getElementById('qbox')) {
+    app.innerHTML = '<div id="hdr" class="muted"></div><div id="qbox"></div><div id="sbox"></div>';
+    qKey = '';
+  }
+  document.getElementById('hdr').innerHTML = `Siz: <b class="gold">${esc(localStorage.getItem('name'))}</b> — ${esc(S.teams[t])} &nbsp; <span class="chg" onclick="changeTeam()">jamoa o‘zgartirish</span> <span class="logout" onclick="logout()">chiqish</span>`;
+
+  const q = S.question;
+  const k = [S.cur, S.revealed, mine].join('|');
+  const qbox = document.getElementById('qbox');
+  if (!q){
+    qbox.innerHTML = '<div class="card"><div class="big" style="text-align:center">Savol kutilmoqda…</div><div class="muted">O‘qituvchi savolni ochishini kuting</div></div>';
+  } else if (k !== qKey){
+    qKey = k;
+    let b = `<div class="card"><div class="meta"><span>${esc(q.cat)}</span><span>${q.pts} ball</span></div><div class="big">${esc(q.q)}</div>`;
+    if (q.opts.length){
+      q.opts.forEach((o,c)=>{
+        let cls = '';
+        if (S.revealed){ if (c === q.c) cls = 'ok'; else if (c === mine) cls = 'bad'; }
+        else if (c === mine) cls = 'sel';
+        b += `<button class="${cls}" ${(mine!==null||S.revealed)?'disabled':''} onclick="answer(${c})">${L[c]})  ${esc(o)}</button>`;
+      });
+      if (mine !== null && !S.revealed) b += '<div class="muted">Javob yuborildi. Natijani kuting…</div>';
+    } else {
+      b += '<div class="muted">Og‘zaki javob bering</div>';
+    }
+    if (S.revealed){
+      const ans = q.opts.length ? q.opts[q.c] : q.ans;
+      b += `<div class="exp"><b>To‘g‘ri javob:</b> ${esc(ans)}<br>${esc(q.exp)}</div>`;
+    }
+    b += '</div>';
+    qbox.innerHTML = b;
+  }
+
+  const order = S.scores.map((s,i)=>i).sort((a,b)=>S.scores[b]-S.scores[a]);
+  document.getElementById('sbox').innerHTML = '<div class="card"><table>' +
+    order.map(i=>`<tr class="${i===t?'me':''}"><td>${esc(S.teams[i])}</td><td class="right">${S.scores[i]}</td></tr>`).join('') +
+    '</table></div>';
+}
+
+if (localStorage.getItem('name')) sendLogin();
+poll(); setInterval(poll, 1000);
+</script>
+</body></html>
