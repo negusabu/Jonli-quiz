@@ -1,0 +1,320 @@
+[
+ {
+  "cat": "Milliy iqtisodiyot",
+  "pts": 100,
+  "q": "YaIM va YaMM o‘rtasidagi asosiy farq nimada?",
+  "opts": [
+   "YaIM faqat sanoatni, YaMM faqat xizmatlarni hisobga oladi",
+   "Ikkalasi bir xil, faqat nomi boshqacha",
+   "YaIM nominal, YaMM esa real ko‘rsatkich",
+   "YaIM mamlakat hududida yaratilgan, YaMM esa mamlakat rezidentlari yaratgan mahsulotni hisobga oladi"
+  ],
+  "c": 3,
+  "exp": "YaIM hudud bo‘yicha, YaMM esa rezidentlar bo‘yicha hisoblanadi. Farq odatda kichik bo‘ladi."
+ },
+ {
+  "cat": "Milliy iqtisodiyot",
+  "pts": 200,
+  "q": "Yalpi ichki mahsulotdan amortizatsiya ajratmalari chiqarib tashlansa, qaysi ko‘rsatkich hosil bo‘ladi?",
+  "opts": [
+   "Sof ichki mahsulot (SIM)",
+   "Yalpi milliy daromad",
+   "Milliy daromad",
+   "Qo‘shilgan qiymat"
+  ],
+  "c": 0,
+  "exp": "SIM = YaIM − amortizatsiya. Shuning uchun SIM sof ko‘rsatkichdir."
+ },
+ {
+  "cat": "Milliy iqtisodiyot",
+  "pts": 300,
+  "q": "Nominal YaIM 150 trln so‘m, narx indeksi 120% bo‘lsa, real YaIM taxminan necha trln so‘m bo‘ladi?",
+  "opts": [
+   "120",
+   "125",
+   "180",
+   "150"
+  ],
+  "c": 1,
+  "exp": "Real YaIM = nominal YaIM ÷ narx indeksi × 100 = 150 ÷ 120 × 100 = 125 trln so‘m."
+ },
+ {
+  "cat": "Milliy iqtisodiyot",
+  "pts": 400,
+  "q": "Ishlab chiqarish usulida YaIM hisoblanganda, qo‘shilgan qiymat qanday aniqlanadi?",
+  "opts": [
+   "Iste‘mol va investitsiyani qo‘shish orqali",
+   "Daromadlarni ko‘paytirish orqali",
+   "Yalpi mahsulotga importni qo‘shish orqali",
+   "Yalpi mahsulotdan oraliq (joriy moddiy) xarajatlarni chiqarish orqali"
+  ],
+  "c": 3,
+  "exp": "Qo‘shilgan qiymat = yalpi mahsulot − oraliq xarajatlar. Bu usulda YaIM tarmoqlar bo‘yicha yig‘iladi."
+ },
+ {
+  "cat": "Milliy iqtisodiyot",
+  "pts": 500,
+  "q": "Yalpi milliy mahsulot (YaMM) YaIMdan katta bo‘lsa, bu nimani bildiradi?",
+  "opts": [
+   "Mamlakat rezidentlarining chet elda yaratgan daromadi xorijiy rezidentlar daromadidan ko‘p",
+   "Amortizatsiya ajratmalari nolga teng",
+   "Davlat qarzi oshgan",
+   "Import eksportdan ko‘p"
+  ],
+  "c": 0,
+  "exp": "YaMM = YaIM + chet eldan olingan sof birlamchi daromad. Demak, chet eldan olingan daromad ijobiy."
+ },
+ {
+  "cat": "Iste‘mol va jamg‘arma",
+  "pts": 100,
+  "q": "Oilaning yalpi daromadi 10 mln so‘m, iste‘moli 8 mln so‘m bo‘lsa, jamg‘armasi necha mln so‘m bo‘ladi?",
+  "opts": [
+   "18",
+   "10",
+   "2",
+   "8"
+  ],
+  "c": 2,
+  "exp": "Jamg‘arma = daromad − iste‘mol = 10 − 8 = 2 mln so‘m."
+ },
+ {
+  "cat": "Iste‘mol va jamg‘arma",
+  "pts": 200,
+  "q": "Keynsning fikriga ko‘ra, iste‘mol asosan nimaga bog‘liq?",
+  "opts": [
+   "Eksport hajmiga",
+   "Narx darajasiga",
+   "Joriy daromadga",
+   "Real foiz stavkasiga"
+  ],
+  "c": 2,
+  "exp": "Keyns iste‘molni joriy daromadning funksiyasi deb hisoblagan: C = f(Y)."
+ },
+ {
+  "cat": "Iste‘mol va jamg‘arma",
+  "pts": 300,
+  "q": "Klassik iqtisodchilar fikricha, jamg‘arma asosan nimaga bog‘liq?",
+  "opts": [
+   "Davlat xarajatlariga",
+   "Import tovarlar narxiga",
+   "Joriy daromad hajmiga",
+   "Real foiz stavkasiga"
+  ],
+  "c": 3,
+  "exp": "Klassik qarashga ko‘ra jamg‘arma real foiz stavkasining o‘sib boruvchi funksiyasi."
+ },
+ {
+  "cat": "Iste‘mol va jamg‘arma",
+  "pts": 400,
+  "q": "Iste‘mol va jamg‘armaning o‘rtacha moyilliklari (IO‘M + JO‘M) yig‘indisi nimaga teng?",
+  "opts": [
+   "0,5",
+   "0",
+   "2",
+   "1"
+  ],
+  "c": 3,
+  "exp": "C + S = Y bo‘lgani uchun C/Y + S/Y = 1."
+ },
+ {
+  "cat": "Iste‘mol va jamg‘arma",
+  "pts": 500,
+  "q": "Chegaraviy iste‘mol moyilligi (IQM) 0,8 bo‘lsa, chegaraviy jamg‘arma moyilligi (JQM) nechaga teng?",
+  "opts": [
+   "0,2",
+   "1,8",
+   "0,8",
+   "0,02"
+  ],
+  "c": 0,
+  "exp": "IQM + JQM = 1, shuning uchun JQM = 1 − 0,8 = 0,2."
+ },
+ {
+  "cat": "Korxona xarajatlari va foyda",
+  "pts": 100,
+  "q": "Foyda massasi 300 mln so‘m, ishlab chiqarish xarajatlari 1200 mln so‘m bo‘lsa, foyda normasi necha foiz?",
+  "opts": [
+   "40%",
+   "15%",
+   "25%",
+   "30%"
+  ],
+  "c": 2,
+  "exp": "Foyda normasi = foyda massasi ÷ xarajatlar × 100 = 300 ÷ 1200 × 100 = 25%."
+ },
+ {
+  "cat": "Korxona xarajatlari va foyda",
+  "pts": 200,
+  "q": "Quyidagilardan qaysi biri doimiy xarajatlarga kiradi?",
+  "opts": [
+   "Xomashyo narxi",
+   "Yonilg‘i sarfi",
+   "Amortizatsiya ajratmalari",
+   "Ishlab chiqarish hajmiga bog‘liq transport xizmati"
+  ],
+  "c": 2,
+  "exp": "Amortizatsiya ishlab chiqarish hajmiga bog‘liq emas, shuning uchun doimiy xarajat hisoblanadi."
+ },
+ {
+  "cat": "Korxona xarajatlari va foyda",
+  "pts": 300,
+  "q": "Ishlab chiqarish hajmi oshganda o‘rtacha xarajatlar nima uchun kamayadi?",
+  "opts": [
+   "Doimiy xarajatlar har bir mahsulotga kamroq to‘g‘ri keladi",
+   "Narxlar pasayadi",
+   "Ish haqi oshadi",
+   "Soliqlar kamayadi"
+  ],
+  "c": 0,
+  "exp": "Doimiy xarajatlar umumiy hajmga bo‘linadi, hajm oshgani sari har bir birlikka tushadigan qism kamayadi."
+ },
+ {
+  "cat": "Korxona xarajatlari va foyda",
+  "pts": 400,
+  "q": "Foyda normasi formulasida maxrajga (bo‘luvchiga) odatda nima qo‘yiladi?",
+  "opts": [
+   "Milliy daromad",
+   "Ishlab chiqarish xarajatlari (W)",
+   "Ish haqi fondi",
+   "Foyda massasi"
+  ],
+  "c": 1,
+  "exp": "Foyda normasi = foyda massasi ÷ ishlab chiqarish xarajatlari (yoki avanslangan kapital)."
+ },
+ {
+  "cat": "Korxona xarajatlari va foyda",
+  "pts": 500,
+  "q": "Narx o‘zgarmasdan foydani oshirish uchun korxona qaysi yo‘lni tanlashi kerak?",
+  "opts": [
+   "Mahsulot hajmini nolga tushirish",
+   "Mahsulot sifatini yomonlashtirish",
+   "Soliqlarni oshirish",
+   "Ishlab chiqarish xarajatlarini kamaytirish"
+  ],
+  "c": 3,
+  "exp": "Xarajatlar kamaysa, narx va hajm o‘zgarmasa ham foyda ortadi."
+ },
+ {
+  "cat": "Yalpi talab va taklif",
+  "pts": 100,
+  "q": "Yalpi talab formulasi AD = C + I + G + NX da NX nimani bildiradi?",
+  "opts": [
+   "Yalpi investitsiyani",
+   "Sof eksportni",
+   "Nominal foiz stavkasini",
+   "Ish haqi fondini"
+  ],
+  "c": 1,
+  "exp": "NX — sof eksport (eksport − import)."
+ },
+ {
+  "cat": "Yalpi talab va taklif",
+  "pts": 200,
+  "q": "Narx darajasi oshsa, yalpi talab nima uchun kamayadi (foiz stavkasi orqali)?",
+  "opts": [
+   "Davlat xaridlari ko‘payadi",
+   "Pulga talab ortadi, foiz stavkasi oshadi, iste‘mol va investitsiya kamayadi",
+   "Eksport avtomatik oshadi",
+   "Pulga talab kamayadi, foiz pasayadi"
+  ],
+  "c": 1,
+  "exp": "Narx oshgani sari pulga talab ortadi, foiz oshadi va sarflar qisqaradi."
+ },
+ {
+  "cat": "Yalpi talab va taklif",
+  "pts": 300,
+  "q": "Yalpi taklif egri chizig‘i odatda qanday shaklda bo‘ladi?",
+  "opts": [
+   "Doimiy pasayib boradi",
+   "Hech qachon o‘zgarmaydi",
+   "Gorizontal bo‘ladi",
+   "Narx darajasi oshishi bilan yuqoriga ko‘tariladi (musbat qiyalik)"
+  ],
+  "c": 3,
+  "exp": "Narxlar oshganda ishlab chiqarish rag‘batlanadi, shuning uchun yalpi taklif egri chizig‘i yuqoriga ko‘tariladi."
+ },
+ {
+  "cat": "Yalpi talab va taklif",
+  "pts": 400,
+  "q": "Tik kesmali (klassik) holatda yalpi talab oshsa, nima bo‘ladi?",
+  "opts": [
+   "Narx tushadi, ishlab chiqarish oshadi",
+   "Faqat narx darajasi oshadi",
+   "Faqat ishlab chiqarish hajmi oshadi",
+   "Ikkalasi ham oshadi"
+  ],
+  "c": 1,
+  "exp": "Tik kesmada iqtisodiyot to‘liq quvvatda ishlaydi, shuning uchun talab faqat narxni oshiradi."
+ },
+ {
+  "cat": "Yalpi talab va taklif",
+  "pts": 500,
+  "q": "Yotiq kesmali (keynscha) holatda yalpi talab kamaysa, qaysi natija to‘g‘ri?",
+  "opts": [
+   "Muvozanat yo‘qoladi, narx ko‘tariladi",
+   "Narx va hajm ikkalasi ham oshadi",
+   "Narx darajasi o‘zgarmaydi, ishlab chiqarish hajmi kamayadi",
+   "Narx ko‘tariladi, hajm o‘zgarmaydi"
+  ],
+  "c": 2,
+  "exp": "Yotiq kesmada narx qat‘iy, shuning uchun talabning kamayishi faqat ishlab chiqarish hajmini kamaytiradi."
+ },
+ {
+  "cat": "Super savol",
+  "pts": 100,
+  "q": "Foiz stavkasi ko‘tarilganda, klassik modelda jamg‘arma va investitsiya qanday o‘zgaradi?",
+  "opts": [
+   "Ikkalasi ham ortadi",
+   "Jamg‘arma ortadi, investitsiya kamayadi",
+   "Jamg‘arma kamayadi, investitsiya ortadi",
+   "Ikkalasi ham kamayadi"
+  ],
+  "c": 1,
+  "exp": "Klassik modelda foiz oshsa jamg‘arma ko‘payadi, investitsiya esa qisqaradi."
+ },
+ {
+  "cat": "Super savol",
+  "pts": 200,
+  "q": "Ikki mamlakatda YaIM bir xil. 1-mamlakatda iste‘mol yuqori, 2-mamlakatda jamg‘arma yuqori. Qaysi biri investitsiya uchun ko‘proq moliyaviy manba beradi?",
+  "opts": [
+   "2-mamlakat",
+   "1-mamlakat",
+   "Ma‘lumot yetarli emas",
+   "Ikkalasi teng"
+  ],
+  "c": 0,
+  "exp": "Jamg‘arma investitsiyaning asosiy manbai. Jamg‘arma yuqori bo‘lsa, manba ko‘proq."
+ },
+ {
+  "cat": "Super savol",
+  "pts": 300,
+  "q": "Import oshsa va boshqa omillar o‘zgarmasa, sof eksport va yalpi talab qanday o‘zgaradi?",
+  "opts": [
+   "Yalpi investitsiya oshadi",
+   "Oshadi",
+   "Kamayadi",
+   "O‘zgarmaydi"
+  ],
+  "c": 2,
+  "exp": "NX = eksport − import. Import oshsa NX kamayadi va AD ham kamayadi."
+ },
+ {
+  "cat": "Super savol",
+  "pts": 400,
+  "q": "To‘g‘ri yoki noto‘g‘ri: tik kesmada yalpi talab oshsa, real ishlab chiqarish hajmi oshadi.",
+  "opts": [
+   "Noto‘g‘ri",
+   "To‘g‘ri"
+  ],
+  "c": 0,
+  "exp": "Tik kesmada real ishlab chiqarish potensial darajada qoladi, faqat narx oshadi."
+ },
+ {
+  "cat": "Super savol",
+  "pts": 500,
+  "q": "Nega jamg‘arma va investitsiya o‘rtasidagi muvozanat barqaror iqtisodiy o‘sish uchun muhim?",
+  "opts": [],
+  "ans": "Jamg‘arma investitsiyaning asosiy manbai, muvozanat esa barqaror o‘sish va narx barqarorligini ta‘minlaydi.",
+  "exp": "Jamg‘arma investitsiyaning asosiy manbai. Muvozanat buzilsa, o‘sish sekinlashadi yoki narx darajasi beqarorlashadi."
+ }
+]

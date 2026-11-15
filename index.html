@@ -12,13 +12,14 @@ h1{color:#FFC72C;text-align:center;font-size:26px;margin:8px 0 14px}
 button{display:block;width:100%;font:inherit;font-size:19px;color:#fff;background:#1B3180;border:none;border-radius:10px;padding:15px;margin:8px 0;text-align:left;cursor:pointer}
 button:disabled{cursor:default}
 button.sel{background:#2F8BFF}
-input{font:inherit;font-size:20px;width:100%;box-sizing:border-box;padding:14px;border-radius:10px;border:none;margin:10px 0}
+input{font:inherit;font-size:18px;width:100%;box-sizing:border-box;padding:14px;border-radius:10px;border:none;margin:10px 0}
 .logout{font-size:14px;color:#B8C4E0;cursor:pointer;text-decoration:underline;margin-left:8px}
 button.ok{background:#1E8E4E}
 button.bad{background:#B3261E}
 .teamb{text-align:center;background:#1E63D6;font-weight:bold;font-size:22px}
 .muted{color:#B8C4E0;text-align:center;font-size:18px}
 .exp{border-left:5px solid #FFC72C;padding:10px 12px;background:#0c1842;border-radius:8px;margin-top:12px;font-size:18px;line-height:1.4}
+.ainote{border-left:5px solid #8B5CF6;padding:10px 12px;background:#101a4a;border-radius:8px;margin-top:10px;font-size:17px;line-height:1.45}
 table{width:100%;border-collapse:collapse;font-size:18px}
 td{padding:8px 4px;border-bottom:1px solid #1B3180}
 tr.me td{color:#FFC72C;font-weight:bold}
@@ -26,17 +27,20 @@ tr.me td{color:#FFC72C;font-weight:bold}
 .chg{font-size:14px;color:#B8C4E0;text-align:center;margin-top:6px;cursor:pointer;text-decoration:underline}
 </style></head>
 <body><div class="w">
-<h1>STATISTIKA QUIZ</h1>
+<h1>JEO QUIZ</h1>
 <div id="app"></div>
 </div>
 <script>
-let S = null, team = localStorage.getItem('team'), mine = null, lastCur = undefined, qKey = '';
+let S = null, team = localStorage.getItem('team'), mine = null, sentText = false, lastCur = undefined, qKey = '';
 const L = ['A','B','C','D'];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 async function poll(){
-  try { S = await (await fetch('/api/state', {cache:'no-store'})).json(); if (S.cur !== lastCur){ mine = null; lastCur = S.cur; qKey = ''; } render(); }
-  catch(e){ document.getElementById('app').dataset.err = '1'; }
+  try {
+    S = await (await fetch('/api/state', {cache:'no-store'})).json();
+    if (S.cur !== lastCur){ mine = null; sentText = false; lastCur = S.cur; qKey = ''; }
+    render();
+  } catch(e){ document.getElementById('app').dataset.err = '1'; }
 }
 
 function chooseTeam(i){ team = String(i); localStorage.setItem('team', team); sendLogin(); qKey=''; render(); }
@@ -61,6 +65,14 @@ async function answer(c){
   await fetch('/api/answer', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({team: Number(team), choice: c})});
 }
 
+async function sendTextAnswer(){
+  const inp = document.getElementById('txtans');
+  const val = inp ? inp.value.trim() : '';
+  if (!val || sentText) return;
+  sentText = true; qKey = ''; render();
+  await fetch('/api/answer', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({team: Number(team), text: val})});
+}
+
 function render(){
   const app = document.getElementById('app');
   if (!S) return;
@@ -80,10 +92,10 @@ function render(){
     app.innerHTML = '<div id="hdr" class="muted"></div><div id="qbox"></div><div id="sbox"></div>';
     qKey = '';
   }
-  document.getElementById('hdr').innerHTML = `Siz: <b class="gold">${esc(localStorage.getItem('name'))}</b> — ${esc(S.teams[t])} &nbsp; <span class="chg" onclick="changeTeam()">jamoa o‘zgartirish</span> <span class="logout" onclick="logout()">chiqish</span>`;
+  document.getElementById('hdr').innerHTML = `Siz: <b style="color:#FFC72C">${esc(localStorage.getItem('name'))}</b> — ${esc(S.teams[t])} &nbsp; <span class="chg" onclick="changeTeam()">jamoa o‘zgartirish</span> <span class="logout" onclick="logout()">chiqish</span>`;
 
   const q = S.question;
-  const k = [S.cur, S.revealed, mine].join('|');
+  const k = [S.cur, S.revealed, mine, sentText, S.ai_note || ''].join('|');
   const qbox = document.getElementById('qbox');
   if (!q){
     qbox.innerHTML = '<div class="card"><div class="big" style="text-align:center">Savol kutilmoqda…</div><div class="muted">O‘qituvchi savolni ochishini kuting</div></div>';
@@ -99,11 +111,18 @@ function render(){
       });
       if (mine !== null && !S.revealed) b += '<div class="muted">Javob yuborildi. Natijani kuting…</div>';
     } else {
-      b += '<div class="muted">Og‘zaki javob bering</div>';
+      if (!S.revealed && !sentText){
+        b += `<input id="txtans" maxlength="250" placeholder="Jamoa javobini yozing yoki og‘zaki ayting"><button class="teamb" onclick="sendTextAnswer()">JAVOBNI YUBORISH</button>`;
+      } else if (sentText && !S.revealed){
+        b += '<div class="muted">Yozma javob yuborildi. Natijani kuting…</div>';
+      }
     }
     if (S.revealed){
       const ans = q.opts.length ? q.opts[q.c] : q.ans;
       b += `<div class="exp"><b>To‘g‘ri javob:</b> ${esc(ans)}<br>${esc(q.exp)}</div>`;
+    }
+    if (S.ai_note){
+      b += `<div class="ainote"><b>Gemini AI izohi:</b><br>${esc(S.ai_note)}</div>`;
     }
     b += '</div>';
     qbox.innerHTML = b;

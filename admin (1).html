@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="uz"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Boshqaruv — Jeo Quiz</title>
+<style>
+body{margin:0;background:#08102B;color:#fff;font-family:Arial,Helvetica,sans-serif}
+.w{max-width:1100px;margin:0 auto;padding:12px}
+h1{color:#FFC72C;margin:6px 0 12px;font-size:24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.badge{font-size:13px;padding:4px 10px;border-radius:20px;background:#13245C;color:#7CFC9A;border:1px solid #1E8E4E}
+.badge.off{color:#FF8A80;border-color:#B3261E}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.card{background:#13245C;border-radius:12px;padding:14px;flex:1;min-width:300px;margin-bottom:12px}
+.card h2{font-size:16px;color:#2F8BFF;margin:0 0 8px}
+.board{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.cat{background:#1E63D6;text-align:center;font-size:12px;font-weight:bold;padding:8px 4px;border-radius:6px;min-height:34px;display:flex;align-items:center;justify-content:center}
+.cell{background:#13245C;color:#FFC72C;font-weight:bold;font-size:20px;border:2px solid #1E63D6;border-radius:6px;padding:12px 0;cursor:pointer;text-align:center}
+.cell.used{background:#3a3f4e;color:#7b8190;border-color:#3a3f4e;text-decoration:line-through}
+.cell.cur{background:#FFC72C;color:#000;border-color:#FFC72C}
+button{font:inherit;color:#fff;background:#1B3180;border:none;border-radius:8px;padding:10px 12px;cursor:pointer;font-size:15px}
+button.gold{background:#FFC72C;color:#000;font-weight:bold}
+button.ai{background:linear-gradient(135deg,#2563EB,#7C3AED);color:#fff;font-weight:bold}
+button.green{background:#1E8E4E}
+button.red{background:#B3261E}
+button:disabled{opacity:.4;cursor:default}
+.q{font-size:20px;font-weight:bold;line-height:1.35;margin:6px 0}
+.muted{color:#B8C4E0}
+.opt{font-size:16px;margin:4px 0}
+.opt.c{color:#7CFC9A;font-weight:bold}
+.ans{font-size:14px;color:#B8C4E0;margin-top:8px;line-height:1.6}
+.aibox{background:#0c1842;border-left:4px solid #8B5CF6;padding:10px;border-radius:8px;margin-top:8px;font-size:14px;line-height:1.45}
+table{width:100%;border-collapse:collapse}
+td{padding:6px 2px;border-bottom:1px solid #1B3180;font-size:15px}
+input{font:inherit;padding:8px;border-radius:6px;border:none;width:100%;margin:4px 0;box-sizing:border-box}
+.msg{color:#FF8A80;min-height:18px;margin-bottom:6px}
+textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:none;margin:4px 0;color:#000}
+#fopts input[type=text],#fopts input{width:100%}
+</style></head>
+<body><div class="w">
+<h1><span>Boshqaruv paneli — Jeo Quiz</span> <span id="aibadge" class="badge off">Gemini AI: tekshirilmoqda...</span></h1>
+<div class="msg" id="msg"></div>
+
+<div class="card" style="border:1px solid #7C3AED">
+  <h2 style="color:#C4B5FD">GEMINI AI — YANGI O‘YIN JADVALI YARATISH</h2>
+  <div class="row" style="align-items:center">
+    <div style="flex:2;min-width:220px"><input id="aitopic" placeholder="Mavzuni yozing (masalan: Inflyatsiya va pul-kredit siyosati)"></div>
+    <div style="flex:1;min-width:160px">
+      <select id="ailevel">
+        <option value="universitet talabalari">Talabalar darajasi</option>
+        <option value="maktab o‘quvchilari">O‘quvchilar darajasi</option>
+        <option value="chuqurlashtirilgan mutaxassislar">Murakkab / Olimpiada</option>
+      </select>
+    </div>
+    <div><button class="ai" id="aigenbtn" onclick="genBoard()">25 ta savol yaratish</button></div>
+  </div>
+  <div class="ans" id="aigenmsg">Mavzu kiriting — Gemini 5 ta kategoriya va 25 ta savolni avtomatik tuzib jadvalga joylaydi.</div>
+</div>
+
+<div class="row">
+  <div class="card" style="flex:2">
+    <h2>ASOSIY JADVAL (bosing — savol ochiladi)</h2>
+    <div class="board" id="board"></div>
+  </div>
+  <div class="card">
+    <h2>SAVOL</h2>
+    <div id="qpanel" class="muted">Savol tanlanmagan</div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card" style="flex:2">
+    <h2>SAVOLNI TAHRIRLASH (katakcha tanlang)</h2>
+    <div class="row" style="align-items:center">
+      <div style="flex:2"><select id="slot" onchange="loadSlot()"></select></div>
+      <div><button class="ai" id="aislotbtn" onclick="genSingleSlot()">AI bitta savol tuzsin</button></div>
+    </div>
+    <textarea id="fq" rows="2" placeholder="Savol matni"></textarea>
+    <label style="font-size:14px"><input type="checkbox" id="fshort" style="width:auto" onchange="toggleShort()"> Variantsiz (qisqa javobli) savol</label>
+    <div id="fopts"></div>
+    <input id="fans" placeholder="To‘g‘ri javob (qisqa)" style="display:none;color:#000">
+    <textarea id="fexp" rows="2" placeholder="Qisqa izoh"></textarea>
+    <div class="ans">Variantlar o‘quvchilarga har safar aralashtirilib chiqadi. To‘g‘ri variantni radio tugma bilan belgilang.</div>
+    <div style="margin-top:8px"><button class="gold" onclick="saveSlot()">SAQLASH</button> <span id="fmsg" class="msg"></span></div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card"><h2>JAMOALAR VA BALLAR</h2><div id="teams"></div>
+    <h2 style="margin-top:14px">KIRGANLAR (<span id="pc">0</span>)</h2><div class="ans" id="players"></div></div>
+  <div class="card"><h2>JAMOA NOMLARI</h2>
+    <div id="names"></div>
+    <button class="gold" style="width:100%;margin-top:8px" onclick="saveNames()">Nomlarni saqlash</button>
+    <h2 style="margin-top:16px">BOSHQARUV</h2>
+    <button class="red" style="width:100%" onclick="resetAll()">Hammasini tozalash (yangi o‘yin)</button>
+  </div>
+</div>
+</div>
+<script>
+let CATS = [];
+const L = ['A','B','C','D'];
+let S = null, PIN = sessionStorage.getItem('pin') || '', namesDrawn = false, QL = [], busyAI = false;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function load(){
+  if (!PIN){ PIN = prompt('Admin PIN (serverda ko‘rsatilgan):') || ''; sessionStorage.setItem('pin', PIN); }
+  const r = await fetch('/api/state?admin=1&pin=' + encodeURIComponent(PIN), {cache:'no-store'});
+  const j = await r.json();
+  if (!r.ok){ sessionStorage.removeItem('pin'); PIN=''; document.getElementById('msg').textContent = j.error; return; }
+  S = j; render();
+  if (!QL.length && await loadQs()){ buildForm(); loadSlot(); }
+}
+
+async function act(obj){
+  obj.pin = PIN;
+  const r = await fetch('/api/admin', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(obj)});
+  const j = await r.json();
+  if (!r.ok){ document.getElementById('msg').textContent = j.error; return null; }
+  document.getElementById('msg').textContent = '';
+  S = j; render();
+  return j;
+}
+
+function render(){
+  if (!S) return;
+  const badge = document.getElementById('aibadge');
+  if (S.ai_ready){
+    badge.textContent = 'Gemini AI: Faol';
+    badge.className = 'badge';
+  } else {
+    badge.textContent = 'Gemini AI: Kalit kiritilmagan';
+    badge.className = 'badge off';
+  }
+  if (S.cats) CATS = S.cats;
+  const b = document.getElementById('board');
+  let h = CATS.map(c=>`<div class="cat">${esc(c)}</div>`).join('');
+  for (let r=0;r<5;r++){
+    for (let c=0;c<5;c++){
+      const idx = c*5 + r;
+      const cls = 'cell' + (S.used[idx]?' used':'') + (S.cur===idx?' cur':'');
+      h += `<div class="${cls}" onclick="act({action:'open',idx:${idx}})">${(r+1)*100}</div>`;
+    }
+  }
+  b.innerHTML = h;
+
+  const qp = document.getElementById('qpanel');
+  if (S.question){
+    const q = S.question;
+    let x = `<div class="muted">${esc(q.cat)} • ${q.pts} ball</div><div class="q">${esc(q.q)}</div>`;
+    if (q.opts.length) q.opts.forEach((o,i)=>{ x += `<div class="opt ${i===q.c?'c':''}">${L[i]}) ${esc(o)}</div>`; });
+    else x += `<div class="opt c">Etalon javob: ${esc(q.ans)}</div>`;
+    x += `<div class="ans">${esc(q.exp)}</div>`;
+
+    if (q.opts.length){
+      const a = S.answers || {};
+      x += '<div class="ans"><b>Jamoalar javobi:</b><br>' + S.teams.map((t,i)=>`${esc(t)}: ${a[i]!==undefined ? L[a[i]] : '—'}`).join('<br>') + '</div>';
+    } else {
+      const ta = S.text_answers || {};
+      const gr = S.ai_grades || {};
+      x += '<div class="ans"><b>Yozma javoblar:</b><br>' + S.teams.map((t,i)=>{
+        const ansTxt = ta[i] ? esc(ta[i]) : '—';
+        const g = gr[String(i)];
+        const gTxt = g ? ` <b style="color:#7CFC9A">[AI: ${g.percent}% — ${esc(g.verdict)}. ${esc(g.comment)}]</b>` : '';
+        return `${esc(t)}: ${ansTxt}${gTxt}`;
+      }).join('<br>') + '</div>';
+    }
+
+    if (S.ai_note){
+      x += `<div class="aibox"><b>Gemini AI misoli:</b><br>${esc(S.ai_note)}</div>`;
+    }
+
+    x += `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="gold" ${S.revealed?'disabled':''} onclick="act({action:'reveal'})">Javobni ko‘rsatish</button>
+      <button class="ai" ${busyAI?'disabled':''} onclick="askAIExplain()">AI tushuntirish</button>
+      ${!q.opts.length ? `<button class="ai" ${busyAI?'disabled':''} onclick="askAIGrade()">AI javoblarni tekshirsin</button>` : ''}
+      <button onclick="act({action:'close'})">Yopish</button>
+      <button onclick="editSlot(${S.cur})">Tahrirlash</button></div>`;
+    qp.innerHTML = x;
+  } else {
+    qp.innerHTML = '<div class="muted">Jadvaldan katakchani tanlang</div>';
+  }
+
+  const cur = S.question;
+  document.getElementById('teams').innerHTML = '<table>' + S.teams.map((t,i)=>`
+    <tr><td>${esc(t)}</td><td style="text-align:right;font-size:22px;color:#FFC72C;font-weight:bold">${S.scores[i]}</td>
+    <td style="text-align:right;white-space:nowrap">
+      <button class="green" ${cur?'':'disabled'} onclick="act({action:'award',team:${i},sign:1})">+${cur?cur.pts:''}</button>
+      <button class="red" ${cur?'':'disabled'} onclick="act({action:'award',team:${i},sign:-1})">−${cur?cur.pts:''}</button>
+      <button onclick="manual(${i})">±</button></td></tr>`).join('') + '</table>';
+  const pl = S.players || [];
+  document.getElementById('pc').textContent = pl.length;
+  document.getElementById('players').innerHTML = pl.length
+    ? pl.map(x => `${esc(x.name)} — ${x.team===null ? 'jamoa tanlamagan' : esc(S.teams[x.team])}`).join('<br>')
+    : 'Hali hech kim kirmagan';
+
+  if (!namesDrawn){
+    document.getElementById('names').innerHTML = S.teams.map((t,i)=>`<input id="n${i}" value="${esc(t)}">`).join('');
+    namesDrawn = true;
+  }
+}
+
+async function genBoard(){
+  const topic = document.getElementById('aitopic').value.trim();
+  const level = document.getElementById('ailevel').value;
+  if (!topic){ alert('Avval mavzu nomini yozing'); return; }
+  if (!confirm(`"${topic}" mavzusida 25 ta yangi savol yaratilib, hozirgi jadval almashtiriladi. Davom etasizmi?`)) return;
+  const btn = document.getElementById('aigenbtn');
+  const info = document.getElementById('aigenmsg');
+  btn.disabled = true; btn.textContent = 'Gemini tuzmoqda... (10-15 soniya)';
+  info.textContent = 'Iltimos kuting, 5 ta kategoriya va 25 ta savol generatsiya qilinmoqda...';
+  const res = await act({action:'ai_generate_board', topic, level});
+  btn.disabled = false; btn.textContent = '25 ta savol yaratish';
+  if (res){
+    await loadQs();
+    formBuilt = false; buildForm(); loadSlot();
+    info.textContent = `Tayyor! "${topic}" bo‘yicha 25 ta savol jadvalga yuklandi.`;
+  } else {
+    info.textContent = 'Xatolik yuz berdi. Yuqoridagi xabarni tekshiring.';
+  }
+}
+
+async function genSingleSlot(){
+  const i = Number(document.getElementById('slot').value);
+  const btn = document.getElementById('aislotbtn');
+  const msg = document.getElementById('fmsg');
+  btn.disabled = true; btn.textContent = 'Tuzilmoqda...';
+  const r = await fetch('/api/admin', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({pin: PIN, action: 'ai_generate_slot', idx: i, hint: document.getElementById('fq').value})
+  });
+  const j = await r.json();
+  btn.disabled = false; btn.textContent = 'AI bitta savol tuzsin';
+  if (!r.ok){ msg.textContent = j.error; return; }
+  const q = j.question;
+  document.getElementById('fshort').checked = false; toggleShort();
+  document.getElementById('fq').value = q.q;
+  document.getElementById('fexp').value = q.exp;
+  const radios = document.querySelectorAll('input[name=fc]');
+  for (let k=0; k<4; k++){
+    document.getElementById('fo'+k).value = q.opts[k] || '';
+    radios[k].checked = (q.c === k);
+  }
+  msg.textContent = 'AI savol tuzdi — tekshirib SAQLASH tugmasini bosing';
+}
+
+async function askAIExplain(){
+  busyAI = true; render();
+  await act({action:'ai_explain'});
+  busyAI = false; render();
+}
+
+async function askAIGrade(){
+  busyAI = true; render();
+  await act({action:'ai_grade'});
+  busyAI = false; render();
+}
+
+function manual(i){
+  const v = prompt('Ball qo‘shish (musbat) yoki ayirish (manfiy) sonini kiriting:', '0');
+  if (v === null) return;
+  const d = parseInt(v, 10);
+  if (isNaN(d)) return;
+  act({action:'score', team:i, delta:d});
+}
+function saveNames(){
+  const names = [0,1,2,3].map(i=>document.getElementById('n'+i).value.trim());
+  act({action:'rename', teams:names});
+}
+function resetAll(){
+  if (confirm('Barcha ballar va belgilar o‘chadi. Davom etasizmi?')) act({action:'reset'});
+}
+
+async function loadQs(){
+  const r = await fetch('/api/questions?pin=' + encodeURIComponent(PIN), {cache:'no-store'});
+  if (!r.ok) return false;
+  QL = await r.json();
+  return true;
+}
+let formBuilt = false;
+function buildForm(){
+  if (formBuilt) return;
+  formBuilt = true;
+  document.getElementById('fopts').innerHTML = [0,1,2,3].map(i =>
+    `<div style="display:flex;gap:8px;align-items:center;margin:4px 0"><input type="radio" name="fc" value="${i}" style="width:auto"><input id="fo${i}" placeholder="${L[i]} variant"></div>`).join('');
+  document.getElementById('slot').innerHTML = QL.map((q,i)=>`<option value="${i}">${i+1}. ${esc(q.cat)} — ${q.pts} ball</option>`).join('');
+}
+function toggleShort(){
+  const s = document.getElementById('fshort').checked;
+  document.getElementById('fans').style.display = s ? 'block' : 'none';
+  document.getElementById('fopts').style.display = s ? 'none' : 'block';
+}
+function loadSlot(){
+  const i = Number(document.getElementById('slot').value);
+  const q = QL[i]; if (!q) return;
+  const short = !q.opts || q.opts.length === 0;
+  document.getElementById('fq').value = q.q;
+  document.getElementById('fexp').value = q.exp || '';
+  document.getElementById('fshort').checked = short;
+  document.getElementById('fans').value = short ? (q.ans || '') : '';
+  toggleShort();
+  const radios = document.querySelectorAll('input[name=fc]');
+  for (let k = 0; k < 4; k++){
+    document.getElementById('fo' + k).value = (q.opts && q.opts[k]) || '';
+    radios[k].checked = !short && q.c === k;
+  }
+  document.getElementById('fmsg').textContent = '';
+}
+function editSlot(idx){
+  if (idx === null || idx === undefined) return;
+  document.getElementById('slot').value = idx;
+  loadSlot();
+  document.getElementById('fq').scrollIntoView({behavior:'smooth', block:'center'});
+}
+async function saveSlot(){
+  const i = Number(document.getElementById('slot').value);
+  const short = document.getElementById('fshort').checked;
+  const opts = [0,1,2,3].map(k => document.getElementById('fo' + k).value);
+  const cc = document.querySelector('input[name=fc]:checked');
+  const q = {q: document.getElementById('fq').value, exp: document.getElementById('fexp').value,
+             short: short, ans: document.getElementById('fans').value,
+             opts: short ? [] : opts, c: cc ? Number(cc.value) : null};
+  const msg = document.getElementById('fmsg');
+  const r = await fetch('/api/admin', {method:'POST', headers:{'Content-Type':'application/json'},
+                        body: JSON.stringify({pin: PIN, action: 'save', idx: i, q: q})});
+  const j = await r.json();
+  if (!r.ok){ msg.textContent = j.error; return; }
+  await loadQs(); loadSlot();
+  document.getElementById('fmsg').textContent = 'Saqlandi ✔';
+}
+
+load(); setInterval(load, 1000);
+</script>
+</body></html>
