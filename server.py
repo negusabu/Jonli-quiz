@@ -1,6 +1,7 @@
-"""JEO QUIZ — jonli server va Gemini AI integratsiyasi (avtomatik qayta urinish bilan)."""
+"""JEO QUIZ — jonli server, Gemini AI va fayl/prezentatsiya asosida savol generatori."""
 import json, os, random, socket, sys, threading, collections, glob, time
-import concurrent.futures
+import io, re, base64, zipfile
+import xml.etree.ElementTree as ET
 import urllib.request, urllib.error
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -21,7 +22,7 @@ load_dotenv()
 
 PORT = int(os.environ.get('PORT', 8000))
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '').strip()
-GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-3.8-flash').strip()
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash-lite').strip()
 
 def resolve_qs_path():
     if len(sys.argv) > 1:
@@ -77,47 +78,140 @@ state = {
     'shown_opts': [], 'shown_c': None,
 }
 
-def call_gemini(prompt, json_mode=False, temperature=0.7):
+# --- FAYL VA PREZENTATSIYA MATNINI AJRATIB OLISH ---
+
+def extract_file_payload(filename, file_b64):
+    """Yuklangan fayldan matn yoki PDF inlineData ajratib oladi."""
+    if not file_b64:
+        raise RuntimeError('Fayl ma’lumotlari bo‘sh')
+    if ',' in file_b64 and file_b64.startswith('data:'):
+        file_b64 = file_b64.split(',', 1)[1]
+    try:
+        raw = base64.b64decode(file_b64)
+    except Exception:
+        raise RuntimeError('Faylni o‘qib bo‘lmadi (noto‘g‘ri format)')
+
+    if len(raw) > 14 * 1024 * 1024:
+        raise RuntimeError('Fayl hajmi 14 MB dan oshmasligi kerak')
+
+    ext = os.path.splitext(str(filename or '').lower())[1]
+
+    if ext == '.pdf':
+        return 'pdf', base64.b64encode(raw).decode('ascii')
+
+    if ext == '.pptx':
+        try:
+            slides_text = []
+            with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                slide_files = [
+                    name for name in zf.namelist()
+                    if re.match(r'^ppt/slides/slide\d+\.xml$', name)
+                ]
+                slide_files.sort(key=lambda s: int(re.search(r'(\d+)', s).group(1)))
+                for idx, sname in enumerate(slide_files, 1):
+                    root = ET.fromstring(zf.read(sname))
+                    texts = [
+                        el.text.strip() for el in root.iter()
+                        if el.tag.endswith('}t') and el.text and el.text.strip()
+                    ]
+                    if texts:
+                        slides_text.append(f'--- {idx}-slayd ---\n' + ' '.join(texts))
+            full_text = '\n\n'.join(slides_text).strip()
+        except Exception as e:
+            raise RuntimeError(f'Prezentatsiyani (.pptx) o‘qishda xato: {e}')
+        if len(full_text) < 30:
+            raise RuntimeError('Prezentatsiyadan matn topilmadi (faqat rasmlardan iborat bo‘lishi mumkin)')
+        return 'text', full_text[:28000]
+
+    if ext == '.docx':
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                root = ET.fromstring(zf.read('word/document.xml'))
+                paras = []
+                for p in root.iter():
+                    if p.tag.endswith('}p'):
+                        t_parts = [
+                            el.text for el in p.iter()
+                            if el.tag.endswith('}t') and el.text
+                        ]
+                        line = ''.join(t_parts).strip()
+                        if line:
+                            paras.append(line)
+            full_text = '\n'.join(paras).strip()
+        except Exception as e:
+            raise RuntimeError(f'Word hujjatini (.docx) o‘qishda xato: {e}')
+        if len(full_text) < 30:
+            raise RuntimeError('Hujjat ichida matn topilmadi')
+        return 'text', full_text[:28000]
+
+    if ext in ('.txt', '.md', '.csv', '.json', '.html', '.htm'):
+        full_text = raw.decode('utf8', errors='ignore').strip()
+        if len(full_text) < 30:
+            raise RuntimeError('Matnli fayl juda qisqa yoki bo‘sh')
+        return 'text', full_text[:28000]
+
+    raise RuntimeError('Qo‘llab-quvvatlanadigan formatlar: .pptx, .docx, .pdf, .txt, .md')
+
+# --- GEMINI AI FUNKSIYALARI ---
+
+def call_gemini(prompt, json_mode=False, temperature=0.7, extra_parts=None):
     api_key = os.environ.get('GEMINI_API_KEY', '').strip() or GEMINI_API_KEY
-    model = os.environ.get('GEMINI_MODEL', '').strip() or GEMINI_MODEL
+    primary = os.environ.get('GEMINI_MODEL', '').strip() or GEMINI_MODEL
     if not api_key:
         raise RuntimeError('GEMINI_API_KEY topilmadi. Render yoki .env fayliga kalitni kiriting.')
-    url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
+
+    candidates = []
+    for m in [primary, 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-3.8-flash']:
+        if m and m not in candidates:
+            candidates.append(m)
+
+    parts = list(extra_parts or []) + [{'text': prompt}]
     gen_cfg = {'temperature': temperature}
     if json_mode:
         gen_cfg['responseMimeType'] = 'application/json'
     payload = {
-        'contents': [{'parts': [{'text': prompt}]}],
+        'contents': [{'parts': parts}],
         'generationConfig': gen_cfg
     }
     body_bytes = json.dumps(payload).encode('utf8')
 
     raw = None
-    last_err = None
-    for attempt in range(4):
-        req = urllib.request.Request(
-            url,
-            data=body_bytes,
-            headers={'Content-Type': 'application/json'},
-            method='POST'
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                raw = json.loads(resp.read().decode('utf8'))
+    last_err = 'Gemini javob bermadi'
+    for model in candidates:
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
+        for attempt in range(2):
+            req = urllib.request.Request(
+                url,
+                data=body_bytes,
+                headers={'Content-Type': 'application/json'},
+                method='POST'
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=85) as resp:
+                    raw = json.loads(resp.read().decode('utf8'))
+                    break
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode('utf8', errors='ignore')
+                last_err = f'Gemini API xatosi ({e.code}, {model}): {err_body[:160]}'
+                if e.code in (404, 429):
+                    break
+                if e.code in (500, 502, 503, 504) and attempt == 0:
+                    time.sleep(2.0)
+                    continue
                 break
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode('utf8', errors='ignore')
-            last_err = f'Gemini API xatosi ({e.code}): {err_body[:180]}'
-            if e.code in (429, 500, 502, 503, 504) and attempt < 3:
-                time.sleep(2.0 * (attempt + 1) + random.uniform(0.3, 1.2))
-                continue
-            raise RuntimeError(last_err)
-        except Exception as e:
-            last_err = f'Gemini serveriga ulanib bo‘lmadi: {e}'
-            if attempt < 3:
-                time.sleep(1.5 * (attempt + 1))
-                continue
-            raise RuntimeError(last_err)
+            except Exception as e:
+                last_err = f'Ulanish xatosi ({model}): {e}'
+                if attempt == 0:
+                    time.sleep(1.5)
+                    continue
+                break
+        if raw is not None:
+            break
+
+    if raw is None:
+        if '429' in last_err:
+            raise RuntimeError('Bepul API limiti (kvota) vaqtincha tugadi. 1 daqiqa kutib qayta bosing.')
+        raise RuntimeError(last_err)
 
     try:
         text = raw['candidates'][0]['content']['parts'][0]['text'].strip()
@@ -132,62 +226,81 @@ def call_gemini(prompt, json_mode=False, temperature=0.7):
         return json.loads(text)
     return text
 
-def ai_generate_category(topic, cname, level):
-    prompt = f"""O‘zbek tilida "Jeo Quiz" o‘yini uchun "{topic}" mavzusining "{cname}" bo‘limiga ({level}) 5 ta test savoli tuz (100, 200, 300, 400, 500 ball).
-Faqat quyidagi JSON formatida qaytar:
-{{
-  "questions": [
-    {{"pts": 100, "q": "Qisqa savol", "opts": ["A", "B", "C", "D"], "c": 0, "exp": "1 gaplik izoh"}}
-  ]
-}}
-Qoidalar: ketma-ket 100, 200, 300, 400, 500 ballik 5 ta savol, 4 ta qisqa variant, "c" (0..3) turlicha bo‘lsin, matnlar ixcham va ravon o‘zbek tilida bo‘lsin."""
-    data = call_gemini(prompt, json_mode=True, temperature=0.7)
-    qs_list = data.get('questions') or []
-    if len(qs_list) != 5:
-        raise RuntimeError(f'"{cname}" bo‘limida 5 ta savol chiqmadi')
-    cat_qs = []
-    for idx, item in enumerate(qs_list):
-        opts = [str(x).strip() for x in (item.get('opts') or [])][:4]
-        if len(opts) < 4:
-            raise RuntimeError('Variantlar to‘liq shakllanmadi')
-        c = int(item.get('c', 0))
-        if not (0 <= c < 4):
-            c = 0
-        cat_qs.append({
-            'cat': cname,
-            'pts': (idx + 1) * 100,
-            'q': str(item.get('q', '')).strip(),
-            'opts': opts,
-            'c': c,
-            'exp': str(item.get('exp', 'Izoh')).strip()
-        })
-    return cat_qs
-
-def ai_generate_board(topic, level='universitet talabalari'):
-    cat_prompt = f"""O‘zbek tilida "{topic}" mavzusi ({level}) bo‘yicha intellektual viktorina uchun 5 ta alohida sub-kategoriya nomini tuz.
-Faqat quyidagi JSON formatida qaytar:
-{{"categories": ["1-bo‘lim", "2-bo‘lim", "3-bo‘lim", "4-bo‘lim", "5-bo‘lim"]}}
-Har bir nom 1-3 so‘zdan iborat qisqa va o‘zbek tilida bo‘lsin."""
-    cat_data = call_gemini(cat_prompt, json_mode=True, temperature=0.7)
-    raw_cats = [str(x).strip()[:35] for x in (cat_data.get('categories') or []) if str(x).strip()]
-    cats = []
-    for c in raw_cats:
-        if c not in cats:
-            cats.append(c)
-    if len(cats) < 5:
-        raise RuntimeError('AI 5 ta kategoriya tuza olmadi, qayta urinib ko‘ring')
-    cats = cats[:5]
-
+def _parse_board_json(data):
+    cats = data.get('b') or data.get('categories') or []
+    if len(cats) != 5:
+        raise RuntimeError('AI 5 ta kategoriya qaytarmadi, qayta urinib ko‘ring')
     result = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
-        futures = [ex.submit(ai_generate_category, topic, cname, level) for cname in cats]
-        for fut in futures:
-            result.extend(fut.result())
-
+    for cat_obj in cats:
+        cname = str(cat_obj.get('n') or cat_obj.get('name') or 'Kategoriya').strip()[:35]
+        qs_list = cat_obj.get('s') or cat_obj.get('questions') or []
+        if len(qs_list) != 5:
+            raise RuntimeError(f'"{cname}" kategoriyasida 5 ta savol chiqmadi')
+        for idx, item in enumerate(qs_list):
+            opts = [str(x).strip() for x in (item.get('o') or item.get('opts') or [])][:4]
+            if len(opts) < 4:
+                raise RuntimeError('Variantlar to‘liq shakllanmadi')
+            c = int(item.get('c', 0))
+            if not (0 <= c < 4):
+                c = 0
+            result.append({
+                'cat': cname,
+                'pts': (idx + 1) * 100,
+                'q': str(item.get('q', '')).strip(),
+                'opts': opts,
+                'c': c,
+                'exp': str(item.get('e') or item.get('exp') or 'Izoh').strip()
+            })
     errs, new_cats, _ = check_quiz(result)
     if errs:
         raise RuntimeError('AI generatsiya tekshiruvidan o‘tmadi: ' + errs[0])
     return result, new_cats
+
+def ai_generate_board(topic, level='universitet talabalari'):
+    prompt = f"""O‘zbek tilida "Jeo Quiz" o‘yini uchun "{topic}" mavzusida ({level}) 5 ta kategoriya va har birida 5 tadan jami 25 ta test savoli tuz.
+Faqat quyidagi ixcham JSON formatida qaytar:
+{{
+  "b": [
+    {{
+      "n": "Kategoriya (2 so‘z)",
+      "s": [
+        {{"q": "Qisqa savol", "o": ["A", "B", "C", "D"], "c": 0, "e": "1 gaplik qisqa izoh"}}
+      ]
+    }}
+  ]
+}}
+Qoidalar: "b" da aynan 5 ta kategoriya, har bir "s" da 100 dan 500 ballgacha qiyinlashuvchi 5 ta savol, 4 ta qisqa variant ("o"), to‘g‘ri indeks "c" (0..3) turlicha bo‘lsin."""
+    data = call_gemini(prompt, json_mode=True, temperature=0.7)
+    return _parse_board_json(data)
+
+def ai_generate_from_file(filename, file_b64, focus_topic='', level='universitet talabalari'):
+    kind, content = extract_file_payload(filename, file_b64)
+    focus_line = f'Asosiy e’tibor qaratiladigan mavzu/bo‘lim: "{focus_topic}".' if focus_topic else 'Fayldagi barcha asosiy bo‘limlarni qamrab ol.'
+    schema_instructions = f"""O‘zbek tilida "Jeo Quiz" o‘yini uchun taqdim etilgan fayl ("{filename}") mazmuniga asoslanib ({level}) 5 ta kategoriya va har birida 5 tadan jami 25 ta test savoli tuz.
+{focus_line}
+Faqat quyidagi ixcham JSON formatida qaytar:
+{{
+  "b": [
+    {{
+      "n": "Kategoriya (2 so‘z)",
+      "s": [
+        {{"q": "Fayl asosidagi qisqa savol", "o": ["A", "B", "C", "D"], "c": 0, "e": "1 gaplik qisqa izoh"}}
+      ]
+    }}
+  ]
+}}
+Qoidalar:
+1. Savollar aynan yuklangan fayldagi fakt, formula, tushuncha va ma’lumotlarga tayansin.
+2. "b" da aynan 5 ta kategoriya, har bir "s" da 100 dan 500 ballgacha qiyinlashuvchi 5 ta savol bo‘lsin.
+3. Har savolda 4 ta qisqa variant ("o"), to‘g‘ri indeks "c" (0..3) turlicha taqsimlansin, hamma matnlar o‘zbek tilida bo‘lsin."""
+
+    if kind == 'pdf':
+        extra = [{'inlineData': {'mimeType': 'application/pdf', 'data': content}}]
+        data = call_gemini(schema_instructions, json_mode=True, temperature=0.5, extra_parts=extra)
+    else:
+        prompt = f"{schema_instructions}\n\n--- FAYL MATNI BOSHLANDI ---\n{content}\n--- FAYL MATNI TUGADI ---"
+        data = call_gemini(prompt, json_mode=True, temperature=0.5)
+    return _parse_board_json(data)
 
 def ai_generate_single(cat, pts, hint=''):
     prompt = f"""O‘zbek tilidagi "Jeo Quiz" o‘yini uchun BITTA test savoli tuz.
@@ -357,6 +470,8 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         global QS, _cats
         n = int(self.headers.get('Content-Length', 0) or 0)
+        if n > 20 * 1024 * 1024:
+            return self._json({'error': 'Fayl juda katta (maksimum 14 MB)'}, 413)
         try:
             data = json.loads(self.rfile.read(n) or b'{}')
         except Exception:
@@ -409,6 +524,30 @@ class H(BaseHTTPRequestHandler):
                     return self._json({'error': 'Mavzu nomini kamida 3 harf bilan yozing'}, 400)
                 try:
                     new_qs, new_cats = ai_generate_board(topic, level)
+                except Exception as e:
+                    return self._json({'error': str(e)}, 500)
+                with lock:
+                    QS = new_qs
+                    _cats = new_cats
+                    try:
+                        save_questions()
+                    except Exception:
+                        pass
+                    state.update(
+                        cur=None, revealed=False, used=[False] * len(QS),
+                        answers={}, text_answers={}, ai_grades={}, ai_note=''
+                    )
+                    return self._json(public_state(admin=True))
+
+            if act == 'ai_generate_from_file':
+                filename = str(data.get('filename', '')).strip()
+                file_b64 = str(data.get('file_b64', '')).strip()
+                topic = str(data.get('topic', '')).strip()
+                level = str(data.get('level', 'universitet talabalari')).strip()
+                if not filename or not file_b64:
+                    return self._json({'error': 'Fayl tanlanmagan'}, 400)
+                try:
+                    new_qs, new_cats = ai_generate_from_file(filename, file_b64, topic, level)
                 except Exception as e:
                     return self._json({'error': str(e)}, 500)
                 with lock:
@@ -496,58 +635,4 @@ class H(BaseHTTPRequestHandler):
                         save_questions()
                     except Exception as e:
                         return self._json({'error': 'Faylga saqlashda xato: ' + str(e)}, 500)
-                elif act == 'reveal':
-                    if state['cur'] is not None:
-                        state['revealed'] = True
-                elif act == 'close':
-                    state.update(
-                        cur=None, revealed=False, answers={},
-                        text_answers={}, ai_grades={}, ai_note=''
-                    )
-                elif act == 'award' and state['cur'] is not None:
-                    t, sign = data.get('team'), data.get('sign', 1)
-                    if isinstance(t, int) and 0 <= t < 4:
-                        state['scores'][t] += sign * QS[state['cur']]['pts']
-                elif act == 'score':
-                    t, d = data.get('team'), data.get('delta')
-                    if isinstance(t, int) and 0 <= t < 4 and isinstance(d, int):
-                        state['scores'][t] += d
-                elif act == 'rename':
-                    names = data.get('teams')
-                    if isinstance(names, list) and len(names) == 4:
-                        state['teams'] = [str(x)[:30] or f'Jamoa {i+1}' for i, x in enumerate(names)]
-                elif act == 'reset':
-                    state.update(
-                        scores=[0, 0, 0, 0], cur=None, revealed=False,
-                        used=[False] * len(QS), answers={},
-                        text_answers={}, ai_grades={}, ai_note=''
-                    )
-                else:
-                    return self._json({'error': 'Noma‘lum amal'}, 400)
-                return self._json(public_state(admin=True))
-
-        self._send(404, 'Topilmadi', 'text/plain; charset=utf-8')
-
-if __name__ == '__main__':
-    ip = local_ip()
-    ai_status = f'ULANGAN ({GEMINI_MODEL})' if GEMINI_API_KEY else 'ULANMAGAN (GEMINI_API_KEY yo‘q)'
-    print('=' * 56)
-    print(f'  Quiz fayli: {os.path.basename(QS_PATH)}  ({len(QS)} savol)')
-    letters = ['A', 'B', 'C', 'D']
-    print('  To‘g‘ri javoblar: ' + '  '.join(f'{letters[k]}={_dist.get(k, 0)}' for k in range(4)))
-    print(f'  Gemini AI:  {ai_status}')
-    print('  JEO QUIZ server ishga tushdi')
-    print(f'  O‘quvchilar uchun:  http://{ip}:{PORT}')
-    print(f'  O‘qituvchi paneli:  http://{ip}:{PORT}/admin')
-    print(f'  Admin PIN:          {PIN}')
-    print('  To‘xtatish: Ctrl+C')
-    print('=' * 56)
-    try:
-        srv = QuietServer(('0.0.0.0', PORT), H)
-    except OSError:
-        print(f'\nXATO: {PORT}-port band. Avval eski serverni to‘xtating (Ctrl+C).')
-        sys.exit(1)
-    try:
-        srv.serve_forever()
-    except KeyboardInterrupt:
-        pass
+                elif act ==
