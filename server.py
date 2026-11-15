@@ -1,5 +1,6 @@
-"""JEO QUIZ — jonli server va Gemini AI integratsiyasi."""
+"""JEO QUIZ — jonli server va Gemini AI integratsiyasi (parallel tezkor versiya)."""
 import json, os, random, socket, sys, threading, collections, glob
+import concurrent.futures
 import urllib.request, urllib.error
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -96,7 +97,7 @@ def call_gemini(prompt, json_mode=False, temperature=0.7):
         method='POST'
     )
     try:
-        with urllib.request.urlopen(req, timeout=110) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:
             raw = json.loads(resp.read().decode('utf8'))
     except urllib.error.HTTPError as e:
         err_body = e.read().decode('utf8', errors='ignore')
@@ -117,45 +118,58 @@ def call_gemini(prompt, json_mode=False, temperature=0.7):
         return json.loads(text)
     return text
 
-def ai_generate_board(topic, level='universitet talabalari'):
-    prompt = f"""O‘zbek tilida "Jeo Quiz" o‘yini uchun "{topic}" mavzusida ({level}) 5 ta kategoriya va har birida 5 tadan (100, 200, 300, 400, 500 ball) jami 25 ta test savoli tuz.
+def ai_generate_category(topic, cname, level):
+    prompt = f"""O‘zbek tilida "Jeo Quiz" o‘yini uchun "{topic}" mavzusining "{cname}" bo‘limiga ({level}) 5 ta test savoli tuz (100, 200, 300, 400, 500 ball).
 Faqat quyidagi JSON formatida qaytar:
 {{
-  "categories": [
-    {{
-      "name": "Kategoriya nomi (2 so‘z)",
-      "questions": [
-        {{"pts": 100, "q": "Qisqa aniq savol", "opts": ["A", "B", "C", "D"], "c": 0, "exp": "1 qisqa gaplik izoh"}}
-      ]
-    }}
+  "questions": [
+    {{"pts": 100, "q": "Qisqa savol", "opts": ["A", "B", "C", "D"], "c": 0, "exp": "1 gaplik izoh"}}
   ]
 }}
-Qoidalar: 5 ta kategoriya, har birida ketma-ket 100..500 ballik 5 ta savol, 4 ta qisqa variant, "c" indeksi (0..3) turlicha taqsimlansin, savol va izohlar juda ixcham va ravon o‘zbek tilida bo‘lsin."""
+Qoidalar: ketma-ket 100, 200, 300, 400, 500 ballik 5 ta savol, 4 ta qisqa variant, "c" (0..3) turlicha bo‘lsin, matnlar ixcham va ravon o‘zbek tilida bo‘lsin."""
     data = call_gemini(prompt, json_mode=True, temperature=0.7)
-    cats = data.get('categories') or []
-    if len(cats) != 5:
-        raise RuntimeError('AI 5 ta kategoriya qaytarmadi, qayta urinib ko‘ring')
+    qs_list = data.get('questions') or []
+    if len(qs_list) != 5:
+        raise RuntimeError(f'"{cname}" bo‘limida 5 ta savol chiqmadi')
+    cat_qs = []
+    for idx, item in enumerate(qs_list):
+        opts = [str(x).strip() for x in (item.get('opts') or [])][:4]
+        if len(opts) < 4:
+            raise RuntimeError('Variantlar to‘liq shakllanmadi')
+        c = int(item.get('c', 0))
+        if not (0 <= c < 4):
+            c = 0
+        cat_qs.append({
+            'cat': cname,
+            'pts': (idx + 1) * 100,
+            'q': str(item.get('q', '')).strip(),
+            'opts': opts,
+            'c': c,
+            'exp': str(item.get('exp', 'Izoh')).strip()
+        })
+    return cat_qs
+
+def ai_generate_board(topic, level='universitet talabalari'):
+    cat_prompt = f"""O‘zbek tilida "{topic}" mavzusi ({level}) bo‘yicha intellektual viktorina uchun 5 ta alohida sub-kategoriya nomini tuz.
+Faqat quyidagi JSON formatida qaytar:
+{{"categories": ["1-bo‘lim", "2-bo‘lim", "3-bo‘lim", "4-bo‘lim", "5-bo‘lim"]}}
+Har bir nom 1-3 so‘zdan iborat qisqa va o‘zbek tilida bo‘lsin."""
+    cat_data = call_gemini(cat_prompt, json_mode=True, temperature=0.7)
+    raw_cats = [str(x).strip()[:35] for x in (cat_data.get('categories') or []) if str(x).strip()]
+    cats = []
+    for c in raw_cats:
+        if c not in cats:
+            cats.append(c)
+    if len(cats) < 5:
+        raise RuntimeError('AI 5 ta kategoriya tuza olmadi, qayta urinib ko‘ring')
+    cats = cats[:5]
+
     result = []
-    for cat_obj in cats:
-        cname = str(cat_obj.get('name', 'Kategoriya')).strip()[:35]
-        qs_list = cat_obj.get('questions') or []
-        if len(qs_list) != 5:
-            raise RuntimeError(f'"{cname}" kategoriyasida 5 ta savol chiqmadi')
-        for idx, item in enumerate(qs_list):
-            opts = [str(x).strip() for x in (item.get('opts') or [])][:4]
-            if len(opts) < 4:
-                raise RuntimeError('Variantlar to‘liq shakllanmadi')
-            c = int(item.get('c', 0))
-            if not (0 <= c < 4):
-                c = 0
-            result.append({
-                'cat': cname,
-                'pts': (idx + 1) * 100,
-                'q': str(item.get('q', '')).strip(),
-                'opts': opts,
-                'c': c,
-                'exp': str(item.get('exp', 'Izoh')).strip()
-            })
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
+        futures = [ex.submit(ai_generate_category, topic, cname, level) for cname in cats]
+        for fut in futures:
+            result.extend(fut.result())
+
     errs, new_cats, _ = check_quiz(result)
     if errs:
         raise RuntimeError('AI generatsiya tekshiruvidan o‘tmadi: ' + errs[0])
