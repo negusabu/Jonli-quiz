@@ -20,7 +20,7 @@ load_dotenv()
 
 PORT = int(os.environ.get('PORT', 8000))
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '').strip()
-GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash').strip()
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-3.8-flash').strip()
 
 def resolve_qs_path():
     if len(sys.argv) > 1:
@@ -76,13 +76,12 @@ state = {
     'shown_opts': [], 'shown_c': None,
 }
 
-# --- GEMINI AI YORDAMCHI FUNKSIYALARI ---
-
 def call_gemini(prompt, json_mode=False, temperature=0.7):
     api_key = os.environ.get('GEMINI_API_KEY', '').strip() or GEMINI_API_KEY
+    model = os.environ.get('GEMINI_MODEL', '').strip() or GEMINI_MODEL
     if not api_key:
         raise RuntimeError('GEMINI_API_KEY topilmadi. Render yoki .env fayliga kalitni kiriting.')
-    url = f'https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}'
+    url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
     gen_cfg = {'temperature': temperature}
     if json_mode:
         gen_cfg['responseMimeType'] = 'application/json'
@@ -96,8 +95,8 @@ def call_gemini(prompt, json_mode=False, temperature=0.7):
         headers={'Content-Type': 'application/json'},
         method='POST'
     )
-        try:
-        with urllib.request.urlopen(req, timeout=95) as resp:
+    try:
+        with urllib.request.urlopen(req, timeout=110) as resp:
             raw = json.loads(resp.read().decode('utf8'))
     except urllib.error.HTTPError as e:
         err_body = e.read().decode('utf8', errors='ignore')
@@ -126,47 +125,12 @@ Faqat quyidagi JSON formatida qaytar:
     {{
       "name": "Kategoriya nomi (2 so‘z)",
       "questions": [
-        {{"pts": 100, "q": "Qisqa aniq savol", "opts": ["A", "B", "C", "D"], "c": 0, "exp": "1 gaplik qisqa izoh"}}
+        {{"pts": 100, "q": "Qisqa aniq savol", "opts": ["A", "B", "C", "D"], "c": 0, "exp": "1 qisqa gaplik izoh"}}
       ]
     }}
   ]
 }}
-Qoidalar: 5 ta kategoriya, har birida ketma-ket 100..500 ballik 5 ta savol, 4 ta qisqa variant, "c" indeksi (0..3) turlicha taqsimlansin, hamma matnlar qisqa va ravon o‘zbek tilida bo‘lsin."""
-    data = call_gemini(prompt, json_mode=True, temperature=0.7)
-    cats = data.get('categories') or []
-    if len(cats) != 5:
-        raise RuntimeError('AI 5 ta kategoriya qaytarmadi, qayta urinib ko‘ring')
-    result = []
-    for cat_obj in cats:
-        cname = str(cat_obj.get('name', 'Kategoriya')).strip()[:35]
-        qs_list = cat_obj.get('questions') or []
-        if len(qs_list) != 5:
-            raise RuntimeError(f'"{cname}" kategoriyasida 5 ta savol chiqmadi')
-        for idx, item in enumerate(qs_list):
-            opts = [str(x).strip() for x in (item.get('opts') or [])][:4]
-            if len(opts) < 4:
-                raise RuntimeError('Variantlar to‘liq shakllanmadi')
-            c = int(item.get('c', 0))
-            if not (0 <= c < 4):
-                c = 0
-            result.append({
-                'cat': cname,
-                'pts': (idx + 1) * 100,
-                'q': str(item.get('q', '')).strip(),
-                'opts': opts,
-                'c': c,
-                'exp': str(item.get('exp', 'Izoh')).strip()
-            })
-    errs, new_cats, _ = check_quiz(result)
-    if errs:
-        raise RuntimeError('AI generatsiya tekshiruvidan o‘tmadi: ' + errs[0])
-    return result, new_cats
-
-Talablar:
-1. Hamma matnlar ravon, imloviy to‘g‘ri o‘zbek tilida bo‘lsin.
-2. "categories" ro‘yxatida aynan 5 ta kategoriya, har birida "pts" qiymatlari ketma-ket 100, 200, 300, 400, 500 bo‘lgan 5 ta savol bo‘lsin.
-3. "opts" ro‘yxatida 4 ta variant bo‘lsin, "c" esa to‘g‘ri variantning indeksi (0, 1, 2 yoki 3) bo‘lsin va turli savollarda turlicha taqsimlansin.
-4. Savollar oson (100) dan murakkab tahliliy (500) gacha qiyinlashib borsin."""
+Qoidalar: 5 ta kategoriya, har birida ketma-ket 100..500 ballik 5 ta savol, 4 ta qisqa variant, "c" indeksi (0..3) turlicha taqsimlansin, savol va izohlar juda ixcham va ravon o‘zbek tilida bo‘lsin."""
     data = call_gemini(prompt, json_mode=True, temperature=0.7)
     cats = data.get('categories') or []
     if len(cats) != 5:
@@ -248,8 +212,6 @@ Har bir jamoa indeksi uchun quyidagi JSON formatida natija qaytar:
 }}"""
     res = call_gemini(prompt, json_mode=True, temperature=0.2)
     return res if isinstance(res, dict) else {}
-
-# --- ASOSIY SERVER LOGIKASI ---
 
 def save_questions():
     path = QS_PATH
@@ -412,7 +374,6 @@ class H(BaseHTTPRequestHandler):
                 return self._json({'error': 'PIN noto‘g‘ri'}, 403)
             act = data.get('action')
 
-            # --- GEMINI AI AMALLARI (lock tashqarisida tarmoq so'rovi) ---
             if act == 'ai_generate_board':
                 topic = str(data.get('topic', '')).strip()
                 level = str(data.get('level', 'universitet talabalari')).strip()
@@ -478,7 +439,6 @@ class H(BaseHTTPRequestHandler):
                     state['ai_grades'] = grades
                     return self._json(public_state(admin=True))
 
-            # --- STANDART BOSHQARUV AMALLARI ---
             with lock:
                 if act == 'open':
                     idx = data.get('idx')
