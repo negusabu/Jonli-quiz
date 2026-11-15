@@ -1,5 +1,5 @@
-"""JEO QUIZ — jonli server va Gemini AI integratsiyasi (parallel tezkor versiya)."""
-import json, os, random, socket, sys, threading, collections, glob
+"""JEO QUIZ — jonli server va Gemini AI integratsiyasi (avtomatik qayta urinish bilan)."""
+import json, os, random, socket, sys, threading, collections, glob, time
 import concurrent.futures
 import urllib.request, urllib.error
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -90,20 +90,34 @@ def call_gemini(prompt, json_mode=False, temperature=0.7):
         'contents': [{'parts': [{'text': prompt}]}],
         'generationConfig': gen_cfg
     }
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode('utf8'),
-        headers={'Content-Type': 'application/json'},
-        method='POST'
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            raw = json.loads(resp.read().decode('utf8'))
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode('utf8', errors='ignore')
-        raise RuntimeError(f'Gemini API xatosi ({e.code}): {err_body[:180]}')
-    except Exception as e:
-        raise RuntimeError(f'Gemini serveriga ulanib bo‘lmadi: {e}')
+    body_bytes = json.dumps(payload).encode('utf8')
+
+    raw = None
+    last_err = None
+    for attempt in range(4):
+        req = urllib.request.Request(
+            url,
+            data=body_bytes,
+            headers={'Content-Type': 'application/json'},
+            method='POST'
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                raw = json.loads(resp.read().decode('utf8'))
+                break
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode('utf8', errors='ignore')
+            last_err = f'Gemini API xatosi ({e.code}): {err_body[:180]}'
+            if e.code in (429, 500, 502, 503, 504) and attempt < 3:
+                time.sleep(2.0 * (attempt + 1) + random.uniform(0.3, 1.2))
+                continue
+            raise RuntimeError(last_err)
+        except Exception as e:
+            last_err = f'Gemini serveriga ulanib bo‘lmadi: {e}'
+            if attempt < 3:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            raise RuntimeError(last_err)
 
     try:
         text = raw['candidates'][0]['content']['parts'][0]['text'].strip()
@@ -165,7 +179,7 @@ Har bir nom 1-3 so‘zdan iborat qisqa va o‘zbek tilida bo‘lsin."""
     cats = cats[:5]
 
     result = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
         futures = [ex.submit(ai_generate_category, topic, cname, level) for cname in cats]
         for fut in futures:
             result.extend(fut.result())
