@@ -96,8 +96,8 @@ def call_gemini(prompt, json_mode=False, temperature=0.7):
         headers={'Content-Type': 'application/json'},
         method='POST'
     )
-    try:
-        with urllib.request.urlopen(req, timeout=45) as resp:
+        try:
+        with urllib.request.urlopen(req, timeout=95) as resp:
             raw = json.loads(resp.read().decode('utf8'))
     except urllib.error.HTTPError as e:
         err_body = e.read().decode('utf8', errors='ignore')
@@ -119,25 +119,49 @@ def call_gemini(prompt, json_mode=False, temperature=0.7):
     return text
 
 def ai_generate_board(topic, level='universitet talabalari'):
-    prompt = f"""Sen o‘zbek tilidagi intellektual "Jeo Quiz" (Jeopardy uslubidagi) o‘yini uchun savol tuzuvchi ekspertsan.
-Mavzu: "{topic}". Auditoriya darajasi: {level}.
-Quyidagi qat'iy JSON formatida 5 ta kategoriya va har birida 5 tadan (100, 200, 300, 400, 500 ballik) jami 25 ta savol tuz:
+    prompt = f"""O‘zbek tilida "Jeo Quiz" o‘yini uchun "{topic}" mavzusida ({level}) 5 ta kategoriya va har birida 5 tadan (100, 200, 300, 400, 500 ball) jami 25 ta test savoli tuz.
+Faqat quyidagi JSON formatida qaytar:
 {{
   "categories": [
     {{
-      "name": "Kategoriya nomi (qisqa, 2-3 so‘z)",
+      "name": "Kategoriya nomi (2 so‘z)",
       "questions": [
-        {{
-          "pts": 100,
-          "q": "Savol matni (aniq va tushunarli)",
-          "opts": ["A varianti", "B varianti", "C varianti", "D varianti"],
-          "c": 0,
-          "exp": "To‘g‘ri javobning 1-2 gaplik qisqa ilmiy-amaliy izohi"
-        }}
+        {{"pts": 100, "q": "Qisqa aniq savol", "opts": ["A", "B", "C", "D"], "c": 0, "exp": "1 gaplik qisqa izoh"}}
       ]
     }}
   ]
 }}
+Qoidalar: 5 ta kategoriya, har birida ketma-ket 100..500 ballik 5 ta savol, 4 ta qisqa variant, "c" indeksi (0..3) turlicha taqsimlansin, hamma matnlar qisqa va ravon o‘zbek tilida bo‘lsin."""
+    data = call_gemini(prompt, json_mode=True, temperature=0.7)
+    cats = data.get('categories') or []
+    if len(cats) != 5:
+        raise RuntimeError('AI 5 ta kategoriya qaytarmadi, qayta urinib ko‘ring')
+    result = []
+    for cat_obj in cats:
+        cname = str(cat_obj.get('name', 'Kategoriya')).strip()[:35]
+        qs_list = cat_obj.get('questions') or []
+        if len(qs_list) != 5:
+            raise RuntimeError(f'"{cname}" kategoriyasida 5 ta savol chiqmadi')
+        for idx, item in enumerate(qs_list):
+            opts = [str(x).strip() for x in (item.get('opts') or [])][:4]
+            if len(opts) < 4:
+                raise RuntimeError('Variantlar to‘liq shakllanmadi')
+            c = int(item.get('c', 0))
+            if not (0 <= c < 4):
+                c = 0
+            result.append({
+                'cat': cname,
+                'pts': (idx + 1) * 100,
+                'q': str(item.get('q', '')).strip(),
+                'opts': opts,
+                'c': c,
+                'exp': str(item.get('exp', 'Izoh')).strip()
+            })
+    errs, new_cats, _ = check_quiz(result)
+    if errs:
+        raise RuntimeError('AI generatsiya tekshiruvidan o‘tmadi: ' + errs[0])
+    return result, new_cats
+
 Talablar:
 1. Hamma matnlar ravon, imloviy to‘g‘ri o‘zbek tilida bo‘lsin.
 2. "categories" ro‘yxatida aynan 5 ta kategoriya, har birida "pts" qiymatlari ketma-ket 100, 200, 300, 400, 500 bo‘lgan 5 ta savol bo‘lsin.
