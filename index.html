@@ -1,140 +1,271 @@
 <!DOCTYPE html>
 <html lang="uz"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Jeo Quiz</title>
+<title>Jeo Quiz — Jonli O‘yin</title>
 <style>
-body{margin:0;background:#08102B;color:#fff;font-family:Arial,Helvetica,sans-serif;min-height:100vh}
-.w{max-width:640px;margin:0 auto;padding:14px}
-h1{color:#FFC72C;text-align:center;font-size:26px;margin:8px 0 14px}
-.card{background:#13245C;border-radius:14px;padding:18px;margin-bottom:14px}
-.meta{display:flex;justify-content:space-between;color:#2F8BFF;font-weight:bold;font-size:17px;margin-bottom:8px}
-.meta span:last-child{color:#FFC72C}
-.big{font-size:23px;font-weight:bold;line-height:1.35}
-button{display:block;width:100%;font:inherit;font-size:19px;color:#fff;background:#1B3180;border:none;border-radius:10px;padding:15px;margin:8px 0;text-align:left;cursor:pointer}
-button:disabled{cursor:default}
-button.sel{background:#2F8BFF}
-input{font:inherit;font-size:18px;width:100%;box-sizing:border-box;padding:14px;border-radius:10px;border:none;margin:10px 0}
-.logout{font-size:14px;color:#B8C4E0;cursor:pointer;text-decoration:underline;margin-left:8px}
-button.ok{background:#1E8E4E}
-button.bad{background:#B3261E}
-.teamb{text-align:center;background:#1E63D6;font-weight:bold;font-size:22px}
-.muted{color:#B8C4E0;text-align:center;font-size:18px}
-.exp{border-left:5px solid #FFC72C;padding:10px 12px;background:#0c1842;border-radius:8px;margin-top:12px;font-size:18px;line-height:1.4}
-.ainote{border-left:5px solid #8B5CF6;padding:10px 12px;background:#101a4a;border-radius:8px;margin-top:10px;font-size:17px;line-height:1.45}
-table{width:100%;border-collapse:collapse;font-size:18px}
-td{padding:8px 4px;border-bottom:1px solid #1B3180}
-tr.me td{color:#FFC72C;font-weight:bold}
-.right{text-align:right}
-.chg{font-size:14px;color:#B8C4E0;text-align:center;margin-top:6px;cursor:pointer;text-decoration:underline}
+body{margin:0;background:#08102B;color:#fff;font-family:Arial,Helvetica,sans-serif}
+.w{max-width:960px;margin:0 auto;padding:12px}
+h1{color:#FFC72C;text-align:center;margin:6px 0 12px;font-size:24px}
+.card{background:#13245C;border-radius:12px;padding:14px;margin-bottom:12px}
+.scores{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.sc{background:#13245C;border:1px solid #1E63D6;border-radius:10px;padding:8px;text-align:center}
+.sc .t{font-size:13px;color:#B8C4E0}
+.sc .v{font-size:22px;font-weight:bold;color:#FFC72C}
+.board{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.cat{background:#1E63D6;text-align:center;font-size:12px;font-weight:bold;padding:8px 4px;border-radius:6px;min-height:34px;display:flex;align-items:center;justify-content:center}
+.cell{background:#13245C;color:#FFC72C;font-weight:bold;font-size:19px;border:2px solid #1E63D6;border-radius:6px;padding:12px 0;text-align:center}
+.cell.used{background:#3a3f4e;color:#7b8190;border-color:#3a3f4e;text-decoration:line-through}
+.cell.cur{background:#FFC72C;color:#000;border-color:#FFC72C}
+.q{font-size:21px;font-weight:bold;line-height:1.35;margin:8px 0 12px}
+.optbtn{display:block;width:100%;text-align:left;padding:13px 14px;margin:7px 0;border-radius:10px;border:2px solid #2F8BFF;background:#0c1842;color:#fff;font-size:17px;cursor:pointer}
+.optbtn.chosen{background:#2563EB;border-color:#FFC72C}
+.optbtn.sel{background:#D97706;border-color:#FFC72C;color:#000;font-weight:bold}
+.optbtn.ok{background:#1E8E4E;border-color:#7CFC9A;color:#fff;font-weight:bold}
+.optbtn.bad{background:#B3261E;border-color:#FF8A80;color:#fff;font-weight:bold}
+.optbtn.hid{opacity:.22;text-decoration:line-through;pointer-events:none}
+.aibox{background:#0c1842;border-left:4px solid #8B5CF6;padding:10px;border-radius:8px;margin-top:10px;font-size:15px;line-height:1.45}
+.pill{display:inline-block;padding:4px 10px;border-radius:20px;font-size:13px;font-weight:bold;background:#1E63D6;margin-right:6px}
+.pill.used{background:#2d3448;color:#7b8190;text-decoration:line-through}
+.ladder{display:flex;flex-direction:column-reverse;gap:3px;margin-top:10px}
+.lstep{display:flex;justify-content:space-between;padding:4px 8px;border-radius:5px;font-size:13px;background:#0c1842;color:#B8C4E0}
+.lstep.safe{color:#FFC72C;font-weight:bold}
+.lstep.done{background:#133b2e;color:#7CFC9A}
+.lstep.cur{background:#FFC72C;color:#000;font-weight:bold}
+.barwrap{background:#0c1842;border-radius:6px;overflow:hidden;height:22px;margin:4px 0;position:relative}
+.barfill{background:#2563EB;height:100%}
+.bartxt{position:absolute;left:8px;top:2px;font-size:13px;font-weight:bold}
+input,select,button{font:inherit;padding:10px;border-radius:8px;border:none;box-sizing:border-box}
+button.gold{background:#FFC72C;color:#000;font-weight:bold;cursor:pointer}
+.row{display:flex;gap:8px;flex-wrap:wrap}
 </style></head>
 <body><div class="w">
-<h1>JEO QUIZ</h1>
-<div id="app"></div>
+<h1 id="title">JEO QUIZ</h1>
+
+<div class="card" id="loginbox">
+  <div class="row">
+    <input id="pname" placeholder="Ismingiz" style="flex:2;min-width:140px">
+    <select id="pteam" style="flex:2;min-width:140px"></select>
+    <button class="gold" onclick="doLogin()" style="flex:1;min-width:90px">Kirish</button>
+  </div>
+  <div id="lstatus" style="font-size:13px;color:#7CFC9A;margin-top:6px"></div>
+</div>
+
+<div class="scores" id="scores"></div>
+<div id="main"></div>
 </div>
 <script>
-let S = null, team = localStorage.getItem('team'), mine = null, sentText = false, lastCur = undefined, qKey = '';
 const L = ['A','B','C','D'];
+let S = null, teamsBuilt = false, myChoice = null, lastCur = null, myVote = null, lastMilStep = null;
+let myName = sessionStorage.getItem('pname') || '';
+let myTeam = sessionStorage.getItem('pteam');
+myTeam = (myTeam !== null && myTeam !== '') ? Number(myTeam) : null;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = n => Number(n || 0).toLocaleString('ru-RU');
 
-async function poll(){
-  try {
-    S = await (await fetch('/api/state', {cache:'no-store'})).json();
-    if (S.cur !== lastCur){ mine = null; sentText = false; lastCur = S.cur; qKey = ''; }
-    render();
-  } catch(e){ document.getElementById('app').dataset.err = '1'; }
-}
-
-function chooseTeam(i){ team = String(i); localStorage.setItem('team', team); sendLogin(); qKey=''; render(); }
-function changeTeam(){ localStorage.removeItem('team'); team = null; sendLogin(); qKey=''; render(); }
-function logout(){ localStorage.removeItem('name'); localStorage.removeItem('team'); team = null; qKey=''; render(); }
-async function sendLogin(){
-  const name = localStorage.getItem('name');
-  if (!name) return;
-  try { await fetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name: name, team: team===null ? null : Number(team)})}); } catch(e){}
-}
-async function doLogin(){
-  const v = document.getElementById('nm').value.trim();
-  if (v.length < 2){ alert('Ismingizni to‘liq yozing'); return; }
-  localStorage.setItem('name', v);
-  await sendLogin();
+async function load(){
+  const r = await fetch('/api/state', {cache:'no-store'});
+  if (!r.ok) return;
+  S = await r.json();
   render();
 }
 
-async function answer(c){
-  if (mine !== null || !S || S.revealed || S.cur === null) return;
-  mine = c; qKey = ''; render();
-  await fetch('/api/answer', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({team: Number(team), choice: c})});
+async function doLogin(){
+  const name = document.getElementById('pname').value.trim();
+  const tv = document.getElementById('pteam').value;
+  const team = tv === '' ? null : Number(tv);
+  const r = await fetch('/api/login', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({name, team})
+  });
+  const j = await r.json();
+  if (!r.ok){ alert(j.error); return; }
+  myName = name; myTeam = team;
+  sessionStorage.setItem('pname', myName);
+  sessionStorage.setItem('pteam', myTeam === null ? '' : String(myTeam));
+  document.getElementById('lstatus').textContent = `Kirdingiz: ${myName}`;
+}
+
+async function sendAnswer(choice){
+  if (myTeam === null){ alert('Avval yuqoridan jamoangizni tanlab «Kirish» tugmasini bosing!'); return; }
+  const r = await fetch('/api/answer', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({team: myTeam, choice})
+  });
+  if (r.ok) myChoice = choice;
 }
 
 async function sendTextAnswer(){
-  const inp = document.getElementById('txtans');
-  const val = inp ? inp.value.trim() : '';
-  if (!val || sentText) return;
-  sentText = true; qKey = ''; render();
-  await fetch('/api/answer', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({team: Number(team), text: val})});
+  if (myTeam === null){ alert('Avval yuqoridan jamoangizni tanlab «Kirish» tugmasini bosing!'); return; }
+  const txt = document.getElementById('txtans').value.trim();
+  if (!txt) return;
+  const r = await fetch('/api/answer', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({team: myTeam, text: txt})
+  });
+  if (r.ok) myChoice = txt;
+}
+
+async function sendMilVote(choice){
+  const voter = myName || ('mehmon_' + (sessionStorage.getItem('vid') || (() => {
+    const id = Math.random().toString(36).slice(2,8);
+    sessionStorage.setItem('vid', id);
+    return id;
+  })()));
+  const r = await fetch('/api/mil_vote', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({voter, choice})
+  });
+  if (r.ok) myVote = choice;
 }
 
 function render(){
-  const app = document.getElementById('app');
   if (!S) return;
-  if (!localStorage.getItem('name')){
-    if (!document.getElementById('nm')){
-      app.innerHTML = '<div class="card"><div class="big" style="text-align:center">Ismingizni yozing</div><input id="nm" maxlength="30" placeholder="Ism va familiya" onkeydown="if(event.key===\'Enter\')doLogin()"><button class="teamb" onclick="doLogin()">KIRISH</button></div>';
-    }
-    return;
+  if (!teamsBuilt){
+    const sel = document.getElementById('pteam');
+    sel.innerHTML = `<option value="">Jamoani tanlang</option>` + S.teams.map((t,i)=>`<option value="${i}">${esc(t)}</option>`).join('');
+    if (myName) document.getElementById('pname').value = myName;
+    if (myTeam !== null) sel.value = String(myTeam);
+    if (myName) document.getElementById('lstatus').textContent = `Kirdingiz: ${myName}`;
+    teamsBuilt = true;
   }
-  if (team === null || team === undefined || team === '' || Number(team) >= S.teams.length){
-    app.innerHTML = '<div class="card"><div class="big" style="text-align:center">Jamoangizni tanlang</div></div>' +
-      S.teams.map((t,i)=>`<button class="teamb" onclick="chooseTeam(${i})">${esc(t)}</button>`).join('');
-    return;
-  }
-  const t = Number(team);
-  if (!document.getElementById('qbox')) {
-    app.innerHTML = '<div id="hdr" class="muted"></div><div id="qbox"></div><div id="sbox"></div>';
-    qKey = '';
-  }
-  document.getElementById('hdr').innerHTML = `Siz: <b style="color:#FFC72C">${esc(localStorage.getItem('name'))}</b> — ${esc(S.teams[t])} &nbsp; <span class="chg" onclick="changeTeam()">jamoa o‘zgartirish</span> <span class="logout" onclick="logout()">chiqish</span>`;
 
-  const q = S.question;
-  const k = [S.cur, S.revealed, mine, sentText, S.ai_note || ''].join('|');
-  const qbox = document.getElementById('qbox');
-  if (!q){
-    qbox.innerHTML = '<div class="card"><div class="big" style="text-align:center">Savol kutilmoqda…</div><div class="muted">O‘qituvchi savolni ochishini kuting</div></div>';
-  } else if (k !== qKey){
-    qKey = k;
-    let b = `<div class="card"><div class="meta"><span>${esc(q.cat)}</span><span>${q.pts} ball</span></div><div class="big">${esc(q.q)}</div>`;
-    if (q.opts.length){
-      q.opts.forEach((o,c)=>{
-        let cls = '';
-        if (S.revealed){ if (c === q.c) cls = 'ok'; else if (c === mine) cls = 'bad'; }
-        else if (c === mine) cls = 'sel';
-        b += `<button class="${cls}" ${(mine!==null||S.revealed)?'disabled':''} onclick="answer(${c})">${L[c]})  ${esc(o)}</button>`;
+  document.getElementById('scores').innerHTML = S.teams.map((t,i)=>
+    `<div class="sc"><div class="t">${esc(t)}</div><div class="v">${S.scores[i]}</div></div>`
+  ).join('');
+
+  const main = document.getElementById('main');
+  if (S.mode === 'millionaire'){
+    document.getElementById('title').textContent = 'KIM MILLIONER BO‘LISHNI XOHLAYDI?';
+    renderMilPlayer(main);
+    return;
+  }
+
+  document.getElementById('title').textContent = 'JEO QUIZ';
+  if (S.cur !== lastCur){ lastCur = S.cur; myChoice = null; }
+
+  let h = '';
+  if (S.question){
+    const q = S.question;
+    h += `<div class="card" style="border:2px solid #FFC72C">
+      <div style="color:#FFC72C;font-weight:bold">${esc(q.cat)} • ${q.pts} ball</div>
+      <div class="q">${esc(q.q)}</div>`;
+    if (q.opts && q.opts.length){
+      q.opts.forEach((o,i)=>{
+        let cls = 'optbtn';
+        if (S.revealed){
+          if (i === q.c) cls += ' ok';
+          else if (i === myChoice) cls += ' bad';
+        } else if (i === myChoice){
+          cls += ' chosen';
+        }
+        h += `<button class="${cls}" ${S.revealed?'disabled':''} onclick="sendAnswer(${i})">${L[i]}) ${esc(o)}</button>`;
       });
-      if (mine !== null && !S.revealed) b += '<div class="muted">Javob yuborildi. Natijani kuting…</div>';
+    } else if (!S.revealed){
+      h += `<div class="row"><input id="txtans" placeholder="Javobingizni yozing" style="flex:3"><button class="gold" onclick="sendTextAnswer()" style="flex:1">Yuborish</button></div>`;
     } else {
-      if (!S.revealed && !sentText){
-        b += `<input id="txtans" maxlength="250" placeholder="Jamoa javobini yozing yoki og‘zaki ayting"><button class="teamb" onclick="sendTextAnswer()">JAVOBNI YUBORISH</button>`;
-      } else if (sentText && !S.revealed){
-        b += '<div class="muted">Yozma javob yuborildi. Natijani kuting…</div>';
-      }
+      h += `<div class="optbtn ok">To‘g‘ri javob: ${esc(q.ans || '')}</div>`;
     }
-    if (S.revealed){
-      const ans = q.opts.length ? q.opts[q.c] : q.ans;
-      b += `<div class="exp"><b>To‘g‘ri javob:</b> ${esc(ans)}<br>${esc(q.exp)}</div>`;
+    if (S.revealed && q.exp){
+      h += `<div class="aibox"><b>Izoh:</b> ${esc(q.exp)}</div>`;
     }
     if (S.ai_note){
-      b += `<div class="ainote"><b>Gemini AI izohi:</b><br>${esc(S.ai_note)}</div>`;
+      h += `<div class="aibox"><b>Gemini AI misoli:</b><br>${esc(S.ai_note)}</div>`;
     }
-    b += '</div>';
-    qbox.innerHTML = b;
+    h += `</div>`;
   }
 
-  const order = S.scores.map((s,i)=>i).sort((a,b)=>S.scores[b]-S.scores[a]);
-  document.getElementById('sbox').innerHTML = '<div class="card"><table>' +
-    order.map(i=>`<tr class="${i===t?'me':''}"><td>${esc(S.teams[i])}</td><td class="right">${S.scores[i]}</td></tr>`).join('') +
-    '</table></div>';
+  h += `<div class="card"><div class="board">` + (S.cats||[]).map(c=>`<div class="cat">${esc(c)}</div>`).join('');
+  for (let r=0;r<5;r++){
+    for (let c=0;c<5;c++){
+      const idx = c*5 + r;
+      const cls = 'cell' + (S.used[idx]?' used':'') + (S.cur===idx?' cur':'');
+      h += `<div class="${cls}">${(r+1)*100}</div>`;
+    }
+  }
+  h += `</div></div>`;
+  main.innerHTML = h;
 }
 
-if (localStorage.getItem('name')) sendLogin();
-poll(); setInterval(poll, 1000);
+function renderMilPlayer(main){
+  const m = S.mil;
+  if (!m){
+    main.innerHTML = '<div class="card">Boshlovchi o‘yinni boshlashini kuting...</div>';
+    return;
+  }
+  if (m.step !== lastMilStep){ lastMilStep = m.step; myVote = null; }
+  const q = m.question;
+  const ll = m.lifelines || {};
+  const prizes = m.prizes || [];
+  const safes = m.safe_steps || [];
+
+  let h = `<div class="card" style="border:2px solid #FFC72C">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+      <div>Ishtirokchi: <b style="color:#FFC72C">${esc(m.player)}</b></div>
+      <div>Pog‘ona: <b>${m.step + 1}/${m.total_steps}</b> • Yutuq: <b style="color:#7CFC9A">${fmt(m.won)} ball</b></div>
+    </div>
+    <div style="margin-bottom:10px">
+      <span class="pill ${ll.fifty?'':'used'}">50:50</span>
+      <span class="pill ${ll.audience?'':'used'}">Guruh yordami</span>
+      <span class="pill ${ll.ai?'':'used'}">Gemini AI</span>
+    </div>
+    <div style="font-size:13px;color:#93C5FD">${esc(q.cat)} • ${fmt(prizes[m.step] || 0)} balllik savol</div>
+    <div class="q">${esc(q.q)}</div>`;
+
+  q.opts.forEach((opt, i) => {
+    const isHid = (m.hidden_opts || []).includes(i);
+    let cls = 'optbtn';
+    if (isHid) cls += ' hid';
+    if (m.revealed){
+      if (i === q.c) cls += ' ok';
+      else if (i === m.selected) cls += ' bad';
+    } else if (i === m.selected){
+      cls += ' sel';
+    }
+    const canVote = m.audience_open && !m.revealed && !isHid;
+    const voteTag = (canVote && myVote === i) ? ' (Sizning ovozingiz)' : '';
+    h += `<button class="${cls}" ${canVote?'':'disabled'} onclick="sendMilVote(${i})">${L[i]}) ${esc(opt)}${voteTag}</button>`;
+  });
+
+  if (m.audience_open){
+    h += `<div style="color:#FFC72C;font-weight:bold;margin-top:6px">Guruh yordami faol! Yuqoridan to‘g‘ri variantga ovoz bering.</div>`;
+  }
+  if (m.audience_open || m.vote_total > 0){
+    const tot = m.vote_total || 0;
+    h += `<div class="aibox"><b>Guruh ovozi (${tot} ta ovoz):</b>`;
+    for (let i = 0; i < 4; i++){
+      if ((m.hidden_opts || []).includes(i)) continue;
+      const cnt = (m.vote_counts || [])[i] || 0;
+      const pct = tot ? Math.round(cnt * 100 / tot) : 0;
+      h += `<div class="barwrap"><div class="barfill" style="width:${pct}%"></div><div class="bartxt">${L[i]}: ${pct}% (${cnt})</div></div>`;
+    }
+    h += `</div>`;
+  }
+  if (m.ai_hint){
+    h += `<div class="aibox"><b>Gemini AI maslahati:</b><br>${esc(m.ai_hint)}</div>`;
+  }
+  if (m.revealed && q.exp){
+    h += `<div class="aibox"><b>Izoh:</b> ${esc(q.exp)}</div>`;
+  }
+  if (m.status === 'won'){
+    h += `<div class="aibox" style="border-color:#FFC72C;color:#FFC72C;font-weight:bold;font-size:17px">TABRIKLAYMIZ! ${esc(m.player)} 1 000 000 BALL YUTDI!</div>`;
+  } else if (m.status === 'lost'){
+    h += `<div class="aibox" style="border-color:#B3261E;color:#FF8A80;font-weight:bold">O‘yin tugadi! Kafolatlangan yutuq: ${fmt(m.won)} ball.</div>`;
+  } else if (m.status === 'walked'){
+    h += `<div class="aibox" style="border-color:#1E8E4E;color:#7CFC9A;font-weight:bold">${esc(m.player)} ${fmt(m.won)} ball bilan o‘yinni yakunladi!</div>`;
+  }
+  h += `</div>`;
+
+  h += `<div class="card"><b style="color:#FFC72C">YUTUQ ZINAPOYASI</b><div class="ladder">` +
+    prizes.map((p, idx) => {
+      let cls = 'lstep';
+      if (safes.includes(idx)) cls += ' safe';
+      if (idx < m.step || (idx === m.step && m.revealed && m.status !== 'lost')) cls += ' done';
+      else if (idx === m.step) cls += ' cur';
+      return `<div class="${cls}"><span>${idx + 1}-savol</span><span>${fmt(p)} ball</span></div>`;
+    }).join('') + `</div></div>`;
+
+  main.innerHTML = h;
+}
+
+load(); setInterval(load, 1000);
 </script>
 </body></html>
