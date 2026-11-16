@@ -1,5 +1,5 @@
-"""JEO QUIZ — jonli server va avtomatik model aniqlovchi Gemini AI."""
-import json, os, random, socket, sys, threading, collections, glob, time
+"""JEO QUIZ — jonli server va barqaror JSON parserli Gemini AI."""
+import json, os, random, re, socket, sys, threading, collections, glob, time
 import urllib.request, urllib.error
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -79,14 +79,26 @@ state = {
 }
 
 def extract_json_obj(text):
+    text = text.strip()
+    if text.startswith('```'):
+        lines = text.splitlines()
+        if lines[0].startswith('```'):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith('```'):
+            lines = lines[:-1]
+        text = '\n'.join(lines).strip()
     start = text.find('{')
     end = text.rfind('}')
     if start != -1 and end != -1 and end > start:
-        return json.loads(text[start:end + 1])
-    return json.loads(text)
+        text = text[start:end + 1]
+    try:
+        return json.loads(text, strict=False)
+    except Exception:
+        cleaned = re.sub(r',\s*([}\]])', r'\1', text)
+        return json.loads(cleaned, strict=False)
 
 def discover_models(api_key):
-    url = f'https://generativelanguage.googleapis.com/v1beta/models?key={api_key}'
+    url = f'[https://generativelanguage.googleapis.com/v1beta/models?key=](https://generativelanguage.googleapis.com/v1beta/models?key=){api_key}'
     try:
         with urllib.request.urlopen(url, timeout=15) as resp:
             data = json.loads(resp.read().decode('utf8'))
@@ -101,7 +113,7 @@ def discover_models(api_key):
     except Exception:
         return []
 
-def call_gemini(prompt, json_mode=False, temperature=0.7):
+def call_gemini(prompt, json_mode=False, temperature=0.6):
     api_key = os.environ.get('GEMINI_API_KEY', '').strip() or GEMINI_API_KEY
     primary = os.environ.get('GEMINI_MODEL', '').strip() or GEMINI_MODEL
     if not api_key:
@@ -128,12 +140,12 @@ def call_gemini(prompt, json_mode=False, temperature=0.7):
     def try_models(model_list):
         nonlocal raw, real_err, fallback_err
         for model in model_list:
-            url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
+            url = f'[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){model}:generateContent?key={api_key}'
             is_gemma = model.startswith('gemma')
             think_mode = 'none' if is_gemma else ('minimal' if 'gemini-3' in model else 'zero')
 
             for attempt in range(2):
-                gen_cfg = {'temperature': temperature, 'maxOutputTokens': 1500}
+                gen_cfg = {'temperature': temperature, 'maxOutputTokens': 4096}
                 if json_mode and not is_gemma:
                     gen_cfg['responseMimeType'] = 'application/json'
                 if think_mode == 'minimal':
@@ -198,12 +210,18 @@ def call_gemini(prompt, json_mode=False, temperature=0.7):
 def ai_generate_category(topic, cname, level):
     prompt = f"""O‘zbek tilida "{topic}" mavzusining "{cname}" bo‘limi uchun ({level}) 5 ta qisqa test savoli tuz (100, 200, 300, 400, 500 ball).
 FAQAT shu JSON formatida qaytar:
-{{"s":[{{"q":"Savol","o":["A","B","C","D"],"c":0,"e":"1 gap izoh"}}]}}
-Qoidalar: "s" da 5 ta savol (100..500 ball), 4 ta qisqa variant, "c" (0..3) turlicha bo‘lsin."""
-    for _ in range(2):
-        data = call_gemini(prompt, json_mode=True, temperature=0.7)
-        qs_list = data.get('s') or data.get('questions') or []
-        if len(qs_list) == 5:
+{{"s":[{{"q":"Savol matni","o":["A","B","C","D"],"c":0,"e":"1 gap izoh"}}]}}
+Qoidalar:
+- "s" da aynan 5 ta savol (100..500 ball), 4 ta qisqa variant, "c" (0..3) turlicha bo‘lsin;
+- Savol, variant va izoh matni ichida qo‘shtirnoq (") belgisini umuman ishlatma (kerak bo‘lsa « » ishlat)."""
+    last_e = None
+    for _ in range(3):
+        try:
+            data = call_gemini(prompt, json_mode=True, temperature=0.6)
+            qs_list = data.get('s') or data.get('questions') or []
+            if len(qs_list) != 5:
+                last_e = RuntimeError(f'"{cname}" bo‘limida 5 ta savol chiqmadi')
+                continue
             cat_qs = []
             ok = True
             for idx, item in enumerate(qs_list):
@@ -224,7 +242,10 @@ Qoidalar: "s" da 5 ta savol (100..500 ball), 4 ta qisqa variant, "c" (0..3) turl
                 })
             if ok:
                 return cat_qs
-    raise RuntimeError(f'"{cname}" bo‘limida 5 ta savol shakllanmadi')
+        except Exception as e:
+            last_e = e
+            time.sleep(0.6)
+    raise RuntimeError(f'"{cname}" bo‘limida xato: {last_e}')
 
 def bg_generate_board(topic, level):
     global QS, _cats
@@ -232,8 +253,9 @@ def bg_generate_board(topic, level):
         with lock:
             state['ai_status'] = '5 ta kategoriya nomi tuzilmoqda...'
         cat_prompt = f"""O‘zbek tilida "{topic}" mavzusi ({level}) uchun 5 ta alohida bo‘lim nomini tuz.
+Matn ichida qo‘shtirnoq (") ishlatma.
 FAQAT shu JSONni qaytar: {{"categories":["1-nom","2-nom","3-nom","4-nom","5-nom"]}}"""
-        cat_data = call_gemini(cat_prompt, json_mode=True, temperature=0.7)
+        cat_data = call_gemini(cat_prompt, json_mode=True, temperature=0.6)
         raw_cats = [str(x).strip()[:35] for x in (cat_data.get('categories') or []) if str(x).strip()]
         cats = []
         for c in raw_cats:
@@ -250,7 +272,7 @@ FAQAT shu JSONni qaytar: {{"categories":["1-nom","2-nom","3-nom","4-nom","5-nom"
             cat_qs = ai_generate_category(topic, cname, level)
             result.extend(cat_qs)
             if i < 4:
-                time.sleep(0.5)
+                time.sleep(0.4)
 
         errs, new_cats, _ = check_quiz(result)
         if errs:
@@ -277,8 +299,9 @@ FAQAT shu JSONni qaytar: {{"categories":["1-nom","2-nom","3-nom","4-nom","5-nom"
 
 def ai_generate_single(cat, pts, hint=''):
     prompt = f"""O‘zbek tilida "{cat}" kategoriyasi uchun {pts} ballik BITTA test savoli tuz ({hint or 'qiziqarli savol'}).
+Matn ichida qo‘shtirnoq (") ishlatma (kerak bo‘lsa « » ishlat).
 FAQAT shu JSONni qaytar: {{"q":"Savol","opts":["A","B","C","D"],"c":1,"exp":"Qisqa izoh"}}"""
-    item = call_gemini(prompt, json_mode=True, temperature=0.8)
+    item = call_gemini(prompt, json_mode=True, temperature=0.7)
     opts = [str(x).strip() for x in (item.get('opts') or [])][:4]
     c = int(item.get('c', 0))
     if len(opts) < 2 or not (0 <= c < len(opts)):
@@ -302,6 +325,7 @@ def ai_grade_short_answers(q, text_answers):
         return {}
     prompt = f"""Javoblarni etalon bilan solishtir. Savol: {q['q']} | Etalon: {q.get('ans', '')}
 Javoblar: {json.dumps(submitted, ensure_ascii=False)}
+Matn ichida qo‘shtirnoq (") ishlatma.
 FAQAT shu JSONni qaytar: {{"0":{{"percent":90,"verdict":"To‘g‘ri","comment":"1 gap izoh"}}}}"""
     res = call_gemini(prompt, json_mode=True, temperature=0.2)
     return res if isinstance(res, dict) else {}
