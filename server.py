@@ -1,4 +1,4 @@
-"""JEO QUIZ + KIM MILLIONER BO'LISHNI XOHLAYDI — jonli server va Gemini AI."""
+"""JEO QUIZ + MILLIONER BO'LISH — jonli server va Gemini AI."""
 import base64, collections, glob, io, json, os, random, re, socket, sys, threading, time, zipfile
 import urllib.request, urllib.error
 import xml.etree.ElementTree as ET
@@ -143,6 +143,77 @@ def start_millionaire_run(player_name='Ishtirokchi', team_idx=None):
     }
     prepare_mil_step(mil, 0)
     state['mil'] = mil
+
+def apply_mil_action(act, data):
+    mil = state.get('mil')
+    if act == 'select':
+        c = data.get('choice')
+        if not mil or not mil['active'] or mil['revealed']:
+            return 'Hozir variant tanlab bo‘lmaydi'
+        if not (isinstance(c, int) and 0 <= c < 4) or c in mil['hidden_opts']:
+            return 'Noto‘g‘ri variant'
+        mil['selected'] = c
+        return None
+    if act == 'reveal':
+        if not mil or not mil['active'] or mil['revealed']:
+            return 'Tekshirish uchun faol savol yo‘q'
+        if mil['selected'] is None:
+            return 'Avval variantni tanlang'
+        mil['revealed'] = True
+        mil['audience_open'] = False
+        step = mil['step']
+        if mil['selected'] == mil['shown_c']:
+            mil['won'] = MIL_PRIZES[step]
+            if step >= len(mil['ladder']) - 1:
+                mil['status'] = 'won'
+                mil['active'] = False
+        else:
+            safe_won = 0
+            for s_idx, s_val in MIL_SAFE.items():
+                if step > s_idx:
+                    safe_won = s_val
+            mil['won'] = safe_won
+            mil['status'] = 'lost'
+            mil['active'] = False
+        return None
+    if act == 'next':
+        if not mil or not mil['revealed'] or mil['status'] != 'playing':
+            return 'Keyingi savolga o‘tib bo‘lmaydi'
+        if mil['step'] + 1 >= len(mil['ladder']):
+            mil['status'] = 'won'
+            mil['active'] = False
+        else:
+            prepare_mil_step(mil, mil['step'] + 1)
+        return None
+    if act == 'walk':
+        if not mil or not mil['active']:
+            return 'Faol o‘yin yo‘q'
+        mil['status'] = 'walked'
+        mil['active'] = False
+        mil['audience_open'] = False
+        return None
+    if act == '5050':
+        if not mil or not mil['active'] or mil['revealed']:
+            return 'Hozir 50:50 ishlatib bo‘lmaydi'
+        if not mil['lifelines'].get('fifty'):
+            return '50:50 allaqachon ishlatilgan'
+        wrongs = [i for i in range(4) if i != mil['shown_c']]
+        random.shuffle(wrongs)
+        mil['hidden_opts'] = sorted(wrongs[:2])
+        if mil['selected'] in mil['hidden_opts']:
+            mil['selected'] = None
+        mil['lifelines']['fifty'] = False
+        return None
+    if act == 'audience':
+        if not mil or not mil['active'] or mil['revealed']:
+            return 'Hozir guruh yordami ishlatib bo‘lmaydi'
+        if not mil['lifelines'].get('audience'):
+            return 'Guruh yordami allaqachon ishlatilgan'
+        mil['lifelines']['audience'] = False
+        mil['audience_open'] = True
+        mil['votes'] = {}
+        return None
+    return 'Noma‘lum amal'
 
 def extract_json_obj(text):
     text = text.strip()
@@ -766,6 +837,38 @@ class H(BaseHTTPRequestHandler):
                 mil['votes'][voter] = c
                 return self._json({'ok': True})
 
+        if p == '/api/mil_play':
+            act = data.get('action')
+            if state['mode'] != 'millionaire':
+                return self._json({'error': 'Millioner rejimi faol emas'}, 400)
+            if act == 'ai':
+                with lock:
+                    mil = state.get('mil')
+                    if not mil or not mil['active'] or mil['revealed']:
+                        return self._json({'error': 'Hozir AI yordami mumkin emas'}, 400)
+                    if not mil['lifelines'].get('ai'):
+                        return self._json({'error': 'Gemini AI yordami allaqachon ishlatilgan'}, 400)
+                    q_obj = QS[mil['ladder'][mil['step']]]
+                    q_text = q_obj['q']
+                    opts_copy = list(mil['shown_opts'])
+                    hidden_copy = list(mil['hidden_opts'])
+                    c_copy = mil['shown_c']
+                try:
+                    hint_txt = ai_millionaire_hint(q_text, opts_copy, hidden_copy, c_copy)
+                except Exception as e:
+                    return self._json({'error': str(e)}, 500)
+                with lock:
+                    mil = state.get('mil')
+                    if mil:
+                        mil['lifelines']['ai'] = False
+                        mil['ai_hint'] = hint_txt
+                return self._json({'ok': True})
+            with lock:
+                err = apply_mil_action(act, data)
+                if err:
+                    return self._json({'error': err}, 400)
+                return self._json({'ok': True})
+
         if p == '/api/admin':
             if data.get('pin') != PIN:
                 return self._json({'error': 'PIN noto‘g‘ri'}, 403)
@@ -897,73 +1000,11 @@ class H(BaseHTTPRequestHandler):
                         start_millionaire_run(player or 'Ishtirokchi', team)
                     except Exception as e:
                         return self._json({'error': str(e)}, 400)
-                elif act == 'mil_select':
-                    mil = state.get('mil')
-                    c = data.get('choice')
-                    if not mil or not mil['active'] or mil['revealed']:
-                        return self._json({'error': 'Hozir variant tanlab bo‘lmaydi'}, 400)
-                    if not (isinstance(c, int) and 0 <= c < 4) or c in mil['hidden_opts']:
-                        return self._json({'error': 'Noto‘g‘ri variant'}, 400)
-                    mil['selected'] = c
-                elif act == 'mil_reveal':
-                    mil = state.get('mil')
-                    if not mil or not mil['active'] or mil['revealed']:
-                        return self._json({'error': 'Tekshirish uchun faol savol yo‘q'}, 400)
-                    if mil['selected'] is None:
-                        return self._json({'error': 'Avval ishtirokchi tanlagan variantni bosing'}, 400)
-                    mil['revealed'] = True
-                    mil['audience_open'] = False
-                    step = mil['step']
-                    if mil['selected'] == mil['shown_c']:
-                        mil['won'] = MIL_PRIZES[step]
-                        if step >= len(mil['ladder']) - 1:
-                            mil['status'] = 'won'
-                            mil['active'] = False
-                    else:
-                        safe_won = 0
-                        for s_idx, s_val in MIL_SAFE.items():
-                            if step > s_idx:
-                                safe_won = s_val
-                        mil['won'] = safe_won
-                        mil['status'] = 'lost'
-                        mil['active'] = False
-                elif act == 'mil_next':
-                    mil = state.get('mil')
-                    if not mil or not mil['revealed'] or mil['status'] != 'playing':
-                        return self._json({'error': 'Keyingi savolga o‘tib bo‘lmaydi'}, 400)
-                    if mil['step'] + 1 >= len(mil['ladder']):
-                        mil['status'] = 'won'
-                        mil['active'] = False
-                    else:
-                        prepare_mil_step(mil, mil['step'] + 1)
-                elif act == 'mil_walk':
-                    mil = state.get('mil')
-                    if not mil or not mil['active']:
-                        return self._json({'error': 'Faol o‘yin yo‘q'}, 400)
-                    mil['status'] = 'walked'
-                    mil['active'] = False
-                    mil['audience_open'] = False
-                elif act == 'mil_5050':
-                    mil = state.get('mil')
-                    if not mil or not mil['active'] or mil['revealed']:
-                        return self._json({'error': 'Hozir 50:50 ishlatib bo‘lmaydi'}, 400)
-                    if not mil['lifelines'].get('fifty'):
-                        return self._json({'error': '50:50 allaqachon ishlatilgan'}, 400)
-                    wrongs = [i for i in range(4) if i != mil['shown_c']]
-                    random.shuffle(wrongs)
-                    mil['hidden_opts'] = sorted(wrongs[:2])
-                    if mil['selected'] in mil['hidden_opts']:
-                        mil['selected'] = None
-                    mil['lifelines']['fifty'] = False
-                elif act == 'mil_audience':
-                    mil = state.get('mil')
-                    if not mil or not mil['active'] or mil['revealed']:
-                        return self._json({'error': 'Hozir guruh yordami ishlatib bo‘lmaydi'}, 400)
-                    if not mil['lifelines'].get('audience'):
-                        return self._json({'error': 'Guruh yordami allaqachon ishlatilgan'}, 400)
-                    mil['lifelines']['audience'] = False
-                    mil['audience_open'] = True
-                    mil['votes'] = {}
+                elif act in ('mil_select', 'mil_reveal', 'mil_next', 'mil_walk', 'mil_5050', 'mil_audience'):
+                    sub = act.replace('mil_', '')
+                    err = apply_mil_action(sub, data)
+                    if err:
+                        return self._json({'error': err}, 400)
                 elif act == 'mil_credit':
                     mil = state.get('mil')
                     if not mil or mil['credited'] or mil['won'] <= 0:
