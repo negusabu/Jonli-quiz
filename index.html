@@ -4,7 +4,7 @@
 <style>
 body{margin:0;background:#08102B;color:#fff;font-family:Arial,Helvetica,sans-serif}
 .w{max-width:960px;margin:0 auto;padding:12px}
-h1{color:#FFC72C;text-align:center;margin:6px 0 12px;font-size:24px}
+h1{color:#FFC72C;text-align:center;margin:6px 0 12px;font-size:23px}
 .card{background:#13245C;border-radius:12px;padding:14px;margin-bottom:12px}
 .scores{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
 .sc{background:#13245C;border:1px solid #1E63D6;border-radius:10px;padding:8px;text-align:center}
@@ -15,13 +15,49 @@ h1{color:#FFC72C;text-align:center;margin:6px 0 12px;font-size:24px}
 .cell{background:#13245C;color:#FFC72C;font-weight:bold;font-size:19px;border:2px solid #1E63D6;border-radius:6px;padding:12px 0;text-align:center}
 .cell.used{background:#3a3f4e;color:#7b8190;border-color:#3a3f4e;text-decoration:line-through}
 .cell.cur{background:#FFC72C;color:#000;border-color:#FFC72C}
-.q{font-size:21px;font-weight:bold;line-height:1.35;margin:8px 0 12px}
+.q{font-size:20px;font-weight:bold;line-height:1.35;margin:8px 0 12px}
+
+/* Standart variant tugmalari (Jeo Quiz & Millioner) */
 .optbtn{display:block;width:100%;text-align:left;padding:13px 14px;margin:7px 0;border-radius:10px;border:2px solid #2F8BFF;background:#0c1842;color:#fff;font-size:17px;cursor:pointer}
 .optbtn.chosen{background:#2563EB;border-color:#FFC72C}
 .optbtn.sel{background:#D97706;border-color:#FFC72C;color:#000;font-weight:bold}
 .optbtn.ok{background:#1E8E4E;border-color:#7CFC9A;color:#fff;font-weight:bold}
 .optbtn.bad{background:#B3261E;border-color:#FF8A80;color:#fff;font-weight:bold}
 .optbtn.hid{opacity:.22;text-decoration:line-through;pointer-events:none}
+
+/* 3. AUKSION: Birja Ticket Karta tugmalari (01-04) */
+.aucticket{display:flex;align-items:stretch;width:100%;text-align:left;margin:8px 0;border-radius:10px;border:2px solid #F59E0B;background:#0b132b;color:#fff;overflow:hidden;cursor:pointer;padding:0}
+.aucticket .stub{background:#F59E0B;color:#000;font-weight:bold;font-size:16px;padding:14px 12px;display:flex;align-items:center;justify-content:center;min-width:44px}
+.aucticket .body{padding:13px 14px;font-size:16px;flex:1}
+.aucticket.chosen{border-color:#fff;background:#1e293b}
+.aucticket.chosen .stub{background:#fff;color:#000}
+.aucticket.ok{border-color:#7CFC9A;background:#14532d}
+.aucticket.ok .stub{background:#22c55e;color:#000}
+.aucticket.bad{border-color:#FF8A80;background:#7f1d1d}
+.aucticket.bad .stub{background:#ef4444;color:#fff}
+.betgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px}
+.betbtn{padding:12px 6px;border-radius:8px;border:2px solid #F59E0B;background:#0c1842;color:#FBBF24;font-weight:bold;cursor:pointer;font-size:14px}
+.betbtn.active{background:#F59E0B;color:#000}
+
+/* 4. HUDUDLAR JANGI: 2-ustunli Taktik Vektor tugmalari (I-IV) */
+.tergrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:8px}
+.terbtn{display:flex;align-items:center;gap:10px;text-align:left;padding:14px;border-radius:4px 18px 4px 18px;border-left:6px solid #10B981;border-top:1px solid #34D399;border-right:1px solid #34D399;border-bottom:1px solid #34D399;background:#081c24;color:#fff;font-size:16px;cursor:pointer}
+.terbtn .roman{font-weight:bold;color:#6EE7B7;background:#064e3b;padding:6px 10px;border-radius:6px;font-size:14px}
+.terbtn.ok{background:#14532d;border-color:#7CFC9A}
+.tcell{border-radius:6px;padding:9px 2px;text-align:center;font-weight:bold;border:2px solid #3b4f94;background:#0c1842;color:#fff;font-size:13px}
+.tcell.t0{background:#1D4ED8;border-color:#93C5FD}
+.tcell.t1{background:#B91C1C;border-color:#FCA5A5}
+.tcell.t2{background:#15803D;border-color:#86EFAC}
+.tcell.t3{background:#D97706;border-color:#FDE047;color:#000}
+.tcell.cur{outline:3px solid #fff}
+
+/* 5. ZANJIRLI BOMBA: Detonator Kapsula tugmalari (ALPHA-DELTA) */
+.bombbtn{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;padding:13px 18px;margin:8px 0;border-radius:999px;border:2px solid #EF4444;background:linear-gradient(90deg,#1f0912,#0c1842);color:#fff;font-size:16px;cursor:pointer}
+.bombbtn .code{font-size:12px;font-weight:bold;letter-spacing:1px;padding:4px 10px;border-radius:999px;background:#EF4444;color:#fff}
+.bombbtn.ok{border-color:#7CFC9A;background:#14532d}
+.bombbtn.ok .code{background:#22c55e;color:#000}
+.bombbtn.bad{border-color:#FF8A80;background:#7f1d1d}
+
 .aibox{background:#0c1842;border-left:4px solid #8B5CF6;padding:10px;border-radius:8px;margin-top:10px;font-size:15px;line-height:1.45}
 .pill{display:inline-block;padding:6px 12px;border-radius:20px;font-size:13px;font-weight:bold;background:#1E63D6;color:#fff;border:none;margin-right:6px;cursor:pointer}
 .pill.ai{background:linear-gradient(135deg,#2563EB,#7C3AED)}
@@ -58,7 +94,9 @@ button:disabled{opacity:.4;cursor:default}
 </div>
 <script>
 const L = ['A','B','C','D'];
+const TICONS = ['🛡️','⚔️','🏰','👑'];
 let S = null, teamsBuilt = false, myChoice = null, lastCur = null, myVote = null, lastMilStep = null, busyAI = false;
+let myAucChoice = null, lastAucRound = null;
 let myName = sessionStorage.getItem('pname') || '';
 let myTeam = sessionStorage.getItem('pteam');
 myTeam = (myTeam !== null && myTeam !== '') ? Number(myTeam) : null;
@@ -135,11 +173,53 @@ async function sendMilVote(choice){
 }
 
 function handleMilOptionClick(i, isPlayer){
-  if (isPlayer){
-    sendMilPlay('select', {choice: i});
-  } else {
-    sendMilVote(i);
-  }
+  if (isPlayer) sendMilPlay('select', {choice: i});
+  else sendMilVote(i);
+}
+
+async function sendAucBet(amount){
+  if (myTeam === null){ alert('Avval yuqoridan jamoangizni tanlab «Kirish» tugmasini bosing!'); return; }
+  const r = await fetch('/api/auc_play', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action:'bet', team: myTeam, amount})
+  });
+  const j = await r.json();
+  if (!r.ok){ alert(j.error); return; }
+  await load();
+}
+
+async function sendAucAnswer(choice){
+  if (myTeam === null){ alert('Avval yuqoridan jamoangizni tanlab «Kirish» tugmasini bosing!'); return; }
+  const r = await fetch('/api/auc_play', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action:'answer', team: myTeam, choice})
+  });
+  const j = await r.json();
+  if (!r.ok){ alert(j.error); return; }
+  myAucChoice = choice;
+  await load();
+}
+
+async function sendTerAnswer(choice){
+  if (myTeam === null){ alert('Avval yuqoridan jamoangizni tanlab «Kirish» tugmasini bosing!'); return; }
+  const r = await fetch('/api/ter_play', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({team: myTeam, choice})
+  });
+  const j = await r.json();
+  if (!r.ok){ alert(j.error); return; }
+  await load();
+}
+
+async function sendBombAnswer(choice){
+  if (myTeam === null){ alert('Avval yuqoridan jamoangizni tanlab «Kirish» tugmasini bosing!'); return; }
+  const r = await fetch('/api/bomb_play', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({team: myTeam, choice})
+  });
+  const j = await r.json();
+  if (!r.ok){ alert(j.error); return; }
+  await load();
 }
 
 function render(){
@@ -161,6 +241,21 @@ function render(){
   if (S.mode === 'millionaire'){
     document.getElementById('title').textContent = 'KIM MILLIONER BO‘LISHNI XOHLAYDI?';
     renderMilPlayer(main);
+    return;
+  }
+  if (S.mode === 'auction'){
+    document.getElementById('title').textContent = 'AUKSION VA STAVKA';
+    renderAucPlayer(main);
+    return;
+  }
+  if (S.mode === 'territory'){
+    document.getElementById('title').textContent = 'HUDUDLAR JANGI (5×5)';
+    renderTerPlayer(main);
+    return;
+  }
+  if (S.mode === 'bomb'){
+    document.getElementById('title').textContent = 'ZANJIRLI BOMBA';
+    renderBombPlayer(main);
     return;
   }
 
@@ -189,12 +284,8 @@ function render(){
     } else {
       h += `<div class="optbtn ok">To‘g‘ri javob: ${esc(q.ans || '')}</div>`;
     }
-    if (S.revealed && q.exp){
-      h += `<div class="aibox"><b>Izoh:</b> ${esc(q.exp)}</div>`;
-    }
-    if (S.ai_note){
-      h += `<div class="aibox"><b>Gemini AI misoli:</b><br>${esc(S.ai_note)}</div>`;
-    }
+    if (S.revealed && q.exp) h += `<div class="aibox"><b>Izoh:</b> ${esc(q.exp)}</div>`;
+    if (S.ai_note) h += `<div class="aibox"><b>Gemini AI misoli:</b><br>${esc(S.ai_note)}</div>`;
     h += `</div>`;
   }
 
@@ -283,19 +374,11 @@ function renderMilPlayer(main){
     }
     h += `</div>`;
   }
-  if (m.ai_hint){
-    h += `<div class="aibox"><b>Gemini AI maslahati:</b><br>${esc(m.ai_hint)}</div>`;
-  }
-  if (m.revealed && q.exp){
-    h += `<div class="aibox"><b>Izoh:</b> ${esc(q.exp)}</div>`;
-  }
-  if (m.status === 'won'){
-    h += `<div class="aibox" style="border-color:#FFC72C;color:#FFC72C;font-weight:bold;font-size:17px">TABRIKLAYMIZ! ${esc(m.player)} 1 000 000 BALL YUTDI!</div>`;
-  } else if (m.status === 'lost'){
-    h += `<div class="aibox" style="border-color:#B3261E;color:#FF8A80;font-weight:bold">O‘yin tugadi! Kafolatlangan yutuq: ${fmt(m.won)} ball.</div>`;
-  } else if (m.status === 'walked'){
-    h += `<div class="aibox" style="border-color:#1E8E4E;color:#7CFC9A;font-weight:bold">${esc(m.player)} ${fmt(m.won)} ball bilan o‘yinni yakunladi!</div>`;
-  }
+  if (m.ai_hint) h += `<div class="aibox"><b>Gemini AI maslahati:</b><br>${esc(m.ai_hint)}</div>`;
+  if (m.revealed && q.exp) h += `<div class="aibox"><b>Izoh:</b> ${esc(q.exp)}</div>`;
+  if (m.status === 'won') h += `<div class="aibox" style="border-color:#FFC72C;color:#FFC72C;font-weight:bold;font-size:17px">TABRIKLAYMIZ! ${esc(m.player)} 1 000 000 BALL YUTDI!</div>`;
+  else if (m.status === 'lost') h += `<div class="aibox" style="border-color:#B3261E;color:#FF8A80;font-weight:bold">O‘yin tugadi! Kafolatlangan yutuq: ${fmt(m.won)} ball.</div>`;
+  else if (m.status === 'walked') h += `<div class="aibox" style="border-color:#1E8E4E;color:#7CFC9A;font-weight:bold">${esc(m.player)} ${fmt(m.won)} ball bilan o‘yinni yakunladi!</div>`;
   h += `</div>`;
 
   h += `<div class="card"><b style="color:#FFC72C">YUTUQ ZINAPOYASI</b><div class="ladder">` +
@@ -306,10 +389,138 @@ function renderMilPlayer(main){
       else if (idx === m.step) cls += ' cur';
       return `<div class="${cls}"><span>${idx + 1}-savol</span><span>${fmt(p)} ball</span></div>`;
     }).join('') + `</div></div>`;
-
   main.innerHTML = h;
 }
 
-load(); setInterval(load, 1000);
+function renderAucPlayer(main){
+  const a = S.auc;
+  if (!a){ main.innerHTML = '<div class="card">Boshlovchi auksionni boshlashini kuting...</div>'; return; }
+  if (a.round !== lastAucRound){ lastAucRound = a.round; myAucChoice = null; }
+  const myCap = (myTeam !== null) ? a.bank[myTeam] : 1000;
+  const myBet = (myTeam !== null && a.bets) ? a.bets[String(myTeam)] : undefined;
+
+  let h = `<div class="card" style="border:2px solid #F59E0B">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+      <div>Raund: <b>${a.round}/${a.total_rounds}</b> • Bo‘lim: <b style="color:#FBBF24">${esc(a.cat)}</b></div>
+      <div>Jamoa kapitali: <b style="color:#7CFC9A">${fmt(myCap)}</b></div>
+    </div>`;
+
+  if (a.phase === 'betting'){
+    const b10 = Math.max(50, Math.round(myCap * 0.1 / 10) * 10);
+    const b25 = Math.max(50, Math.round(myCap * 0.25 / 10) * 10);
+    const b50 = Math.max(50, Math.round(myCap * 0.5 / 10) * 10);
+    h += `<div class="q">Savol ochilishidan oldin stavka tiking!</div>
+      <div style="font-size:14px;color:#B8C4E0">To‘g‘ri topsangiz tikkan ballingiz 2 barobar qaytadi, xato qilsangiz kuyadi.</div>
+      <div class="betgrid">
+        <button class="betbtn ${myBet===b10?'active':''}" onclick="sendAucBet(${b10})">10%<br>${fmt(b10)}</button>
+        <button class="betbtn ${myBet===b25?'active':''}" onclick="sendAucBet(${b25})">25%<br>${fmt(b25)}</button>
+        <button class="betbtn ${myBet===b50?'active':''}" onclick="sendAucBet(${b50})">50%<br>${fmt(b50)}</button>
+        <button class="betbtn ${myBet===myCap?'active':''}" onclick="sendAucBet(${myCap})">ALL-IN<br>${fmt(myCap)}</button>
+      </div>`;
+    if (myBet !== undefined) h += `<div class="aibox" style="color:#7CFC9A;font-weight:bold">Sizning stavkangiz qabul qilindi: ${fmt(myBet)} ball ✔</div>`;
+  } else if (a.question){
+    const q = a.question;
+    h += `<div style="font-size:13px;color:#FBBF24">Tikilgan stavka: <b>${fmt(myBet || 0)} ball</b></div>
+      <div class="q">${esc(q.q)}</div>`;
+    q.opts.forEach((o, i) => {
+      let cls = 'aucticket';
+      if (a.phase === 'revealed'){
+        if (i === q.c) cls += ' ok';
+        else if (i === myAucChoice) cls += ' bad';
+      } else if (i === myAucChoice){
+        cls += ' chosen';
+      }
+      h += `<button class="${cls}" ${a.phase==='revealed'?'disabled':''} onclick="sendAucAnswer(${i})">
+        <span class="stub">0${i+1}</span><span class="body">${esc(o)}</span></button>`;
+    });
+    if (a.phase === 'revealed'){
+      const d = (myTeam !== null && a.deltas) ? a.deltas[myTeam] : 0;
+      h += `<div class="aibox"><b>Natija:</b> ${d>0?`<span style="color:#7CFC9A">+${fmt(d)} ball yutdingiz!</span>`:`<span style="color:#FF8A80">${fmt(d)} ball yo‘qotdingiz</span>`}<br>${esc(q.exp || '')}</div>`;
+    }
+  }
+  h += `</div>`;
+  main.innerHTML = h;
+}
+
+function renderTerPlayer(main){
+  const ter = S.ter;
+  if (!ter){ main.innerHTML = '<div class="card">Boshlovchi hududlar jangini boshlashini kuting...</div>'; return; }
+  const isBlocked = myTeam !== null && (ter.wrong_teams || []).includes(myTeam);
+
+  let h = `<div class="card" style="border:2px solid #10B981">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+      ${S.teams.map((t, i) => `<span>${TICONS[i]} ${esc(t)}: <b style="color:#FFC72C">${ter.counts[i]}</b></span>`).join('')}
+    </div>
+    <div style="color:#6EE7B7;font-weight:bold;margin-bottom:8px">${esc(ter.last_msg)}</div>`;
+
+  if (ter.question){
+    const q = ter.question;
+    const romans = ['I','II','III','IV'];
+    h += `<div style="font-size:13px;color:#93C5FD">${esc(q.cat)} • ${ter.cur_cell+1}-sektor</div>
+      <div class="q">${esc(q.q)}</div>
+      <div class="tergrid">`;
+    q.opts.forEach((o, i) => {
+      let cls = 'terbtn';
+      if (ter.phase === 'revealed' && i === q.c) cls += ' ok';
+      const dis = ter.phase !== 'battle' || isBlocked;
+      h += `<button class="${cls}" ${dis?'disabled':''} onclick="sendTerAnswer(${i})">
+        <span class="roman">${romans[i]}</span><span>${esc(o)}</span></button>`;
+    });
+    h += `</div>`;
+    if (isBlocked && ter.phase === 'battle') h += `<div class="aibox" style="color:#FF8A80">Jamoangiz bu katakda xato javob berdi — boshqa jamoalar urinmoqda!</div>`;
+    if (ter.phase === 'revealed' && q.exp) h += `<div class="aibox"><b>Izoh:</b> ${esc(q.exp)}</div>`;
+  }
+  h += `</div>`;
+
+  let mh = `<div class="card"><div class="board">` + (S.cats||[]).map(c=>`<div class="cat">${esc(c)}</div>`).join('');
+  for (let r=0;r<5;r++){
+    for (let c=0;c<5;c++){
+      const idx = c*5 + r;
+      const ow = ter.owners[idx];
+      const cls = 'tcell' + (ow!==null ? ` t${ow}` : '') + (ter.cur_cell===idx ? ' cur' : '');
+      mh += `<div class="${cls}">${ow!==null ? TICONS[ow] : idx+1}</div>`;
+    }
+  }
+  mh += `</div></div>`;
+  main.innerHTML = h + mh;
+}
+
+function renderBombPlayer(main){
+  const b = S.bomb;
+  if (!b){ main.innerHTML = '<div class="card">Boshlovchi Zanjirli Bomba o‘yinini boshlashini kuting...</div>'; return; }
+  const isHolder = (myTeam !== null && myTeam === b.holder && b.status === 'playing');
+  const holderName = S.teams[b.holder] || '1-jamoa';
+
+  let h = `<div class="card" style="border:2px solid ${isHolder?'#EF4444':'#2F8BFF'}">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div>Bomba kimda: <b style="color:#FFC72C">${esc(holderName)}</b></div>
+      <div style="font-size:24px;font-weight:bold;color:${b.time_left<=5?'#FF8A80':'#7CFC9A'}">⏱ ${b.time_left}s</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">
+      ${S.teams.map((t, i) => `<div style="background:#0c1842;padding:6px;border-radius:8px;text-align:center;border:${i===b.holder?'2px solid #FFC72C':'1px solid #1E63D6'}">
+        <div style="font-size:12px">${esc(t)}</div><div>${b.lives[i]>0?'❤️'.repeat(b.lives[i]):'💀'}</div></div>`).join('')}
+    </div>
+    <div style="color:#FFC72C;font-weight:bold;margin-bottom:8px">${esc(b.last_msg)}</div>`;
+
+  if (b.question){
+    const q = b.question;
+    const tags = ['ALPHA','BETA','GAMMA','DELTA'];
+    h += `<div class="q">${esc(q.q)}</div>`;
+    q.opts.forEach((o, i) => {
+      let cls = 'bombbtn';
+      if (b.status !== 'playing' && i === q.c) cls += ' ok';
+      else if (b.status !== 'playing' && i === b.last_choice) cls += ' bad';
+      h += `<button class="${cls}" ${!isHolder?'disabled':''} onclick="sendBombAnswer(${i})">
+        <span>${esc(o)}</span><span class="code">${tags[i]}</span></button>`;
+    });
+    if (!isHolder && b.status === 'playing'){
+      h += `<div class="aibox">Hozir <b>${esc(holderName)}</b> javob bermoqda — tayyor turing, bomba sizga o‘tishi mumkin!</div>`;
+    }
+  }
+  h += `</div>`;
+  main.innerHTML = h;
+}
+
+load(); setInterval(load, 800);
 </script>
 </body></html>
