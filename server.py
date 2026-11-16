@@ -1,5 +1,6 @@
 import base64
 import copy
+import io
 import json
 import os
 import random
@@ -25,6 +26,7 @@ PRESETS_META = [
     {"id": "general", "icon": "🌍", "title": "Umumiy Bilimlar", "desc": "Geografiya, fan, adabiyot, sport va qiziqarli faktlar"},
 ]
 
+
 def _pack(cats, items):
     res = []
     for c_idx, cat in enumerate(cats):
@@ -40,6 +42,7 @@ def _pack(cats, items):
                 "exp": exp,
             })
     return res
+
 
 PRESET_DATA = {
     "econ": {
@@ -84,20 +87,20 @@ PRESET_DATA = {
                 ("Ketma-ketlikda keyingi son qaysi: 1, 1, 2, 3, 5, 8, 13, ?", ["18", "20", "21", "24"], 2, "Fibonachchi sonlari: har bir son oldingi ikkitasining yig‘indisi (8 + 13 = 21)."),
                 ("Qatorni to‘ldiring: 3, 9, 27, 81, ?", ["162", "243", "324", "108"], 1, "Har bir had 3 ga ko‘paytirilmoqda: 81 × 3 = 243."),
                 ("Qaysi son ortiqcha: 4, 9, 16, 24, 36?", ["9", "16", "24", "36"], 2, "Boshqa barcha sonlar butun sonlarning kvadrati (2², 3², 4², 6²), 24 esa emas."),
-                ("Agar 5 ta mashina 5 ta detalni 5 daqiqada yasasa, 100 ta mashina 100 ta detalni necha daqiqada yasaydi?", ["100 daqiqada", "20 daqiqada", "5 daqiqada", "1 daqiqada"], 2, "Har bir mashina 1 detalni 5 daqiqada yasaydi, demak 100 mashina ham 5 daqiqada bitiradi."),
+                ("5 ta mashina 5 detalni 5 daqiqada yasasa, 100 mashina 100 detalni necha daqiqada yasaydi?", ["100 daqiqada", "20 daqiqada", "5 daqiqada", "1 daqiqada"], 2, "Har bir mashina 1 detalni 5 daqiqada yasaydi, demak 100 mashina ham 5 daqiqada bitiradi."),
                 ("Qorong‘i xonada 1 ta gugurt, sham, kerosin lampa va o‘tin bor. Avval nimani yoqasiz?", ["Shamni", "Gugurtni", "O‘tinni", "Lampani"], 1, "Boshqa narsalarni yoqish uchun avval gugurtni yoqish kerak."),
-                ("Kechasi soat 12 da yomg‘ir yog‘ayotgan bo‘lsa, 72 soatdan keyin quyosh chiqishi mumkinmi?", ["Ha", "Yo‘q, chunki tun bo‘ladi", "Faqat qishda", "Aniq emas"], 1, "72 soat = roppa-rosa 3 sutka, demak yana yarim tun (soat 12:00) bo‘ladi."),
-                ("Daraxtda 10 ta qush o‘tirgan edi. Ovchi 1 tasini otdi. Daraxtda nechta qush qoldi?", ["9 ta", "1 ta", "0 ta (hammasi uchib ketdi)", "10 ta"], 2, "O‘q ovozidan qolgan qushlar uchib ketadi."),
+                ("Kechasi soat 12 da yomg‘ir yog‘ayotgan bo‘lsa, 72 soatdan keyin quyosh chiqishi mumkinmi?", ["Ha", "Yo‘q, tun bo‘ladi", "Faqat qishda", "Aniq emas"], 1, "72 soat = roppa-rosa 3 sutka, demak yana yarim tun (soat 12:00) bo‘ladi."),
+                ("Daraxtda 10 ta qush o‘tirgan edi. Ovchi 1 tasini otdi. Daraxtda nechta qush qoldi?", ["9 ta", "1 ta", "0 ta (uchib ketdi)", "10 ta"], 2, "O‘q ovozidan qolgan qushlar uchib ketadi."),
                 ("Qaysi oyda 28 kun bor?", ["Faqat fevralda", "Barcha 12 oyda", "Martda", "Dekabrda"], 1, "Har bir oyda kamida 28 kun mavjud."),
                 ("Otasi 40 yoshda, o‘g‘li 10 yoshda. Necha yildan keyin otasi o‘g‘lidan 3 barobar katta bo‘ladi?", ["5 yildan keyin", "10 yildan keyin", "15 yildan keyin", "20 yildan keyin"], 0, "5 yildan keyin ota 45, o‘g‘il 15 yoshda bo‘ladi (45 / 15 = 3)."),
-                ("3 ta mushuk 3 ta sichqonni 3 daqiqada tutadi. 1 ta mushuk 1 ta sichqonni necha daqiqada tutadi?", ["1 daqiqada", "3 daqiqada", "9 daqiqada", "2 daqiqada"], 1, "Har bir mushuk o‘z sichqonini 3 daqiqa davomida quvib tutadi."),
+                ("3 ta mushuk 3 sichqonni 3 daqiqada tutadi. 1 mushuk 1 sichqonni necha daqiqada tutadi?", ["1 daqiqada", "3 daqiqada", "9 daqiqada", "2 daqiqada"], 1, "Har bir mushuk o‘z sichqonini 3 daqiqa davomida quvib tutadi."),
                 ("Poygada 2-o‘rindagi sportchini quvib o‘tsangiz, nechanchi o‘ringa chiqasiz?", ["1-o‘ringa", "2-o‘ringa", "3-o‘ringa", "4-o‘ringa"], 1, "2-o‘rindagi odamning o‘rnini egallaysiz — ya’ni 2-o‘rin."),
                 ("Stolda 4 ta olma bor. Siz 2 tasini oldingiz. Sizda nechta olma bor?", ["2 ta", "4 ta", "1 ta", "0 ta"], 0, "Siz olgan 2 ta olma o‘zingizda turibdi."),
                 ("Qaysi so‘z hamma tillarda bir xil eshitiladi?", ["Salom", "Exo (aks-sado)", "Suv", "Kitob"], 1, "Aks-sado aytilgan so‘zni aynan qaytaradi."),
                 ("Bir tayoqning 2 ta uchi bor. Yarimta tayoqning nechta uchi bor?", ["1 ta", "2 ta", "3 ta", "4 ta"], 1, "Kesilgan tayoqning ham baribir 2 ta uchi bo‘ladi."),
                 ("Tanga 2 marta tashlandi. Ikkala safar ham gerb tushish ehtimoli qancha?", ["50%", "25%", "75%", "10%"], 1, "1/2 × 1/2 = 1/4 = 25%."),
                 ("O‘yin kubigi (1–6) bir marta tashlandi. Juft son tushish ehtimoli qancha?", ["1/6", "1/3", "1/2", "2/3"], 2, "Juft sonlar 3 ta (2, 4, 6), jami 6 ta: 3/6 = 1/2."),
-                ("Qutida 5 ta oq va 5 ta qora shar bor. Qaramasdan kamida nechta shar olsangiz, albatta 2 ta bir xil rangli chiqadi?", ["2 ta", "3 ta", "6 ta", "5 ta"], 1, "Dirixle tamoyili: 2 xil rang bo‘lgani uchun 3 ta shar olinsa kamida ikkitasi bir xil bo‘ladi."),
+                ("Qutida 5 oq va 5 qora shar bor. Kamida nechta shar olsangiz albatta 2 ta bir xil rangli chiqadi?", ["2 ta", "3 ta", "6 ta", "5 ta"], 1, "Dirixle tamoyili: 2 xil rang bo‘lgani uchun 3 ta shar olinsa kamida ikkitasi bir xil bo‘ladi."),
                 ("3 ta tangadan biri soxta (yengilroq). Pallali tarozida kamida necha marta tortib uni topish mumkin?", ["1 marta", "2 marta", "3 marta", "4 marta"], 0, "2 tasini pallaga qo‘yasiz: teng bo‘lsa 3-si soxta, biri ko‘tarilsa o‘shanisi soxta."),
                 ("Soat 3:15 da soat va minut millari orasidagi burchak necha gradus?", ["0°", "7.5°", "15°", "30°"], 1, "Minut mili 3 da, soat mili esa 3 dan chorak soat (30° / 4 = 7.5°) siljigan."),
                 ("Uchta 2 raqami yordamida eng katta qanday son yozish mumkin?", ["222", "2^22", "22^2", "2×2×2"], 1, "2 ning 22-darajasi (4 194 304) eng katta qiymat beradi."),
@@ -115,20 +118,20 @@ PRESET_DATA = {
             [
                 ("«Al-jabr val-muqobala» asari muallifi kim?", ["Al-Xorazmiy", "Al-Farg‘oniy", "Ibn Sino", "Al-Beruniy"], 0, "Algebra atamasi Al-Xorazmiyning ushbu asari nomidan olingan."),
                 ("Yer sharining radiusini o‘rta asrlarda eng aniq o‘lchagan vatandoshimiz?", ["Al-Beruniy", "Ulug‘bek", "Al-Buxoriy", "Zamahshariy"], 0, "Abu Rayhon Beruniy Hindistonda Yer radiusini 6339.6 km etib hisoblagan."),
-                ("«Tib qonunlari» asari necha kitobdan iborat?", ["3 kitob", "5 kitob", "7 kitob", "10 kitob"], 1, "Ibn Sinoning «Tib qonunlari» 5 kitobdan iborat bo‘lib, asrlar davomida Yevropada darslik bo‘lgan."),
-                ("1018 ta yulduzning koordinatalarini o‘z ichiga olgan «Ziji jadidi Ko‘ragoniy» muallifi?", ["Mirzo Ulug‘bek", "Ali Qushchi", "Qozizoda Rumiy", "Alisher Navoiy"], 0, "Samarqand rasadxonasida tuzilgan yulduzlar jadvali."),
-                ("«Xamsa»ni turkiy tilda birinchi bo‘lib yaratgan buyuk mutafakkir?", ["Alisher Navoiy", "Zahiriddin Muhammad Bobur", "Lutfiy", "Jomiy"], 0, "Alisher Navoiy 1483–1485-yillarda besh dostondan iborat «Xamsa»ni yozgan."),
+                ("«Tib qonunlari» asari necha kitobdan iborat?", ["3 kitob", "5 kitob", "7 kitob", "10 kitob"], 1, "Ibn Sinoning «Tib qonunlari» 5 kitobdan iborat."),
+                ("1018 ta yulduz koordinatalarini o‘z ichiga olgan «Ziji jadidi Ko‘ragoniy» muallifi?", ["Mirzo Ulug‘bek", "Ali Qushchi", "Qozizoda Rumiy", "Alisher Navoiy"], 0, "Samarqand rasadxonasida tuzilgan yulduzlar jadvali."),
+                ("«Xamsa»ni turkiy tilda birinchi bo‘lib yaratgan buyuk mutafakkir?", ["Alisher Navoiy", "Zahiriddin Bobur", "Lutfiy", "Jomiy"], 0, "Alisher Navoiy 1483–1485-yillarda besh dostondan iborat «Xamsa»ni yozgan."),
                 ("Amir Temur qaysi yili Movarounnahr taxtini egallagan?", ["1360-yil", "1370-yil", "1380-yil", "1405-yil"], 1, "1370-yilda Samarqand poytaxt etib belgilangan."),
-                ("«Boburnoma» asari qaysi tilda yozilgan?", ["Fors tilida", "Eski o‘zbek (chig‘atoy) tilida", "Arab tilida", "Hind tilida"], 1, "Bobur o‘z memuarini jonli eski o‘zbek tilida yozgan."),
+                ("«Boburnoma» asari qaysi tilda yozilgan?", ["Fors tilida", "Eski o‘zbek tilida", "Arab tilida", "Hind tilida"], 1, "Bobur o‘z memuarini jonli eski o‘zbek tilida yozgan."),
                 ("Samarqanddagi Registon maydonida joylashgan eng birinchi madrasa?", ["Ulug‘bek madrasasi", "Sherdor madrasasi", "Tillakori madrasa", "Bibixonim madrasasi"], 0, "Ulug‘bek madrasasi 1417–1420-yillarda qurilgan."),
-                ("Amir Temurning mashhur shiori qaysi?", ["«Kuch — adolatdadir»", "«Bilim — boylik»", "«Tinchlik — eng oliy ne’mat»", "«Harakatda barakat»"], 0, "«Rosti — rusti» (Kuch — adolatdadir) Amir Temur uzugida o‘yib yozilgan."),
+                ("Amir Temurning mashhur shiori qaysi?", ["«Kuch — adolatdadir»", "«Bilim — boylik»", "«Tinchlik — oliy ne’mat»", "«Harakatda barakat»"], 0, "«Rosti — rusti» (Kuch — adolatdadir) Amir Temur uzugida o‘yib yozilgan."),
                 ("Temuriylar davrida «Sharq Rafaeli» nomini olgan buyuk musavvir?", ["Kamoliddin Behzod", "Sulton Ali Mashhadiy", "Xondamir", "Mirkhond"], 0, "Kamoliddin Behzod Hirot miniatyura maktabining eng yirik namoyandasi."),
                 ("Buyuk Ipak yo‘li qaysi asrda shakllangan?", ["Mil. avv. II asrda", "Milodiy V asrda", "X asrda", "XV asrda"], 0, "Xitoy elchisi Chjan Syanning G‘arbga sayohatidan so‘ng yo‘l ochilgan."),
-                ("Qog‘oz ishlab chiqarish VIII asrda Xitoydan so‘ng qaysi shaharda rivojlangan?", ["Samarqandda", "Buxoroda", "Xivada", "Toshkentda"], 0, "Samarqand qog‘ozi o‘zining silliqligi va chidamliligi bilan dunyoga mashhur bo‘lgan."),
+                ("Qog‘oz ishlab chiqarish VIII asrda Xitoydan so‘ng qaysi shaharda rivojlangan?", ["Samarqandda", "Buxoroda", "Xivada", "Toshkentda"], 0, "Samarqand qog‘ozi o‘zining silliqligi va chidamliligi bilan mashhur bo‘lgan."),
                 ("Buyuk Ipak yo‘lining asosiy tovari nima edi?", ["Ipak matolar", "Neft", "Paxta", "Kauchuk"], 0, "Xitoy ipagi G‘arb mamlakatlarida oltin bilan teng baholangan."),
                 ("Buxorodagi mashhur Minorai Kalon qaysi hukmdor davrida qurilgan?", ["Arslonxon", "Ismoil Somoniy", "Abdullaxon II", "Amir Nasrullo"], 0, "1127-yilda Qoraxoniylar hukmdori Arslonxon tomonidan bunyod etilgan."),
-                ("O‘zbekiston hududidagi qaysi shaharlar UNESCO Umumjahon merosi ro‘yxatiga kiritilgan?", ["Samarqand, Buxoro, Xiva, Shahrisabz", "Faqat Samarqand", "Toshkent va Farg‘ona", "Nukus va Termiz"], 0, "To‘rtta tarixiy shahar markazlari UNESCO himoyasiga olingan."),
-                ("Qadimgi Misr ehromlari (piramidalari) qaysi maqsadda qurilgan?", ["Fir’avnlar maqbarasi sifatida", "Rasadxona sifatida", "Suv ombori sifatida", "Qal’a sifatida"], 0, "Giza ehromlari fir’avnlar uchun abadiy maqbara bo‘lgan."),
+                ("O‘zbekistondagi qaysi shaharlar UNESCO Umumjahon merosi ro‘yxatiga kiritilgan?", ["Samarqand, Buxoro, Xiva, Shahrisabz", "Faqat Samarqand", "Toshkent va Farg‘ona", "Nukus va Termiz"], 0, "To‘rtta tarixiy shahar markazlari UNESCO himoyasiga olingan."),
+                ("Qadimgi Misr ehromlari qaysi maqsadda qurilgan?", ["Fir’avnlar maqbarasi", "Rasadxona", "Suv ombori", "Qal’a"], 0, "Giza ehromlari fir’avnlar uchun abadiy maqbara bo‘lgan."),
                 ("Amerikani 1492-yilda kashf etgan dengizchi sayyoh kim?", ["Xristofor Kolumb", "Vasko da Gama", "Fernando Magellan", "Amerigo Vespuchchi"], 0, "Kolumb Hindistonga g‘arbiy yo‘l izlab Amerika qit’asiga yetib borgan."),
                 ("Birinchi jahon urushi qaysi yillarda bo‘lib o‘tgan?", ["1914–1918", "1939–1945", "1904–1905", "1917–1922"], 0, "1914-yil iyulda boshlanib, 1918-yil noyabrda yakunlangan."),
                 ("Birlashgan Millatlar Tashkiloti (BMT) qachon tashkil etilgan?", ["1945-yil", "1919-yil", "1950-yil", "1991-yil"], 0, "Ikkinchi jahon urushidan so‘ng tinchlikni saqlash maqsadida tuzilgan."),
@@ -137,7 +140,7 @@ PRESET_DATA = {
                 ("O‘zbekiston Respublikasi Konstitutsiyasi qachon qabul qilingan?", ["1992-yil 8-dekabr", "1991-yil 1-sentabr", "1994-yil 1-iyul", "1993-yil 2-sentabr"], 0, "1992-yil 8-dekabrda Oliy Kengash sessiyasida qabul qilingan."),
                 ("Milliy valyutamiz — «So‘m» qachon muomalaga kiritilgan?", ["1994-yil 1-iyul", "1991-yil 31-avgust", "1992-yil 10-dekabr", "1995-yil 1-yanvar"], 0, "1994-yil 1-iyuldan so‘m rasmiy to‘lov vositasi bo‘ldi."),
                 ("O‘zbekiston BMTga qachon a’zo bo‘lgan?", ["1992-yil 2-mart", "1991-yil 1-sentabr", "1995-yil 24-oktabr", "2001-yil 15-iyun"], 0, "1992-yil 2-martda BMT Bosh Assambleyasi qarori bilan a’zo bo‘lgan."),
-                ("Yangi tahrirdagi O‘zbekiston Konstitutsiyasi umumxalq referendumida qachon qabul qilindi?", ["2023-yil 30-aprel", "2021-yil 24-oktabr", "2022-yil 8-dekabr", "2024-yil 1-yanvar"], 0, "2023-yil 30-apreldagi referendumda yangi tahrir qabul qilindi."),
+                ("Yangi tahrirdagi O‘zbekiston Konstitutsiyasi referendumida qachon qabul qilindi?", ["2023-yil 30-aprel", "2021-yil 24-oktabr", "2022-yil 8-dekabr", "2024-yil 1-yanvar"], 0, "2023-yil 30-apreldagi referendumda yangi tahrir qabul qilindi."),
             ],
         ),
     },
@@ -148,19 +151,19 @@ PRESET_DATA = {
             [
                 ("Python dasturlash tilining yaratuvchisi kim?", ["Gvido van Rossum", "Linus Torvalds", "Jeyms Gosling", "Bjarne Stroustrup"], 0, "Gvido van Rossum Python tilini 1991-yilda taqdim etgan."),
                 ("Veb-sahifalarning tuzilishini belgilovchi belgilash tili qaysi?", ["HTML", "Python", "SQL", "C++"], 0, "HyperText Markup Language (HTML) sahifa skeletini yaratadi."),
-                ("Ma’lumotlar bazasi bilan ishlash uchun qo‘llaniladigan so‘rov tili?", ["SQL", "CSS", "JSON", "XML"], 0, "Structured Query Language (SQL) jadvallardan ma’lumot olish va boshqarish uchun ishlatiladi."),
-                ("Dasturdagi xatoliklarni topish va tuzatish jarayoni nima deyiladi?", ["Debugging", "Compiling", "Hosting", "Phishing"], 0, "Debugging dastur kodidagi bug (xato)larni bartaraf etish jarayonidir."),
+                ("Ma’lumotlar bazasi bilan ishlash uchun qo‘llaniladigan so‘rov tili?", ["SQL", "CSS", "JSON", "XML"], 0, "Structured Query Language (SQL) jadvallardan ma’lumot olish uchun ishlatiladi."),
+                ("Dasturdagi xatoliklarni topish va tuzatish jarayoni nima deyiladi?", ["Debugging", "Compiling", "Hosting", "Phishing"], 0, "Debugging dastur kodidagi xatolarni bartaraf etish jarayonidir."),
                 ("O‘zgaruvchida faqat True yoki False qiymat saqlaydigan ma’lumot turi?", ["Boolean", "Integer", "String", "Float"], 0, "Mantiqiy tur (Boolean) ikkita qiymat qabul qiladi."),
-                ("ChatGPT va Gemini kabi matn yaratuvchi modellar qanday qisqartma bilan ataladi?", ["LLM (Large Language Model)", "CPU", "VPN", "BIOS"], 0, "Katta til modellari (LLM) milliardlab matnlar asosida o‘qitiladi."),
+                ("ChatGPT va Gemini kabi matn yaratuvchi modellar qanday qisqartma bilan ataladi?", ["LLM", "CPU", "VPN", "BIOS"], 0, "Katta til modellari (LLM) milliardlab matnlar asosida o‘qitiladi."),
                 ("Kompyuterning inson kabi fikrlay olishini sinovdan o‘tkazuvchi mashhur test?", ["Tyuring testi", "Eynshteyn testi", "Nyuton qonuni", "Moor qonuni"], 0, "Alan Tyuring 1950-yilda mashina intellektini baholash testini taklif qilgan."),
                 ("Sun’iy neyron tarmoqlar inson miyasidagi qaysi hujayralardan ilhomlangan?", ["Neyronlardan", "Leykotsitlardan", "Eritrotsitlardan", "Trombotsitlardan"], 0, "Sun’iy neyronlar kirish signallarini vaznlar orqali qayta ishlaydi."),
-                ("Tasvirlarni tanish va tahlil qilish bilan shug‘ullanuvchi AI yo‘nalishi?", ["Computer Vision", "Blockchain", "Cloud Storage", "DevOps"], 0, "Kompyuter ko‘rishi (Computer Vision) yuzni tanish va avtopilotlarda qo‘llanadi."),
+                ("Tasvirlarni tanish va tahlil qilish bilan shug‘ullanuvchi AI yo‘nalishi?", ["Computer Vision", "Blockchain", "Cloud Storage", "DevOps"], 0, "Kompyuter ko‘rishi yuzni tanish va avtopilotlarda qo‘llanadi."),
                 ("AI modeliga aniq va sifatli topshiriq yozish san’ati nima deyiladi?", ["Prompt Engineering", "Reverse Engineering", "Data Mining", "Web Scraping"], 0, "To‘g‘ri tuzilgan prompt AI javobi sifatini keskin oshiradi."),
                 ("HTTP protokolidan farqli o‘laroq, ma’lumotlarni shifrlab uzatuvchi xavfsiz protokol?", ["HTTPS", "FTP", "SMTP", "POP3"], 0, "HTTPS SSL/TLS shifrlash sertifikatidan foydalanadi."),
                 ("Domen nomlarini IP-manzillarga aylantirib beruvchi tizim nima?", ["DNS", "RAM", "SSD", "USB"], 0, "Domain Name System (DNS) internetning telefon kitobi vazifasini bajaradi."),
                 ("Foydalanuvchining brauzerida saqlanadigan kichik matnli ma’lumot fayllari?", ["Cookies", "Pixels", "Drivers", "Kernels"], 0, "Cookie fayllari sessiya va sozlamalarni eslab qolish uchun ishlatiladi."),
-                ("GitHub platformasi asosan nima uchun xizmat qiladi?", ["Kodlarni saqlash va jamoaviy boshqarish", "Video montaj qilish", "Musiqa tinglash", "Online o‘yin o‘ynash"], 0, "GitHub Git versiyalarni boshqarish tizimiga asoslangan."),
-                ("«Cloud computing» (Bulutli texnologiya) nimani anglatadi?", ["Internet orqali masofaviy server resurslaridan foydalanish", "Ob-havoni bashorat qilish", "Wi-Fi parolini buzish", "Fleshka xotirasi"], 0, "Render, AWS va Google Cloud bulutli platformalarga misoldir."),
+                ("GitHub platformasi asosan nima uchun xizmat qiladi?", ["Kodlarni saqlash va boshqarish", "Video montaj qilish", "Musiqa tinglash", "Online o‘yin o‘ynash"], 0, "GitHub Git versiyalarni boshqarish tizimiga asoslangan."),
+                ("«Cloud computing» (Bulutli texnologiya) nimani anglatadi?", ["Masofaviy server resurslaridan foydalanish", "Ob-havoni bashorat qilish", "Wi-Fi parolini buzish", "Fleshka xotirasi"], 0, "Render, AWS va Google Cloud bulutli platformalarga misoldir."),
                 ("Soxta xat yoki sayt orqali foydalanuvchi parolini o‘g‘irlash usuli?", ["Phishing (Fishing)", "Backup", "Encryption", "Firewall"], 0, "Fishingda firibgarlar rasmiy bank yoki sayt qiyofasiga kiradi."),
                 ("Akkauntga kirishda paroldan tashqari SMS yoki ilova kodi so‘ralishi nima?", ["Ikki bosqichli autentifikatsiya (2FA)", "Keshlash", "Arxivlash", "Formatlash"], 0, "2FA akkaunt xavfsizligini bir necha barobar oshiradi."),
                 ("Tarmoqqa ruxsatsiz kirishlarni to‘suvchi himoya devori qanday ataladi?", ["Firewall", "Trojan", "Spam", "Cookie"], 0, "Firewall kiruvchi va chiquvchi trafikni filtrlaydi."),
@@ -169,7 +172,7 @@ PRESET_DATA = {
                 ("1 Kilobayt necha baytga teng?", ["1024 bayt", "100 bayt", "512 bayt", "2048 bayt"], 0, "Ikkilik sanoq tizimida 2^10 = 1024 bayt."),
                 ("Kompyuterning vaqtinchalik tezkor xotirasi qaysi?", ["RAM", "HDD", "SSD", "DVD"], 0, "Kompyuter o‘chganda RAM xotiradagi ma’lumotlar tozalanadi."),
                 ("Linux operatsion tizimi yadrosini kim yaratgan?", ["Linus Torvalds", "Bill Geyts", "Stiv Jobs", "Mark Sukerberg"], 0, "Linus Torvalds 1991-yilda Linux yadrosini e’lon qilgan."),
-                ("QR-kod qisqartmasidagi «QR» nimani bildiradi?", ["Quick Response (Tezkor javob)", "Quality Rate", "Quantum Radio", "Query Result"], 0, "QR-kod 1994-yilda Yaponiyada ixtiro qilingan."),
+                ("QR-kod qisqartmasidagi «QR» nimani bildiradi?", ["Quick Response", "Quality Rate", "Quantum Radio", "Query Result"], 0, "QR-kod 1994-yilda Yaponiyada ixtiro qilingan."),
                 ("Blokcheyn texnologiyasi asosida yaratilgan birinchi kriptovalyuta?", ["Bitcoin", "Ethereum", "Solana", "Dogecoin"], 0, "Bitcoin 2009-yilda Satoshi Nakamoto taxallusi ostida ishga tushirilgan."),
             ],
         ),
@@ -197,7 +200,7 @@ PRESET_DATA = {
                 ("Olimpiya o‘yinlari necha yilda bir marta o‘tkaziladi?", ["4 yilda", "2 yilda", "5 yilda", "3 yilda"], 0, "Yozgi va qishki Olimpiada o‘yinlari har 4 yilda o‘tkaziladi."),
                 ("Futbol maydonida bir jamoadan nechta o‘yinchi o‘ynaydi?", ["11 ta", "9 ta", "10 ta", "12 ta"], 0, "10 ta maydon o‘yinchisi va 1 ta darvozabon."),
                 ("Shaxmat taxtasida jami nechta katak bor?", ["64 ta", "32 ta", "81 ta", "100 ta"], 0, "8×8 o‘lchamdagi 32 oq va 32 qora katakdan iborat."),
-                ("O‘zbekistonlik shaxmatchi Nodirbek Abdusattorov 2021-yilda qaysi yo‘nalishda jahon chempioni bo‘ldi?", ["Rapid (tezkor shaxmat)", "Klassik shaxmat", "Blits", "Shashka"], 0, "17 yoshida Rapid bo‘yicha eng yosh jahon chempioniga aylangan."),
+                ("Nodirbek Abdusattorov 2021-yilda qaysi yo‘nalishda jahon chempioni bo‘ldi?", ["Rapid (tezkor shaxmat)", "Klassik shaxmat", "Blits", "Shashka"], 0, "17 yoshida Rapid bo‘yicha eng yosh jahon chempioniga aylangan."),
                 ("Basketbol savatchasining yerdan balandligi necha metr?", ["3.05 m", "2.50 m", "3.50 m", "2.80 m"], 0, "Standart balandlik 10 fut (3.05 metr)ga teng."),
                 ("Asalarilar necha ko‘zga ega?", ["5 ta", "2 ta", "4 ta", "8 ta"], 0, "2 ta katta murakkab va 3 ta kichik oddiy ko‘zi bor."),
                 ("Eyfel minorasi qaysi shaharda joylashgan?", ["Parijda", "Londonda", "Rimda", "Madridda"], 0, "1889-yilda Fransiya poytaxti Parijda qurilgan."),
@@ -245,16 +248,11 @@ def extract_json_block(raw):
 
 def extract_docx_text(b64_data):
     raw_bytes = base64.b64decode(b64_data)
-    with zipfile.ZipFile(io_bytes(raw_bytes)) as zf:
+    with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
         xml_bytes = zf.read("word/document.xml")
     root = ET.fromstring(xml_bytes)
     texts = [el.text for el in root.iter() if el.tag.endswith("}t") and el.text]
     return " ".join(texts)[:28000]
-
-
-def io_bytes(b):
-    import io
-    return io.BytesIO(b)
 
 
 class Room:
@@ -266,13 +264,12 @@ class Room:
         self.teams = list(teams) if teams and len(teams) == 4 else ["1-jamoa", "2-jamoa", "3-jamoa", "4-jamoa"]
         self.scores = [0, 0, 0, 0]
         self.mode = "jeopardy"
-        self.players = {}  # name -> team_idx or None
+        self.players = {}
         self.ai_busy = False
         self.ai_status = ""
         self.ai_error = ""
         self.ai_note = ""
 
-        # Jeopardy state
         self.used = [False] * 25
         self.cur = None
         self.revealed = False
@@ -280,12 +277,14 @@ class Room:
         self.text_answers = {}
         self.ai_grades = {}
 
-        # Sub-game states
         self.mil = None
         self.auc = None
         self.ter = None
         self.bomb = None
         self.kahoot = None
+        self.wheel = None
+        self.match = None
+        self.boxes = None
 
         self.topic_title = ""
         self.cats = []
@@ -294,6 +293,16 @@ class Room:
 
     def touch(self):
         self.updated_at = time.time()
+
+    def clear_subgames(self):
+        self.mil = None
+        self.auc = None
+        self.ter = None
+        self.bomb = None
+        self.kahoot = None
+        self.wheel = None
+        self.match = None
+        self.boxes = None
 
     def load_preset(self, preset_id):
         pack = PRESET_DATA.get(preset_id) or PRESET_DATA["econ"]
@@ -307,11 +316,7 @@ class Room:
         self.text_answers = {}
         self.ai_grades = {}
         self.ai_note = ""
-        self.mil = None
-        self.auc = None
-        self.ter = None
-        self.bomb = None
-        self.kahoot = None
+        self.clear_subgames()
 
     def public_q(self, q, include_secret=False):
         if not q:
@@ -337,7 +342,6 @@ class Room:
 
     def tick_timers(self):
         now = time.time()
-        # Bomb timer
         if self.bomb and self.bomb["status"] == "playing":
             rem = max(0, int(round(self.bomb["deadline"] - now)))
             self.bomb["time_left"] = rem
@@ -347,7 +351,6 @@ class Room:
                 self.bomb["status"] = "boom"
                 self.bomb["last_msg"] = f"💥 VAQT TUGADI! {self.teams[h]} 1 ta jon yo‘qotdi!"
 
-        # Kahoot (TEST) timer
         if self.kahoot and self.kahoot["phase"] == "question":
             rem = max(0, int(round(self.kahoot["deadline"] - now)))
             self.kahoot["time_left"] = rem
@@ -360,8 +363,6 @@ class Room:
             return
         k["phase"] = "reveal"
         k["time_left"] = 0
-        q = k["cur_q"]
-        correct_idx = q["c"]
         for name, rec in k["records"].items():
             res = k["round_results"].get(name)
             if not res or not res["ok"]:
@@ -379,24 +380,13 @@ class Room:
             votes = m["votes"]
             vc = [sum(1 for v in votes.values() if v == i) for i in range(4)]
             mil_out = {
-                "active": m["active"],
-                "player": m["player"],
-                "team": m["team"],
-                "step": m["step"],
-                "total_steps": len(MIL_PRIZES),
-                "prizes": MIL_PRIZES,
-                "safe_steps": MIL_SAFES,
-                "won": m["won"],
-                "status": m["status"],
-                "revealed": m["revealed"],
-                "selected": m["selected"],
-                "hidden_opts": m["hidden_opts"],
-                "lifelines": m["lifelines"],
-                "audience_open": m["audience_open"],
-                "vote_counts": vc,
-                "vote_total": len(votes),
-                "ai_hint": m["ai_hint"],
-                "credited": m["credited"],
+                "active": m["active"], "player": m["player"], "team": m["team"],
+                "step": m["step"], "total_steps": len(MIL_PRIZES), "prizes": MIL_PRIZES,
+                "safe_steps": MIL_SAFES, "won": m["won"], "status": m["status"],
+                "revealed": m["revealed"], "selected": m["selected"],
+                "hidden_opts": m["hidden_opts"], "lifelines": m["lifelines"],
+                "audience_open": m["audience_open"], "vote_counts": vc,
+                "vote_total": len(votes), "ai_hint": m["ai_hint"], "credited": m["credited"],
                 "question": self.public_q(mq, include_secret=(is_admin or m["revealed"])),
             }
 
@@ -405,15 +395,10 @@ class Room:
             a = self.auc
             aq = a["pool"][a["round"] - 1]
             auc_out = {
-                "round": a["round"],
-                "total_rounds": a["total_rounds"],
-                "cat": aq["cat"],
-                "phase": a["phase"],
-                "bank": a["bank"],
-                "bets": a["bets"],
+                "round": a["round"], "total_rounds": a["total_rounds"], "cat": aq["cat"],
+                "phase": a["phase"], "bank": a["bank"], "bets": a["bets"],
                 "answers": a["answers"] if (is_admin or a["phase"] == "revealed") else {},
-                "answered_teams": [int(k) for k in a["answers"].keys()],
-                "deltas": a["deltas"],
+                "answered_teams": [int(k) for k in a["answers"].keys()], "deltas": a["deltas"],
                 "question": self.public_q(aq, include_secret=(is_admin or a["phase"] == "revealed")) if a["phase"] != "betting" else None,
             }
 
@@ -424,10 +409,8 @@ class Room:
             ter_out = {
                 "owners": t["owners"],
                 "counts": [sum(1 for ow in t["owners"] if ow == i) for i in range(4)],
-                "cur_cell": t["cur_cell"],
-                "phase": t["phase"],
-                "wrong_teams": t["wrong_teams"],
-                "last_msg": t["last_msg"],
+                "cur_cell": t["cur_cell"], "phase": t["phase"],
+                "wrong_teams": t["wrong_teams"], "last_msg": t["last_msg"],
                 "question": self.public_q(tq, include_secret=(is_admin or t["phase"] == "revealed")),
             }
 
@@ -435,12 +418,8 @@ class Room:
         if self.bomb:
             b = self.bomb
             bomb_out = {
-                "holder": b["holder"],
-                "lives": b["lives"],
-                "time_left": b["time_left"],
-                "status": b["status"],
-                "last_choice": b["last_choice"],
-                "last_msg": b["last_msg"],
+                "holder": b["holder"], "lives": b["lives"], "time_left": b["time_left"],
+                "status": b["status"], "last_choice": b["last_choice"], "last_msg": b["last_msg"],
                 "question": self.public_q(b["cur_q"], include_secret=(is_admin or b["status"] != "playing")),
             }
 
@@ -448,59 +427,75 @@ class Room:
         if self.kahoot:
             k = self.kahoot
             lb = sorted(
-                [
-                    {
-                        "name": nm,
-                        "team": rc["team"],
-                        "pts": rc["pts"],
-                        "streak": rc["streak"],
-                        "correct": rc["correct"],
-                    }
-                    for nm, rc in k["records"].items()
-                ],
+                [{"name": nm, "team": rc["team"], "pts": rc["pts"], "streak": rc["streak"], "correct": rc["correct"]} for nm, rc in k["records"].items()],
                 key=lambda x: (-x["pts"], -x["correct"], x["name"]),
             )
             vc = [sum(1 for r in k["round_results"].values() if r["choice"] == i) for i in range(4)]
             kahoot_out = {
-                "phase": k["phase"],
-                "q_num": k["q_num"],
-                "total_q": len(k["pool"]),
+                "phase": k["phase"], "q_num": k["q_num"], "total_q": len(k["pool"]),
                 "time_left": k["time_left"],
                 "question": self.public_q(k["cur_q"], include_secret=(is_admin or k["phase"] == "reveal")) if k["cur_q"] else None,
                 "answered_count": len(k["round_results"]),
                 "answered_names": list(k["round_results"].keys()),
-                "vote_counts": vc,
-                "round_results": k["round_results"],
+                "vote_counts": vc, "round_results": k["round_results"],
+                "leaderboard": lb, "team_pts": k["team_pts"],
+            }
+
+        wheel_out = None
+        if self.wheel:
+            w = self.wheel
+            wheel_out = {
+                "active_team": w["active_team"],
+                "selected_cat": w["selected_cat"],
+                "spin_angle": w["spin_angle"],
+                "spin_id": w["spin_id"],
+                "revealed": w["revealed"],
+                "answers": w["answers"],
+                "question": self.public_q(w["cur_q"], include_secret=(is_admin or w["revealed"])) if w["cur_q"] else None,
+            }
+
+        match_out = None
+        if self.match:
+            mt = self.match
+            lb = sorted(
+                [{"name": nm, "team": rc["team"], "score": rc["score"], "done": rc["done"]} for nm, rc in mt["results"].items()],
+                key=lambda x: (-x["score"], x["name"]),
+            )
+            match_out = {
+                "round_id": mt["round_id"],
+                "prompts": mt["prompts"],
+                "shuffled_ans": mt["shuffled_ans"],
+                "answer_key": mt["answer_key"] if is_admin else [],
                 "leaderboard": lb,
-                "team_pts": k["team_pts"],
+                "team_pts": mt["team_pts"],
+            }
+
+        boxes_out = None
+        if self.boxes:
+            bx = self.boxes
+            cur_box = bx["items"][bx["cur_idx"]] if bx["cur_idx"] is not None else None
+            boxes_out = {
+                "opened": bx["opened"],
+                "kinds": [it["kind"] if (is_admin or bx["opened"][i]) else "closed" for i, it in enumerate(bx["items"])],
+                "cur_idx": bx["cur_idx"],
+                "cur_kind": cur_box["kind"] if cur_box else None,
+                "cur_bonus": cur_box["bonus"] if cur_box else 0,
+                "revealed": bx["revealed"],
+                "answers": bx["answers"],
+                "question": self.public_q(cur_box["q"], include_secret=(is_admin or bx["revealed"])) if (cur_box and cur_box["q"]) else None,
             }
 
         return {
-            "room": self.code,
-            "topic_title": self.topic_title,
-            "presets": PRESETS_META,
-            "ai_ready": bool(GEMINI_API_KEY),
-            "ai_busy": self.ai_busy,
-            "ai_status": self.ai_status,
-            "ai_error": self.ai_error,
-            "ai_note": self.ai_note,
-            "mode": self.mode,
-            "teams": self.teams,
-            "scores": self.scores,
-            "cats": self.cats,
-            "used": self.used,
-            "cur": self.cur,
-            "revealed": self.revealed,
+            "room": self.code, "topic_title": self.topic_title, "presets": PRESETS_META,
+            "ai_ready": bool(GEMINI_API_KEY), "ai_busy": self.ai_busy,
+            "ai_status": self.ai_status, "ai_error": self.ai_error, "ai_note": self.ai_note,
+            "mode": self.mode, "teams": self.teams, "scores": self.scores,
+            "cats": self.cats, "used": self.used, "cur": self.cur, "revealed": self.revealed,
             "question": self.public_q(cur_q, include_secret=inc_sec),
-            "answers": self.answers,
-            "text_answers": self.text_answers,
-            "ai_grades": self.ai_grades,
+            "answers": self.answers, "text_answers": self.text_answers, "ai_grades": self.ai_grades,
             "players": [{"name": n, "team": t} for n, t in self.players.items()],
-            "mil": mil_out,
-            "auc": auc_out,
-            "ter": ter_out,
-            "bomb": bomb_out,
-            "kahoot": kahoot_out,
+            "mil": mil_out, "auc": auc_out, "ter": ter_out, "bomb": bomb_out, "kahoot": kahoot_out,
+            "wheel": wheel_out, "match": match_out, "boxes": boxes_out,
         }
 
 
@@ -585,11 +580,7 @@ def run_ai_board_worker(room, topic, level, file_part=None, extra_text=""):
             room.text_answers = {}
             room.ai_grades = {}
             room.ai_note = ""
-            room.mil = None
-            room.auc = None
-            room.ter = None
-            room.bomb = None
-            room.kahoot = None
+            room.clear_subgames()
             room.ai_busy = False
             room.ai_error = ""
             room.ai_status = f"✔ «{topic}» bo‘yicha 25 ta savol tayyor!"
@@ -633,8 +624,7 @@ class Handler(BaseHTTPRequestHandler):
         ln = int(self.headers.get("Content-Length", 0))
         if ln <= 0:
             return {}
-        raw = self.rfile.read(ln).decode("utf-8")
-        return json.loads(raw)
+        return json.loads(self.rfile.read(ln).decode("utf-8"))
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -655,14 +645,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not room:
                     self.send_json({"error": "Bunday xona topilmadi. Kodni tekshiring."}, 404)
                     return
-                self.send_json({
-                    "ok": True,
-                    "room": room.code,
-                    "topic_title": room.topic_title,
-                    "mode": room.mode,
-                    "teams": room.teams,
-                    "player_count": len(room.players),
-                })
+                self.send_json({"ok": True, "room": room.code, "topic_title": room.topic_title})
             return
 
         if path == "/api/state":
@@ -743,10 +726,7 @@ class Handler(BaseHTTPRequestHandler):
             team = data.get("team")
             with LOCK:
                 room = get_room(code)
-                if not room:
-                    self.send_json({"error": "Xona topilmadi"}, 404)
-                    return
-                if team is None or not (0 <= int(team) < 4):
+                if not room or team is None or not (0 <= int(team) < 4):
                     self.send_json({"error": "Jamoa tanlanmagan"}, 400)
                     return
                 t = int(team)
@@ -755,6 +735,60 @@ class Handler(BaseHTTPRequestHandler):
                 if "text" in data and data["text"] is not None:
                     room.text_answers[t] = str(data["text"]).strip()
                 room.touch()
+            self.send_json({"ok": True})
+            return
+
+        if path == "/api/wheel_play":
+            team = int(data.get("team", -1))
+            choice = int(data.get("choice", -1))
+            with LOCK:
+                room = get_room(code)
+                if not room or not room.wheel or not (0 <= team < 4):
+                    self.send_json({"error": "Omad g‘ildiragi faol emas"}, 400)
+                    return
+                if not room.wheel["revealed"] and room.wheel["cur_q"]:
+                    room.wheel["answers"][str(team)] = choice
+                    room.touch()
+            self.send_json({"ok": True})
+            return
+
+        if path == "/api/match_play":
+            name = str(data.get("name") or "").strip()
+            tv = data.get("team")
+            team = int(tv) if (tv is not None and tv != "" and 0 <= int(tv) < 4) else None
+            picks = data.get("picks") or []
+            with LOCK:
+                room = get_room(code)
+                if not room or not room.match:
+                    self.send_json({"error": "Moslashtirish o‘yini faol emas"}, 400)
+                    return
+                if not name:
+                    self.send_json({"error": "Ismingizni kiriting"}, 400)
+                    return
+                mt = room.match
+                key = mt["answer_key"]
+                correct_cnt = sum(1 for i in range(min(len(key), len(picks))) if int(picks[i]) == key[i])
+                score = correct_cnt * 200
+                prev = mt["results"].get(name)
+                if not prev:
+                    mt["results"][name] = {"team": team, "score": score, "done": True}
+                    if team is not None:
+                        mt["team_pts"][team] += score
+                room.touch()
+            self.send_json({"ok": True, "score": score, "correct": correct_cnt})
+            return
+
+        if path == "/api/boxes_play":
+            team = int(data.get("team", -1))
+            choice = int(data.get("choice", -1))
+            with LOCK:
+                room = get_room(code)
+                if not room or not room.boxes or not (0 <= team < 4):
+                    self.send_json({"error": "Qutini och o‘yini faol emas"}, 400)
+                    return
+                if not room.boxes["revealed"] and room.boxes["cur_idx"] is not None:
+                    room.boxes["answers"][str(team)] = choice
+                    room.touch()
             self.send_json({"ok": True})
             return
 
@@ -830,16 +864,15 @@ class Handler(BaseHTTPRequestHandler):
                     m["lifelines"]["ai"] = False
                     if GEMINI_API_KEY:
                         try:
-                            hint = call_gemini(
+                            m["ai_hint"] = call_gemini(
                                 f"«Kim millioner bo‘lishni xohlaydi?» o‘yinida yordam ber. Savol: {mq['q']}. "
                                 f"Variantlar: A){mq['opts'][0]}, B){mq['opts'][1]}, C){mq['opts'][2]}, D){mq['opts'][3]}. "
-                                f"2 jumlada qisqa va aniq mantiqiy maslahat ber."
+                                f"2 jumlada qisqa maslahat ber."
                             )
-                            m["ai_hint"] = hint
                         except Exception:
-                            m["ai_hint"] = f"Mantiqiy tahlilga ko‘ra eng ishonchli javob: {['A','B','C','D'][mq['c']]} varianti."
+                            m["ai_hint"] = f"Eng ishonchli javob: {['A','B','C','D'][mq['c']]} varianti."
                     else:
-                        m["ai_hint"] = f"Tahlil bo‘yicha eng to‘g‘ri yo‘nalish: {['A','B','C','D'][mq['c']]} varianti."
+                        m["ai_hint"] = f"Eng to‘g‘ri yo‘nalish: {['A','B','C','D'][mq['c']]} varianti."
                 elif action == "reveal" and m["active"] and not m["revealed"] and m["selected"] is not None:
                     m["revealed"] = True
                     m["audience_open"] = False
@@ -1007,8 +1040,7 @@ class Handler(BaseHTTPRequestHandler):
                     t = int(data.get("team", 0))
                     sign = int(data.get("sign", 1))
                     if room.cur is not None and 0 <= t < 4:
-                        pts = room.questions[room.cur]["pts"]
-                        room.scores[t] += sign * pts
+                        room.scores[t] += sign * room.questions[room.cur]["pts"]
 
                 elif action == "score":
                     t = int(data.get("team", 0))
@@ -1031,11 +1063,7 @@ class Handler(BaseHTTPRequestHandler):
                     room.text_answers = {}
                     room.ai_grades = {}
                     room.ai_note = ""
-                    room.mil = None
-                    room.auc = None
-                    room.ter = None
-                    room.bomb = None
-                    room.kahoot = None
+                    room.clear_subgames()
 
                 elif action == "save":
                     idx = int(data.get("idx", 0))
@@ -1046,11 +1074,8 @@ class Handler(BaseHTTPRequestHandler):
                         opts = [] if short else [str(x) for x in (q_in.get("opts") or ["", "", "", ""])][:4]
                         c_val = None if short else (int(q_in["c"]) if q_in.get("c") is not None else 0)
                         room.questions[idx] = {
-                            "cat": old["cat"],
-                            "pts": old["pts"],
-                            "q": str(q_in.get("q") or ""),
-                            "opts": opts,
-                            "c": c_val,
+                            "cat": old["cat"], "pts": old["pts"], "q": str(q_in.get("q") or ""),
+                            "opts": opts, "c": c_val,
                             "ans": str(q_in.get("ans") or "") if short else (opts[c_val] if opts else ""),
                             "exp": str(q_in.get("exp") or ""),
                         }
@@ -1079,7 +1104,6 @@ class Handler(BaseHTTPRequestHandler):
                     room.ai_busy = True
                     room.ai_error = ""
                     room.ai_status = f"«{fname}» fayli tahlil qilinmoqda..."
-
                     file_part = None
                     extra_txt = ""
                     if fname.lower().endswith(".docx"):
@@ -1090,12 +1114,7 @@ class Handler(BaseHTTPRequestHandler):
                         if not mime:
                             mime = "application/pdf" if fname.lower().endswith(".pdf") else "image/jpeg"
                         file_part = {"mime": mime, "b64": b64}
-
-                    threading.Thread(
-                        target=run_ai_board_worker,
-                        args=(room, topic_lbl, level, file_part, extra_txt),
-                        daemon=True,
-                    ).start()
+                    threading.Thread(target=run_ai_board_worker, args=(room, topic_lbl, level, file_part, extra_txt), daemon=True).start()
 
                 elif action == "ai_generate_slot":
                     idx = int(data.get("idx", 0))
@@ -1116,7 +1135,7 @@ class Handler(BaseHTTPRequestHandler):
                         q = room.questions[room.cur]
                         ans_s = q["opts"][q["c"]] if q["opts"] else q["ans"]
                         room.ai_note = call_gemini(
-                            f"Ushbu savol va to‘g‘ri javobga talabalar uchun 3 jumlada amaliy hayotiy misol va tushuntirish ber (o‘zbek tilida):\n"
+                            f"Ushbu savol va to‘g‘ri javobga talabalar uchun 3 jumlada amaliy misol va tushuntirish ber (o‘zbek tilida):\n"
                             f"Savol: {q['q']}\nJavob: {ans_s}"
                         )
 
@@ -1131,6 +1150,115 @@ class Handler(BaseHTTPRequestHandler):
                             )
                             room.ai_grades = extract_json_block(raw)
 
+                # --- WHEEL (OMAD G'ILDIRAGI) ---
+                elif action == "wheel_start":
+                    pool = room.get_mc_pool()
+                    room.wheel = {
+                        "active_team": 0,
+                        "selected_cat": None,
+                        "spin_angle": 0,
+                        "spin_id": 0,
+                        "pool": pool,
+                        "pool_idx": 0,
+                        "cur_q": None,
+                        "revealed": False,
+                        "answers": {},
+                    }
+
+                elif action == "wheel_spin" and room.wheel:
+                    w = room.wheel
+                    cat_idx = random.randint(0, 4)
+                    cat_name = room.cats[cat_idx]
+                    extra_turns = random.randint(4, 6) * 360
+                    sector_center = cat_idx * 72 + 36
+                    w["spin_angle"] = w["spin_angle"] + extra_turns + (360 - sector_center - (w["spin_angle"] % 360))
+                    w["spin_id"] += 1
+                    w["selected_cat"] = cat_name
+                    cands = [q for q in w["pool"] if q["cat"] == cat_name] or w["pool"]
+                    w["cur_q"] = cands[w["pool_idx"] % len(cands)]
+                    w["pool_idx"] += 1
+                    w["revealed"] = False
+                    w["answers"] = {}
+
+                elif action == "wheel_reveal" and room.wheel and room.wheel["cur_q"]:
+                    w = room.wheel
+                    w["revealed"] = True
+                    q = w["cur_q"]
+                    for k_tm, ch in w["answers"].items():
+                        tm = int(k_tm)
+                        if 0 <= tm < 4 and int(ch) == q["c"]:
+                            room.scores[tm] += 200
+                    w["active_team"] = (w["active_team"] + 1) % 4
+
+                # --- MATCH UP (MOSLASHTIRISH) ---
+                elif action == "match_start":
+                    pool = room.get_mc_pool()[:5]
+                    prompts = [q["q"] for q in pool]
+                    correct_ans = [q["opts"][q["c"]] for q in pool]
+                    order = list(range(len(pool)))
+                    random.shuffle(order)
+                    shuffled_ans = [correct_ans[i] for i in order]
+                    answer_key = [order.index(i) for i in range(len(pool))]
+                    room.match = {
+                        "round_id": random.randint(1000, 9999),
+                        "prompts": prompts,
+                        "shuffled_ans": shuffled_ans,
+                        "answer_key": answer_key,
+                        "results": {},
+                        "team_pts": [0, 0, 0, 0],
+                    }
+
+                elif action == "match_sync_scores" and room.match:
+                    for i in range(4):
+                        room.scores[i] += room.match["team_pts"][i]
+                    room.match["team_pts"] = [0, 0, 0, 0]
+
+                # --- OPEN THE BOX (QUTINI OCH) ---
+                elif action == "boxes_start":
+                    pool = room.get_mc_pool()[:12]
+                    items = []
+                    for i in range(12):
+                        if i in (2, 7):
+                            items.append({"kind": "bonus", "bonus": 300, "q": None})
+                        elif i == 10:
+                            items.append({"kind": "jackpot", "bonus": 500, "q": None})
+                        else:
+                            items.append({"kind": "question", "bonus": 0, "q": pool[i % len(pool)]})
+                    random.shuffle(items)
+                    room.boxes = {
+                        "items": items,
+                        "opened": [False] * 12,
+                        "cur_idx": None,
+                        "revealed": False,
+                        "answers": {},
+                    }
+
+                elif action == "boxes_open" and room.boxes:
+                    idx = int(data.get("idx", 0))
+                    bx = room.boxes
+                    if 0 <= idx < 12:
+                        bx["opened"][idx] = True
+                        bx["cur_idx"] = idx
+                        bx["revealed"] = False
+                        bx["answers"] = {}
+
+                elif action == "boxes_reveal" and room.boxes and room.boxes["cur_idx"] is not None:
+                    bx = room.boxes
+                    bx["revealed"] = True
+                    it = bx["items"][bx["cur_idx"]]
+                    if it["kind"] == "question" and it["q"]:
+                        for k_tm, ch in bx["answers"].items():
+                            tm = int(k_tm)
+                            if 0 <= tm < 4 and int(ch) == it["q"]["c"]:
+                                room.scores[tm] += 250
+
+                elif action == "boxes_award_bonus" and room.boxes and room.boxes["cur_idx"] is not None:
+                    tm = int(data.get("team", 0))
+                    it = room.boxes["items"][room.boxes["cur_idx"]]
+                    if 0 <= tm < 4 and it["bonus"] > 0:
+                        room.scores[tm] += it["bonus"]
+                        room.boxes["revealed"] = True
+
                 # --- MILLIONAIRE ---
                 elif action == "mil_start":
                     pname = str(data.get("player") or "").strip() or "Ishtirokchi"
@@ -1140,21 +1268,11 @@ class Handler(BaseHTTPRequestHandler):
                     while len(pool) < len(MIL_PRIZES):
                         pool.extend(room.get_mc_pool())
                     room.mil = {
-                        "active": True,
-                        "player": pname,
-                        "team": t_idx,
-                        "pool": pool[:len(MIL_PRIZES)],
-                        "step": 0,
-                        "won": 0,
-                        "status": "playing",
-                        "revealed": False,
-                        "selected": None,
-                        "hidden_opts": [],
-                        "lifelines": {"fifty": True, "audience": True, "ai": True},
-                        "audience_open": False,
-                        "votes": {},
-                        "ai_hint": "",
-                        "credited": False,
+                        "active": True, "player": pname, "team": t_idx,
+                        "pool": pool[:len(MIL_PRIZES)], "step": 0, "won": 0,
+                        "status": "playing", "revealed": False, "selected": None,
+                        "hidden_opts": [], "lifelines": {"fifty": True, "audience": True, "ai": True},
+                        "audience_open": False, "votes": {}, "ai_hint": "", "credited": False,
                     }
 
                 elif action == "mil_select" and room.mil:
@@ -1223,14 +1341,9 @@ class Handler(BaseHTTPRequestHandler):
                 elif action == "auc_start":
                     pool = room.get_mc_pool()[:8]
                     room.auc = {
-                        "round": 1,
-                        "total_rounds": len(pool),
-                        "pool": pool,
-                        "phase": "betting",
-                        "bank": [1000, 1000, 1000, 1000],
-                        "bets": {},
-                        "answers": {},
-                        "deltas": [0, 0, 0, 0],
+                        "round": 1, "total_rounds": len(pool), "pool": pool,
+                        "phase": "betting", "bank": [1000, 1000, 1000, 1000],
+                        "bets": {}, "answers": {}, "deltas": [0, 0, 0, 0],
                     }
 
                 elif action == "auc_open_q" and room.auc:
@@ -1272,11 +1385,8 @@ class Handler(BaseHTTPRequestHandler):
                 # --- TERRITORY ---
                 elif action == "ter_start":
                     room.ter = {
-                        "owners": [None] * 25,
-                        "cur_cell": None,
-                        "phase": "idle",
-                        "wrong_teams": [],
-                        "last_msg": "Xaritadan bo‘sh katakchani tanlang!",
+                        "owners": [None] * 25, "cur_cell": None, "phase": "idle",
+                        "wrong_teams": [], "last_msg": "Xaritadan bo‘sh katakchani tanlang!",
                     }
 
                 elif action == "ter_pick" and room.ter:
@@ -1299,17 +1409,11 @@ class Handler(BaseHTTPRequestHandler):
                     sec = int(data.get("sec", 20))
                     pool = room.get_mc_pool()
                     room.bomb = {
-                        "holder": 0,
-                        "lives": [3, 3, 3, 3],
-                        "sec": sec,
-                        "deadline": time.time() + sec,
-                        "time_left": sec,
-                        "status": "playing",
-                        "last_choice": None,
+                        "holder": 0, "lives": [3, 3, 3, 3], "sec": sec,
+                        "deadline": time.time() + sec, "time_left": sec,
+                        "status": "playing", "last_choice": None,
                         "last_msg": f"💣 Bomba {room.teams[0]} qo‘lida! Tez javob bering!",
-                        "pool": pool,
-                        "pool_idx": 0,
-                        "cur_q": pool[0],
+                        "pool": pool, "pool_idx": 0, "cur_q": pool[0],
                     }
 
                 elif action == "bomb_resume" and room.bomb:
@@ -1340,15 +1444,9 @@ class Handler(BaseHTTPRequestHandler):
                     pool = room.get_mc_pool()[:15]
                     recs = {nm: {"team": tm, "pts": 0, "streak": 0, "correct": 0} for nm, tm in room.players.items()}
                     room.kahoot = {
-                        "phase": "lobby",
-                        "duration": dur,
-                        "pool": pool,
-                        "q_num": -1,
-                        "cur_q": None,
-                        "deadline": 0,
-                        "time_left": dur,
-                        "round_results": {},
-                        "records": recs,
+                        "phase": "lobby", "duration": dur, "pool": pool,
+                        "q_num": -1, "cur_q": None, "deadline": 0,
+                        "time_left": dur, "round_results": {}, "records": recs,
                         "team_pts": [0, 0, 0, 0],
                     }
 
