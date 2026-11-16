@@ -1,16 +1,23 @@
 <!DOCTYPE html>
 <html lang="uz"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Jeo Quiz — Jonli O‘yin</title>
+<title>Jeo Quiz — Universal O‘yin Platformasi</title>
 <style>
 body{margin:0;background:#08102B;color:#fff;font-family:Arial,Helvetica,sans-serif}
 .w{max-width:960px;margin:0 auto;padding:12px}
 .topbar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#101D4A;padding:10px 14px;border-radius:12px;border:1px solid #1E63D6;margin-bottom:10px}
-.brand{font-size:19px;font-weight:bold;color:#FFC72C}
+.brand{font-size:19px;font-weight:bold;color:#FFC72C;display:flex;align-items:center;gap:8px}
+.roomtag{font-size:12px;background:#13245C;color:#7CFC9A;border:1px solid #1E8E4E;padding:3px 9px;border-radius:20px}
 .menutoggle{background:#FFC72C;color:#000;font-weight:bold;padding:8px 14px;border-radius:8px;border:none;cursor:pointer;font-size:14px}
-.navdrawer{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:#0E1A42;padding:8px;border-radius:12px;border:1px solid #2F8BFF;margin-bottom:12px}
+.navdrawer{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;background:#0E1A42;padding:8px;border-radius:12px;border:1px solid #2F8BFF;margin-bottom:12px}
 .navdrawer.hidden{display:none}
 .navitem{padding:10px 6px;border-radius:8px;border:1px solid #2F8BFF;background:#13245C;color:#fff;font-weight:bold;font-size:13px;cursor:pointer;text-align:center}
 .navitem.active{background:#FFC72C;color:#000;border-color:#FFC72C}
+
+.hubgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px;margin-top:8px}
+.hubcard{background:#13245C;border:2px solid #2F8BFF;border-radius:14px;padding:18px}
+.hubcard.host{border-color:#FFC72C;background:linear-gradient(165deg,#172B6E,#0E1A42)}
+.presetbtn{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;padding:11px 12px;margin:6px 0;border-radius:10px;border:1px solid #2F8BFF;background:#0c1842;color:#fff;cursor:pointer}
+.presetbtn:hover{border-color:#FFC72C;background:#162969}
 
 .profilebar{display:flex;justify-content:space-between;align-items:center;background:#101D4A;padding:8px 12px;border-radius:10px;border:1px solid #1E8E4E;margin-bottom:10px;font-size:14px}
 .card{background:#13245C;border-radius:12px;padding:14px;margin-bottom:12px}
@@ -101,49 +108,86 @@ button:disabled{opacity:.4;cursor:default}
 </style></head>
 <body><div class="w">
 
-<div class="topbar">
-  <div class="brand" id="title">JEO QUIZ</div>
-  <button class="menutoggle" onclick="toggleStudentMenu()">☰ Menyu</button>
-</div>
-
-<div id="snav" class="navdrawer hidden">
-  <button id="stab_play" class="navitem active" onclick="openStudentTab('play')">🎯 Jonli o‘yin</button>
-  <button id="stab_modes" class="navitem" onclick="openStudentTab('modes')">🎮 O‘yin turlari</button>
-  <button id="stab_rank" class="navitem" onclick="openStudentTab('rank')">🏆 Reyting</button>
-  <button id="stab_prof" class="navitem" onclick="openStudentTab('prof')">👤 Profil</button>
-</div>
-
-<!-- COMPACT PROFILE BAR -->
-<div class="profilebar" id="profbar" style="display:none">
-  <div id="profinfo"></div>
-  <button onclick="openStudentTab('prof')" style="background:#1B3180;color:#fff;padding:6px 10px;font-size:13px">O‘zgartirish</button>
-</div>
-
-<!-- LOGIN CARD -->
-<div class="card" id="loginbox">
-  <div style="font-size:14px;color:#FFC72C;font-weight:bold;margin-bottom:6px">Ismingiz va jamoangizni tanlang:</div>
-  <div class="row">
-    <input id="pname" placeholder="Ismingiz" style="flex:2;min-width:140px">
-    <select id="pteam" style="flex:2;min-width:140px"></select>
-    <button class="gold" onclick="doLogin()" style="flex:1;min-width:90px">Kirish</button>
+<!-- UNIVERSAL LOBBY (XONA TANLANMAGANDA) -->
+<div id="hubscreen">
+  <div class="topbar">
+    <div class="brand">⚡ JEO QUIZ <span style="font-size:12px;color:#93C5FD;font-weight:normal">Universal Platforma</span></div>
+    <a href="/admin" style="color:#FFC72C;text-decoration:none;font-size:13px;font-weight:bold">Boshlovchi kirishi ➔</a>
   </div>
-  <div id="lstatus" style="font-size:13px;color:#7CFC9A;margin-top:6px"></div>
+
+  <div class="hubgrid">
+    <!-- 1. O'YINGA QO'SHILISH -->
+    <div class="hubcard">
+      <div style="font-size:20px;font-weight:bold;color:#7CFC9A;margin-bottom:6px">🎯 O‘yinga qo‘shilish</div>
+      <div style="font-size:14px;color:#CBD5E1;margin-bottom:12px">Boshlovchi ekranidagi 4 xonali xona kodini kiriting:</div>
+      <input id="hubcode" inputmode="numeric" maxlength="6" placeholder="Masalan: 4829" style="width:100%;font-size:22px;text-align:center;font-weight:bold;letter-spacing:4px;margin-bottom:10px">
+      <button class="green" style="width:100%;font-size:16px;padding:12px" onclick="joinRoomByCode()">Xonaga kirish ➔</button>
+      <div id="hubmsg" style="color:#FF8A80;font-size:13px;margin-top:8px;font-weight:bold"></div>
+      <div style="border-top:1px dashed #2F8BFF;margin-top:14px;padding-top:10px;text-align:center">
+        <button onclick="enterRoom('0000')" style="background:#1B3180;color:#CBD5E1;font-size:13px;width:100%">Umumiy ochiq zalga kirish (0000)</button>
+      </div>
+    </div>
+
+    <!-- 2. YANGI O'YIN YARATISH -->
+    <div class="hubcard host">
+      <div style="font-size:20px;font-weight:bold;color:#FFC72C;margin-bottom:6px">🚀 Yangi o‘yin ochish</div>
+      <div style="font-size:14px;color:#CBD5E1;margin-bottom:10px">O‘zingiz uchun alohida xona, QR-kod va 6 xil o‘yin rejimini yarating:</div>
+      <div id="hubpresets">
+        <button class="presetbtn" onclick="createNewRoom('econ')"><span>📈 <b>Iqtisodiyot va Moliya</b><br><small style="color:#93C5FD">25 ta tayyor savol</small></span><span>Boshlash ➔</span></button>
+        <button class="presetbtn" onclick="createNewRoom('logic')"><span>🧠 <b>Mantiq va Zehn</b><br><small style="color:#93C5FD">25 ta tayyor savol</small></span><span>Boshlash ➔</span></button>
+        <button class="presetbtn" onclick="createNewRoom('history')"><span>🏛️ <b>O‘zbekiston va Jahon Tarixi</b><br><small style="color:#93C5FD">25 ta tayyor savol</small></span><span>Boshlash ➔</span></button>
+        <button class="presetbtn" onclick="createNewRoom('it')"><span>💻 <b>IT va Sun’iy Idrok</b><br><small style="color:#93C5FD">25 ta tayyor savol</small></span><span>Boshlash ➔</span></button>
+        <button class="presetbtn" onclick="createNewRoom('general')"><span>🌍 <b>Umumiy Bilimlar</b><br><small style="color:#93C5FD">25 ta tayyor savol</small></span><span>Boshlash ➔</span></button>
+      </div>
+      <div style="font-size:12px;color:#93C5FD;margin-top:6px">Ichkarida AI orqali istalgan mavzu yoki PDF/Word fayldan ham savol tuzish mumkin.</div>
+    </div>
+  </div>
 </div>
 
-<!-- VIEW 1: JONLI O'YIN -->
-<div id="sview_play">
-  <div class="scores" id="scores"></div>
-  <div id="main"></div>
-</div>
+<!-- ACTIVE ROOM PLAYER SCREEN -->
+<div id="roomscreen" style="display:none">
+  <div class="topbar">
+    <div class="brand">
+      <span id="title">JEO QUIZ</span>
+      <span id="roombadge" class="roomtag">#0000</span>
+    </div>
+    <button class="menutoggle" onclick="toggleStudentMenu()">☰ Menyu</button>
+  </div>
 
-<!-- VIEW 2: O'YIN TURLARI MENYUSI -->
-<div id="sview_modes" style="display:none">
-  <div id="smodeslist"></div>
-</div>
+  <div id="snav" class="navdrawer hidden">
+    <button id="stab_play" class="navitem active" onclick="openStudentTab('play')">🎯 Jonli o‘yin</button>
+    <button id="stab_modes" class="navitem" onclick="openStudentTab('modes')">🎮 O‘yin turlari</button>
+    <button id="stab_rank" class="navitem" onclick="openStudentTab('rank')">🏆 Reyting</button>
+    <button id="stab_prof" class="navitem" onclick="openStudentTab('prof')">👤 Profil</button>
+    <button class="navitem" style="background:#7F1D1D;border-color:#EF4444" onclick="leaveRoom()">🚪 Chiqish</button>
+  </div>
 
-<!-- VIEW 3: REYTING -->
-<div id="sview_rank" style="display:none">
-  <div class="card" id="srankbox"></div>
+  <div class="profilebar" id="profbar" style="display:none">
+    <div id="profinfo"></div>
+    <button onclick="openStudentTab('prof')" style="background:#1B3180;color:#fff;padding:6px 10px;font-size:13px">O‘zgartirish</button>
+  </div>
+
+  <div class="card" id="loginbox">
+    <div style="font-size:14px;color:#FFC72C;font-weight:bold;margin-bottom:6px">Ismingiz va jamoangizni tanlang:</div>
+    <div class="row">
+      <input id="pname" placeholder="Ismingiz" style="flex:2;min-width:140px">
+      <select id="pteam" style="flex:2;min-width:140px"></select>
+      <button class="gold" onclick="doLogin()" style="flex:1;min-width:90px">Kirish</button>
+    </div>
+  </div>
+
+  <div id="sview_play">
+    <div class="scores" id="scores"></div>
+    <div id="main"></div>
+  </div>
+
+  <div id="sview_modes" style="display:none">
+    <div id="smodeslist"></div>
+  </div>
+
+  <div id="sview_rank" style="display:none">
+    <div class="card" id="srankbox"></div>
+  </div>
 </div>
 
 </div>
@@ -157,9 +201,11 @@ const SGAMES = [
   {id:'auction', icon:'💰', title:'3. Auksion va Stavka', desc:'Avval kapitaldan stavka tiking, so‘ng 01–04 kartalardan to‘g‘ri javobni tanlang.'},
   {id:'territory', icon:'🗺️', title:'4. Hududlar jangi (5×5)', desc:'I–IV taktik tugmalarni birinchi bo‘lib to‘g‘ri bosing va xaritadagi sektorni egallang.'},
   {id:'bomb', icon:'💣', title:'5. Zanjirli Bomba', desc:'Bomba sizning jamoangizga kelganda taymer tugamasidan ALPHA–DELTA tugmasini bosing!'},
-  {id:'kahoot', icon:'⚡', title:'6. TEST (Jonli Viktorina)', desc:'▲ ◆ ● ■ rangli tugmalarni eng tez bosing, 🔥 seriya yig‘ing va shohsupaga chiqing!'},
+  {id:'kahoot', icon:'⚡', title:'6. TEST', desc:'▲ ◆ ● ■ rangli tugmalarni eng tez bosing, 🔥 seriya yig‘ing va shohsupaga chiqing!'},
 ];
 
+const urlParams = new URLSearchParams(window.location.search);
+let curRoom = urlParams.get('room') || sessionStorage.getItem('cur_room') || '';
 let S = null, teamsBuilt = false, myChoice = null, lastCur = null, myVote = null, lastMilStep = null, busyAI = false;
 let myAucChoice = null, lastAucRound = null, sTab = 'play';
 let myKahootChoice = null, lastKahootQ = null;
@@ -168,6 +214,49 @@ let myTeam = sessionStorage.getItem('pteam');
 myTeam = (myTeam !== null && myTeam !== '') ? Number(myTeam) : null;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = n => Number(n || 0).toLocaleString('ru-RU');
+
+async function createNewRoom(preset){
+  const r = await fetch('/api/create_room', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({preset})
+  });
+  const j = await r.json();
+  if (!r.ok){ alert(j.error || 'Xatolik'); return; }
+  sessionStorage.setItem('admin_room', j.room);
+  sessionStorage.setItem('admin_pin_' + j.room, j.pin);
+  window.location.href = '/admin?room=' + encodeURIComponent(j.room);
+}
+
+async function joinRoomByCode(){
+  const code = document.getElementById('hubcode').value.trim();
+  const msg = document.getElementById('hubmsg');
+  if (!code){ msg.textContent = '4 xonali xona kodini kiriting'; return; }
+  const r = await fetch('/api/check_room?room=' + encodeURIComponent(code), {cache:'no-store'});
+  const j = await r.json();
+  if (!r.ok){ msg.textContent = j.error || 'Bunday xona topilmadi'; return; }
+  msg.textContent = '';
+  enterRoom(j.room);
+}
+
+function enterRoom(code){
+  curRoom = code;
+  sessionStorage.setItem('cur_room', code);
+  teamsBuilt = false;
+  document.getElementById('hubscreen').style.display = 'none';
+  document.getElementById('roomscreen').style.display = 'block';
+  document.getElementById('roombadge').textContent = 'Xona #' + code;
+  load();
+}
+
+function leaveRoom(){
+  curRoom = '';
+  S = null;
+  sessionStorage.removeItem('cur_room');
+  if (window.history.replaceState) window.history.replaceState({}, '', '/');
+  document.getElementById('roomscreen').style.display = 'none';
+  document.getElementById('hubscreen').style.display = 'block';
+  document.getElementById('snav').classList.add('hidden');
+}
 
 function toggleStudentMenu(){
   document.getElementById('snav').classList.toggle('hidden');
@@ -198,8 +287,12 @@ function updateProfileVisibility(){
 }
 
 async function load(){
-  const r = await fetch('/api/state', {cache:'no-store'});
-  if (!r.ok) return;
+  if (!curRoom) return;
+  const r = await fetch('/api/state?room=' + encodeURIComponent(curRoom), {cache:'no-store'});
+  if (!r.ok){
+    if (r.status === 404) leaveRoom();
+    return;
+  }
   S = await r.json();
   render();
 }
@@ -210,7 +303,7 @@ async function doLogin(){
   const team = tv === '' ? null : Number(tv);
   const r = await fetch('/api/login', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({name, team})
+    body: JSON.stringify({room: curRoom, name, team})
   });
   const j = await r.json();
   if (!r.ok){ alert(j.error); return; }
@@ -223,15 +316,11 @@ async function doLogin(){
 }
 
 async function sendKahootAnswer(choice){
-  if (!myName){
-    alert('Avval ismingizni kiriting!');
-    openStudentTab('prof');
-    return;
-  }
+  if (!myName){ alert('Avval ismingizni kiriting!'); openStudentTab('prof'); return; }
   myKahootChoice = choice;
   const r = await fetch('/api/kahoot_play', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({name: myName, team: myTeam, choice})
+    body: JSON.stringify({room: curRoom, name: myName, team: myTeam, choice})
   });
   const j = await r.json();
   if (!r.ok){ alert(j.error || 'Xatolik'); return; }
@@ -242,7 +331,7 @@ async function sendAnswer(choice){
   if (myTeam === null){ alert('Avval jamoangizni tanlab «Kirish» tugmasini bosing!'); openStudentTab('prof'); return; }
   const r = await fetch('/api/answer', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({team: myTeam, choice})
+    body: JSON.stringify({room: curRoom, team: myTeam, choice})
   });
   if (r.ok) myChoice = choice;
 }
@@ -253,13 +342,13 @@ async function sendTextAnswer(){
   if (!txt) return;
   const r = await fetch('/api/answer', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({team: myTeam, text: txt})
+    body: JSON.stringify({room: curRoom, team: myTeam, text: txt})
   });
   if (r.ok) myChoice = txt;
 }
 
 async function sendMilPlay(action, extra){
-  const body = Object.assign({action}, extra || {});
+  const body = Object.assign({room: curRoom, action}, extra || {});
   if (action === 'ai'){ busyAI = true; render(); }
   const r = await fetch('/api/mil_play', {
     method:'POST', headers:{'Content-Type':'application/json'},
@@ -279,7 +368,7 @@ async function sendMilVote(choice){
   })()));
   const r = await fetch('/api/mil_vote', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({voter, choice})
+    body: JSON.stringify({room: curRoom, voter, choice})
   });
   if (r.ok){ myVote = choice; await load(); }
 }
@@ -293,7 +382,7 @@ async function sendAucBet(amount){
   if (myTeam === null){ alert('Avval jamoangizni tanlang!'); openStudentTab('prof'); return; }
   const r = await fetch('/api/auc_play', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({action:'bet', team: myTeam, amount})
+    body: JSON.stringify({room: curRoom, action:'bet', team: myTeam, amount})
   });
   const j = await r.json();
   if (!r.ok){ alert(j.error); return; }
@@ -304,7 +393,7 @@ async function sendAucAnswer(choice){
   if (myTeam === null){ alert('Avval jamoangizni tanlang!'); openStudentTab('prof'); return; }
   const r = await fetch('/api/auc_play', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({action:'answer', team: myTeam, choice})
+    body: JSON.stringify({room: curRoom, action:'answer', team: myTeam, choice})
   });
   const j = await r.json();
   if (!r.ok){ alert(j.error); return; }
@@ -316,7 +405,7 @@ async function sendTerAnswer(choice){
   if (myTeam === null){ alert('Avval jamoangizni tanlang!'); openStudentTab('prof'); return; }
   const r = await fetch('/api/ter_play', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({team: myTeam, choice})
+    body: JSON.stringify({room: curRoom, team: myTeam, choice})
   });
   const j = await r.json();
   if (!r.ok){ alert(j.error); return; }
@@ -327,7 +416,7 @@ async function sendBombAnswer(choice){
   if (myTeam === null){ alert('Avval jamoangizni tanlang!'); openStudentTab('prof'); return; }
   const r = await fetch('/api/bomb_play', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({team: myTeam, choice})
+    body: JSON.stringify({room: curRoom, team: myTeam, choice})
   });
   const j = await r.json();
   if (!r.ok){ alert(j.error); return; }
@@ -366,31 +455,11 @@ function render(){
   ).join('');
 
   const main = document.getElementById('main');
-  if (S.mode === 'kahoot'){
-    document.getElementById('title').textContent = '⚡ TEST LIVE';
-    renderKahootPlayer(main);
-    return;
-  }
-  if (S.mode === 'millionaire'){
-    document.getElementById('title').textContent = '💎 MILLIONER';
-    renderMilPlayer(main);
-    return;
-  }
-  if (S.mode === 'auction'){
-    document.getElementById('title').textContent = '💰 AUKSION';
-    renderAucPlayer(main);
-    return;
-  }
-  if (S.mode === 'territory'){
-    document.getElementById('title').textContent = '🗺️ HUDUDLAR JANGI';
-    renderTerPlayer(main);
-    return;
-  }
-  if (S.mode === 'bomb'){
-    document.getElementById('title').textContent = '💣 ZANJIRLI BOMBA';
-    renderBombPlayer(main);
-    return;
-  }
+  if (S.mode === 'kahoot'){ document.getElementById('title').textContent = '⚡ TEST'; renderKahootPlayer(main); return; }
+  if (S.mode === 'millionaire'){ document.getElementById('title').textContent = '💎 MILLIONER'; renderMilPlayer(main); return; }
+  if (S.mode === 'auction'){ document.getElementById('title').textContent = '💰 AUKSION'; renderAucPlayer(main); return; }
+  if (S.mode === 'territory'){ document.getElementById('title').textContent = '🗺️ HUDUDLAR JANGI'; renderTerPlayer(main); return; }
+  if (S.mode === 'bomb'){ document.getElementById('title').textContent = '💣 ZANJIRLI BOMBA'; renderBombPlayer(main); return; }
 
   document.getElementById('title').textContent = '🟦 JEO QUIZ';
   if (S.cur !== lastCur){ lastCur = S.cur; myChoice = null; }
@@ -436,14 +505,8 @@ function render(){
 
 function renderKahootPlayer(main){
   const k = S.kahoot;
-  if (!k){
-    main.innerHTML = '<div class="card">Boshlovchi TEST o‘yinini ochishini kuting...</div>';
-    return;
-  }
-  if (k.q_num !== lastKahootQ){
-    lastKahootQ = k.q_num;
-    myKahootChoice = null;
-  }
+  if (!k){ main.innerHTML = '<div class="card">Boshlovchi TEST o‘yinini ochishini kuting...</div>'; return; }
+  if (k.q_num !== lastKahootQ){ lastKahootQ = k.q_num; myKahootChoice = null; }
   const lb = k.leaderboard || [];
   const myIdx = lb.findIndex(x => x.name === myName);
   const myRec = myIdx >= 0 ? lb[myIdx] : {pts: 0, streak: 0, correct: 0};
@@ -451,7 +514,6 @@ function renderKahootPlayer(main){
   const answeredAlready = (k.answered_names || []).includes(myName) || myKahootChoice !== null;
 
   let h = `<div class="card" style="border:2px solid #A855F7">`;
-
   if (k.phase === 'lobby'){
     h += `<div style="text-align:center;padding:10px 0">
       <div style="font-size:28px">⚡</div>
@@ -461,8 +523,7 @@ function renderKahootPlayer(main){
                : `<button class="gold" style="margin-top:10px" onclick="openStudentTab('prof')">Avval ismingizni kiriting</button>`}
       <div style="margin-top:10px;font-size:13px;color:#93C5FD">Xonadagi ishtirokchilar: <b>${lb.length} ta</b></div>
     </div></div>`;
-    main.innerHTML = h;
-    return;
+    main.innerHTML = h; return;
   }
 
   if (k.phase === 'question' || k.phase === 'reveal'){
@@ -472,8 +533,7 @@ function renderKahootPlayer(main){
       <div style="font-size:24px;font-weight:bold;color:${k.time_left<=5?'#FF8A80':'#7CFC9A'}">⏱ ${k.time_left}s</div>
     </div>`;
     if (q){
-      h += `<div style="font-size:13px;color:#93C5FD">${esc(q.cat)}</div><div class="q">${esc(q.q)}</div>`;
-      h += `<div class="kgrid">`;
+      h += `<div style="font-size:13px;color:#93C5FD">${esc(q.cat)}</div><div class="q">${esc(q.q)}</div><div class="kgrid">`;
       q.opts.forEach((o, i) => {
         let cls = `kbtn k${i}`;
         if (k.phase === 'reveal'){
@@ -481,12 +541,9 @@ function renderKahootPlayer(main){
           if (i === q.c) cls += ' ok';
           else if (i === picked) cls += ' bad';
           else cls += ' dim';
-        } else if (i === myKahootChoice){
-          cls += ' chosen';
-        }
+        } else if (i === myKahootChoice){ cls += ' chosen'; }
         const dis = (k.phase !== 'question') || answeredAlready;
-        h += `<button class="${cls}" ${dis?'disabled':''} onclick="sendKahootAnswer(${i})">
-          <span class="kshape">${SHAPES[i]}</span><span>${esc(o)}</span></button>`;
+        h += `<button class="${cls}" ${dis?'disabled':''} onclick="sendKahootAnswer(${i})"><span class="kshape">${SHAPES[i]}</span><span>${esc(o)}</span></button>`;
       });
       h += `</div>`;
     }
@@ -495,22 +552,16 @@ function renderKahootPlayer(main){
     }
     if (k.phase === 'reveal'){
       if (myRes && myRes.ok){
-        h += `<div class="aibox" style="border-color:#22C55E;color:#7CFC9A;font-weight:bold;text-align:center">
-          🎉 TO‘G‘RI! +${fmt(myRes.gained)} ball ${myRec.streak>=2?`• 🔥 ${myRec.streak} ketma-ket!`:''}
-        </div>`;
+        h += `<div class="aibox" style="border-color:#22C55E;color:#7CFC9A;font-weight:bold;text-align:center">🎉 TO‘G‘RI! +${fmt(myRes.gained)} ball ${myRec.streak>=2?`• 🔥 ${myRec.streak} ketma-ket!`:''}</div>`;
       } else if (myRes){
         h += `<div class="aibox" style="border-color:#EF4444;color:#FF8A80;font-weight:bold;text-align:center">❌ Noto‘g‘ri javob (+0 ball)</div>`;
       } else {
         h += `<div class="aibox" style="color:#FBBF24;text-align:center">⏱ Vaqt tugadi (+0 ball)</div>`;
       }
       if (q && q.exp) h += `<div class="aibox"><b>Izoh:</b> ${esc(q.exp)}</div>`;
-      if (myIdx >= 0){
-        h += `<div style="text-align:center;margin-top:8px;font-size:14px;color:#CBD5E1">Sizning o‘rningiz: <b style="color:#FFC72C">#${myIdx + 1}</b> (${fmt(myRec.pts)} ball)</div>`;
-      }
+      if (myIdx >= 0) h += `<div style="text-align:center;margin-top:8px;font-size:14px;color:#CBD5E1">Sizning o‘rningiz: <b style="color:#FFC72C">#${myIdx + 1}</b> (${fmt(myRec.pts)} ball)</div>`;
     }
-    h += `</div>`;
-    main.innerHTML = h;
-    return;
+    h += `</div>`; main.innerHTML = h; return;
   }
 
   if (k.phase === 'podium'){
@@ -519,37 +570,21 @@ function renderKahootPlayer(main){
     h += `<div style="text-align:center;font-size:20px;font-weight:bold;color:#FFC72C;margin-bottom:8px">🏆 YAKUNIY SHOHSUPA</div>
       <div class="podium">` + [0,1,2].map(idx => {
         const item = top3[idx];
-        return `<div class="podbox ${idx===0?'p1':''}">
-          <div style="font-size:12px;color:#FFC72C;font-weight:bold">${medals[idx]}</div>
+        return `<div class="podbox ${idx===0?'p1':''}"><div style="font-size:12px;color:#FFC72C;font-weight:bold">${medals[idx]}</div>
           <div style="font-size:16px;font-weight:bold;margin:4px 0">${item ? esc(item.name) : '—'}</div>
-          <div style="color:#7CFC9A;font-size:14px;font-weight:bold">${item ? fmt(item.pts) : ''}</div>
-        </div>`;
+          <div style="color:#7CFC9A;font-size:14px;font-weight:bold">${item ? fmt(item.pts) : ''}</div></div>`;
       }).join('') + `</div>`;
-    if (myIdx >= 0){
-      h += `<div class="aibox" style="text-align:center;font-weight:bold;color:#FFC72C">Sizning natijangiz: #${myIdx + 1}-o‘rin • ${fmt(myRec.pts)} ball (${myRec.correct}/${k.total_q} to‘g‘ri)</div>`;
-    }
-    h += `</div>`;
-    main.innerHTML = h;
+    if (myIdx >= 0) h += `<div class="aibox" style="text-align:center;font-weight:bold;color:#FFC72C">Sizning natijangiz: #${myIdx + 1}-o‘rin • ${fmt(myRec.pts)} ball (${myRec.correct}/${k.total_q} to‘g‘ri)</div>`;
+    h += `</div>`; main.innerHTML = h;
   }
 }
 
 function renderMilPlayer(main){
   const m = S.mil;
-  if (!m){
-    main.innerHTML = '<div class="card">Boshlovchi o‘yinni boshlashini kuting...</div>';
-    return;
-  }
+  if (!m){ main.innerHTML = '<div class="card">Boshlovchi o‘yinni boshlashini kuting...</div>'; return; }
   if (m.step !== lastMilStep){ lastMilStep = m.step; myVote = null; }
-  const q = m.question;
-  const ll = m.lifelines || {};
-  const prizes = m.prizes || [];
-  const safes = m.safe_steps || [];
-
-  const isPlayer = (
-    m.player === 'Ishtirokchi' ||
-    (myName && myName.trim().toLowerCase() === m.player.trim().toLowerCase()) ||
-    (m.team !== null && myTeam === m.team)
-  );
+  const q = m.question, ll = m.lifelines || {}, prizes = m.prizes || [], safes = m.safe_steps || [];
+  const isPlayer = (m.player === 'Ishtirokchi' || (myName && myName.trim().toLowerCase() === m.player.trim().toLowerCase()) || (m.team !== null && myTeam === m.team));
 
   let h = `<div class="card" style="border:2px solid #FFC72C">
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px">
@@ -566,14 +601,9 @@ function renderMilPlayer(main){
 
   q.opts.forEach((opt, i) => {
     const isHid = (m.hidden_opts || []).includes(i);
-    let cls = 'optbtn';
-    if (isHid) cls += ' hid';
-    if (m.revealed){
-      if (i === q.c) cls += ' ok';
-      else if (i === m.selected) cls += ' bad';
-    } else if (i === m.selected){
-      cls += ' sel';
-    }
+    let cls = 'optbtn' + (isHid ? ' hid' : '');
+    if (m.revealed){ if (i === q.c) cls += ' ok'; else if (i === m.selected) cls += ' bad'; }
+    else if (i === m.selected){ cls += ' sel'; }
     const canClick = !m.revealed && !isHid && ((isPlayer && m.active) || (!isPlayer && m.audience_open));
     const voteTag = (!isPlayer && m.audience_open && myVote === i) ? ' (Sizning ovozingiz)' : '';
     h += `<button class="${cls}" ${canClick?'':'disabled'} onclick="handleMilOptionClick(${i}, ${isPlayer})">${L[i]}) ${esc(opt)}${voteTag}</button>`;
@@ -583,12 +613,10 @@ function renderMilPlayer(main){
     h += `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">`;
     if (m.active && !m.revealed){
       h += `<button class="gold" ${m.selected===null?'disabled':''} onclick="sendMilPlay('reveal')">Javobni tekshirish</button>`;
-      if (m.won > 0){
-        h += `<button class="red" onclick="if(confirm('Joriy yutuqni olib o‘yinni to‘xtatasizmi?')) sendMilPlay('walk')">Yutuqni olish (${fmt(m.won)})</button>`;
-      }
+      if (m.won > 0) h += `<button class="red" onclick="if(confirm('Yutuqni olasizmi?')) sendMilPlay('walk')">Yutuqni olish (${fmt(m.won)})</button>`;
     } else if (m.active && m.revealed && m.status === 'playing'){
       h += `<button class="green" onclick="sendMilPlay('next')">Keyingi savol (${m.step + 2}-pog‘ona) ➔</button>`;
-      h += `<button class="red" onclick="if(confirm('Joriy yutuqni olib o‘yinni to‘xtatasizmi?')) sendMilPlay('walk')">Yutuqni olish (${fmt(m.won)})</button>`;
+      h += `<button class="red" onclick="if(confirm('Yutuqni olasizmi?')) sendMilPlay('walk')">Yutuqni olish (${fmt(m.won)})</button>`;
     }
     h += `</div>`;
   } else if (m.audience_open && !m.revealed){
@@ -608,15 +636,12 @@ function renderMilPlayer(main){
   }
   if (m.ai_hint) h += `<div class="aibox"><b>Gemini AI maslahati:</b><br>${esc(m.ai_hint)}</div>`;
   if (m.revealed && q.exp) h += `<div class="aibox"><b>Izoh:</b> ${esc(q.exp)}</div>`;
-  if (m.status === 'won') h += `<div class="aibox" style="border-color:#FFC72C;color:#FFC72C;font-weight:bold;font-size:17px">TABRIKLAYMIZ! ${esc(m.player)} 1 000 000 BALL YUTDI!</div>`;
+  if (m.status === 'won') h += `<div class="aibox" style="border-color:#FFC72C;color:#FFC72C;font-weight:bold;font-size:17px">TABRIKLAYMIZ! 1 000 000 BALL YUTDI!</div>`;
   else if (m.status === 'lost') h += `<div class="aibox" style="border-color:#B3261E;color:#FF8A80;font-weight:bold">O‘yin tugadi! Kafolatlangan yutuq: ${fmt(m.won)} ball.</div>`;
   else if (m.status === 'walked') h += `<div class="aibox" style="border-color:#1E8E4E;color:#7CFC9A;font-weight:bold">${esc(m.player)} ${fmt(m.won)} ball bilan o‘yinni yakunladi!</div>`;
-  h += `</div>`;
-
-  h += `<div class="card"><b style="color:#FFC72C">YUTUQ ZINAPOYASI</b><div class="ladder">` +
+  h += `</div><div class="card"><b style="color:#FFC72C">YUTUQ ZINAPOYASI</b><div class="ladder">` +
     prizes.map((p, idx) => {
-      let cls = 'lstep';
-      if (safes.includes(idx)) cls += ' safe';
+      let cls = 'lstep' + (safes.includes(idx) ? ' safe' : '');
       if (idx < m.step || (idx === m.step && m.revealed && m.status !== 'lost')) cls += ' done';
       else if (idx === m.step) cls += ' cur';
       return `<div class="${cls}"><span>${idx + 1}-savol</span><span>${fmt(p)} ball</span></div>`;
@@ -642,79 +667,57 @@ function renderAucPlayer(main){
     const b25 = Math.max(50, Math.round(myCap * 0.25 / 10) * 10);
     const b50 = Math.max(50, Math.round(myCap * 0.5 / 10) * 10);
     h += `<div class="q">Savol ochilishidan oldin stavka tiking!</div>
-      <div style="font-size:14px;color:#B8C4E0">To‘g‘ri topsangiz tikkan ballingiz 2 barobar qaytadi, xato qilsangiz kuyadi.</div>
       <div class="betgrid">
         <button class="betbtn ${myBet===b10?'active':''}" onclick="sendAucBet(${b10})">10%<br>${fmt(b10)}</button>
         <button class="betbtn ${myBet===b25?'active':''}" onclick="sendAucBet(${b25})">25%<br>${fmt(b25)}</button>
         <button class="betbtn ${myBet===b50?'active':''}" onclick="sendAucBet(${b50})">50%<br>${fmt(b50)}</button>
         <button class="betbtn ${myBet===myCap?'active':''}" onclick="sendAucBet(${myCap})">ALL-IN<br>${fmt(myCap)}</button>
       </div>`;
-    if (myBet !== undefined) h += `<div class="aibox" style="color:#7CFC9A;font-weight:bold">Sizning stavkangiz qabul qilindi: ${fmt(myBet)} ball ✔</div>`;
+    if (myBet !== undefined) h += `<div class="aibox" style="color:#7CFC9A;font-weight:bold">Stavkangiz qabul qilindi: ${fmt(myBet)} ball ✔</div>`;
   } else if (a.question){
     const q = a.question;
-    h += `<div style="font-size:13px;color:#FBBF24">Tikilgan stavka: <b>${fmt(myBet || 0)} ball</b></div>
-      <div class="q">${esc(q.q)}</div>`;
+    h += `<div style="font-size:13px;color:#FBBF24">Tikilgan stavka: <b>${fmt(myBet || 0)} ball</b></div><div class="q">${esc(q.q)}</div>`;
     q.opts.forEach((o, i) => {
       let cls = 'aucticket';
-      if (a.phase === 'revealed'){
-        if (i === q.c) cls += ' ok';
-        else if (i === myAucChoice) cls += ' bad';
-      } else if (i === myAucChoice){
-        cls += ' chosen';
-      }
-      h += `<button class="${cls}" ${a.phase==='revealed'?'disabled':''} onclick="sendAucAnswer(${i})">
-        <span class="stub">0${i+1}</span><span class="body">${esc(o)}</span></button>`;
+      if (a.phase === 'revealed'){ if (i === q.c) cls += ' ok'; else if (i === myAucChoice) cls += ' bad'; }
+      else if (i === myAucChoice){ cls += ' chosen'; }
+      h += `<button class="${cls}" ${a.phase==='revealed'?'disabled':''} onclick="sendAucAnswer(${i})"><span class="stub">0${i+1}</span><span class="body">${esc(o)}</span></button>`;
     });
     if (a.phase === 'revealed'){
       const d = (myTeam !== null && a.deltas) ? a.deltas[myTeam] : 0;
-      h += `<div class="aibox"><b>Natija:</b> ${d>0?`<span style="color:#7CFC9A">+${fmt(d)} ball yutdingiz!</span>`:`<span style="color:#FF8A80">${fmt(d)} ball yo‘qotdingiz</span>`}<br>${esc(q.exp || '')}</div>`;
+      h += `<div class="aibox"><b>Natija:</b> ${d>0?`<span style="color:#7CFC9A">+${fmt(d)} ball!</span>`:`<span style="color:#FF8A80">${fmt(d)} ball</span>`}<br>${esc(q.exp || '')}</div>`;
     }
   }
-  h += `</div>`;
-  main.innerHTML = h;
+  h += `</div>`; main.innerHTML = h;
 }
 
 function renderTerPlayer(main){
   const ter = S.ter;
   if (!ter){ main.innerHTML = '<div class="card">Boshlovchi hududlar jangini boshlashini kuting...</div>'; return; }
   const isBlocked = myTeam !== null && (ter.wrong_teams || []).includes(myTeam);
-
   let h = `<div class="card" style="border:2px solid #10B981">
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px">
       ${S.teams.map((t, i) => `<span>${TICONS[i]} ${esc(t)}: <b style="color:#FFC72C">${ter.counts[i]}</b></span>`).join('')}
     </div>
     <div style="color:#6EE7B7;font-weight:bold;margin-bottom:8px">${esc(ter.last_msg)}</div>`;
-
   if (ter.question){
-    const q = ter.question;
-    const romans = ['I','II','III','IV'];
-    h += `<div style="font-size:13px;color:#93C5FD">${esc(q.cat)} • ${ter.cur_cell+1}-sektor</div>
-      <div class="q">${esc(q.q)}</div>
-      <div class="tergrid">`;
+    const q = ter.question, romans = ['I','II','III','IV'];
+    h += `<div style="font-size:13px;color:#93C5FD">${esc(q.cat)} • ${ter.cur_cell+1}-sektor</div><div class="q">${esc(q.q)}</div><div class="tergrid">`;
     q.opts.forEach((o, i) => {
-      let cls = 'terbtn';
-      if (ter.phase === 'revealed' && i === q.c) cls += ' ok';
-      const dis = ter.phase !== 'battle' || isBlocked;
-      h += `<button class="${cls}" ${dis?'disabled':''} onclick="sendTerAnswer(${i})">
-        <span class="roman">${romans[i]}</span><span>${esc(o)}</span></button>`;
+      let cls = 'terbtn' + (ter.phase === 'revealed' && i === q.c ? ' ok' : '');
+      h += `<button class="${cls}" ${(ter.phase !== 'battle' || isBlocked)?'disabled':''} onclick="sendTerAnswer(${i})"><span class="roman">${romans[i]}</span><span>${esc(o)}</span></button>`;
     });
     h += `</div>`;
-    if (isBlocked && ter.phase === 'battle') h += `<div class="aibox" style="color:#FF8A80">Jamoangiz bu katakda xato javob berdi — boshqa jamoalar urinmoqda!</div>`;
     if (ter.phase === 'revealed' && q.exp) h += `<div class="aibox"><b>Izoh:</b> ${esc(q.exp)}</div>`;
   }
-  h += `</div>`;
-
-  let mh = `<div class="card"><div class="board">` + (S.cats||[]).map(c=>`<div class="cat">${esc(c)}</div>`).join('');
+  h += `</div><div class="card"><div class="board">` + (S.cats||[]).map(c=>`<div class="cat">${esc(c)}</div>`).join('');
   for (let r=0;r<5;r++){
     for (let c=0;c<5;c++){
-      const idx = c*5 + r;
-      const ow = ter.owners[idx];
-      const cls = 'tcell' + (ow!==null ? ` t${ow}` : '') + (ter.cur_cell===idx ? ' cur' : '');
-      mh += `<div class="${cls}">${ow!==null ? TICONS[ow] : idx+1}</div>`;
+      const idx = c*5 + r, ow = ter.owners[idx];
+      h += `<div class="tcell ${ow!==null?'t'+ow:''} ${ter.cur_cell===idx?'cur':''}">${ow!==null ? TICONS[ow] : idx+1}</div>`;
     }
   }
-  mh += `</div></div>`;
-  main.innerHTML = h + mh;
+  h += `</div></div>`; main.innerHTML = h;
 }
 
 function renderBombPlayer(main){
@@ -722,7 +725,6 @@ function renderBombPlayer(main){
   if (!b){ main.innerHTML = '<div class="card">Boshlovchi Zanjirli Bomba o‘yinini boshlashini kuting...</div>'; return; }
   const isHolder = (myTeam !== null && myTeam === b.holder && b.status === 'playing');
   const holderName = S.teams[b.holder] || '1-jamoa';
-
   let h = `<div class="card" style="border:2px solid ${isHolder?'#EF4444':'#2F8BFF'}">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <div>Bomba kimda: <b style="color:#FFC72C">${esc(holderName)}</b></div>
@@ -733,26 +735,20 @@ function renderBombPlayer(main){
         <div style="font-size:12px">${esc(t)}</div><div>${b.lives[i]>0?'❤️'.repeat(b.lives[i]):'💀'}</div></div>`).join('')}
     </div>
     <div style="color:#FFC72C;font-weight:bold;margin-bottom:8px">${esc(b.last_msg)}</div>`;
-
   if (b.question){
-    const q = b.question;
-    const tags = ['ALPHA','BETA','GAMMA','DELTA'];
+    const q = b.question, tags = ['ALPHA','BETA','GAMMA','DELTA'];
     h += `<div class="q">${esc(q.q)}</div>`;
     q.opts.forEach((o, i) => {
       let cls = 'bombbtn';
       if (b.status !== 'playing' && i === q.c) cls += ' ok';
       else if (b.status !== 'playing' && i === b.last_choice) cls += ' bad';
-      h += `<button class="${cls}" ${!isHolder?'disabled':''} onclick="sendBombAnswer(${i})">
-        <span>${esc(o)}</span><span class="code">${tags[i]}</span></button>`;
+      h += `<button class="${cls}" ${!isHolder?'disabled':''} onclick="sendBombAnswer(${i})"><span>${esc(o)}</span><span class="code">${tags[i]}</span></button>`;
     });
-    if (!isHolder && b.status === 'playing'){
-      h += `<div class="aibox">Hozir <b>${esc(holderName)}</b> javob bermoqda — tayyor turing, bomba sizga o‘tishi mumkin!</div>`;
-    }
   }
-  h += `</div>`;
-  main.innerHTML = h;
+  h += `</div>`; main.innerHTML = h;
 }
 
-load(); setInterval(load, 800);
+if (curRoom) enterRoom(curRoom);
+setInterval(load, 800);
 </script>
 </body></html>
