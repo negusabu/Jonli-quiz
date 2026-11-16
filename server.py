@@ -1,4 +1,4 @@
-"""JEO QUIZ + MILLIONER + AUKSION + HUDUDLAR JANGI + ZANJIRLI BOMBA."""
+"""JEO QUIZ + KAHOOT LUX + MILLIONER + AUKSION + HUDUDLAR JANGI + ZANJIRLI BOMBA."""
 import base64, collections, glob, io, json, os, random, re, socket, sys, threading, time, zipfile
 import urllib.request, urllib.error
 import xml.etree.ElementTree as ET
@@ -86,6 +86,7 @@ state = {
     'auc': None,
     'ter': None,
     'bomb': None,
+    'kahoot': None,
 }
 
 def mc_indices():
@@ -97,6 +98,114 @@ def shuffled_opts(q_idx):
     perm = list(range(len(opts)))
     random.shuffle(perm)
     return [opts[i] for i in perm], (perm.index(q['c']) if opts else 0)
+
+# --- 1. KAHOOT! LUX LIVE ---
+def start_kahoot_game(duration=20):
+    order = mc_indices()
+    random.shuffle(order)
+    if not order:
+        raise RuntimeError('Kahoot o‘yini uchun 4 variantli savollar topilmadi')
+    dur = max(5, min(60, int(duration or 20)))
+    state['mode'] = 'kahoot'
+    state['kahoot'] = {
+        'phase': 'lobby',
+        'order': order,
+        'q_num': 0,
+        'total_q': len(order),
+        'duration': dur,
+        'q_start': 0.0,
+        'shown_opts': [],
+        'shown_c': 0,
+        'round_answers': {},
+        'scores': {
+            nm: {'pts': 0, 'streak': 0, 'correct': 0, 'team': tm}
+            for nm, tm in state['players'].items()
+        },
+        'team_pts': [0, 0, 0, 0],
+    }
+
+def finalize_kahoot_round(k):
+    if not k or k['phase'] != 'question':
+        return
+    k['phase'] = 'reveal'
+    correct_idx = k['shown_c']
+    dur = max(1, k['duration'])
+    for name, ans in k['round_answers'].items():
+        if name not in k['scores']:
+            k['scores'][name] = {'pts': 0, 'streak': 0, 'correct': 0, 'team': ans.get('team')}
+        rec = k['scores'][name]
+        if ans.get('team') is not None:
+            rec['team'] = ans.get('team')
+        if ans['choice'] == correct_idx:
+            elapsed = min(dur, max(0.0, ans['ts'] - k['q_start']))
+            speed_pts = round(1000 * (1.0 - (elapsed / dur) / 2.0))
+            rec['streak'] += 1
+            streak_bonus = min(500, (rec['streak'] - 1) * 100)
+            gained = speed_pts + streak_bonus
+            rec['pts'] += gained
+            rec['correct'] += 1
+            ans['gained'] = gained
+            ans['ok'] = True
+            t = rec.get('team')
+            if isinstance(t, int) and 0 <= t < 4:
+                k['team_pts'][t] += gained
+        else:
+            rec['streak'] = 0
+            ans['gained'] = 0
+            ans['ok'] = False
+
+def serialize_kahoot(admin=False):
+    k = state.get('kahoot')
+    if not k:
+        return None
+    now = time.time()
+    if k['phase'] == 'question':
+        elapsed = now - k['q_start']
+        rem = max(0.0, round(k['duration'] - elapsed, 1))
+        total_players = len(state['players'])
+        if rem <= 0 or (total_players > 0 and len(k['round_answers']) >= total_players):
+            finalize_kahoot_round(k)
+            rem = 0.0
+    else:
+        rem = 0.0
+
+    counts = [0, 0, 0, 0]
+    for ans in k['round_answers'].values():
+        ch = ans.get('choice')
+        if ch in (0, 1, 2, 3):
+            counts[ch] += 1
+
+    leaderboard = sorted(
+        [{'name': nm, **info} for nm, info in k['scores'].items()],
+        key=lambda x: (-x['pts'], -x['correct'], x['name'])
+    )
+
+    q_out = None
+    if k['phase'] in ('question', 'reveal') and k['q_num'] < len(k['order']):
+        q = QS[k['order'][k['q_num']]]
+        q_out = {
+            'cat': q['cat'],
+            'q': q['q'],
+            'opts': list(k['shown_opts']),
+        }
+        if k['phase'] in ('reveal', 'podium') or admin:
+            q_out['c'] = k['shown_c']
+            q_out['exp'] = q.get('exp', '')
+
+    return {
+        'phase': k['phase'],
+        'q_num': k['q_num'],
+        'total_q': k['total_q'],
+        'duration': k['duration'],
+        'time_left': rem,
+        'question': q_out,
+        'answered_count': len(k['round_answers']),
+        'answered_names': list(k['round_answers'].keys()),
+        'vote_counts': counts,
+        'round_results': k['round_answers'] if k['phase'] in ('reveal', 'podium') else {},
+        'leaderboard': leaderboard,
+        'team_pts': list(k['team_pts']),
+    }
 
 # --- 2. MILLIONAIRE ---
 def build_millionaire_ladder():
@@ -610,7 +719,9 @@ FAQAT shu JSON formatida qaytar:
 
 def refresh_active_mode_after_new_qs():
     m = state['mode']
-    if m == 'millionaire':
+    if m == 'kahoot':
+        start_kahoot_game(20)
+    elif m == 'millionaire':
         start_millionaire_run('Ishtirokchi', None)
     elif m == 'auction':
         start_auction_game()
@@ -885,6 +996,8 @@ def public_state(admin=False):
             qq['ans'] = q.get('ans')
             qq['exp'] = q['exp']
         s['question'] = qq
+    if state['mode'] == 'kahoot' or admin:
+        s['kahoot'] = serialize_kahoot(admin=admin)
     if state['mode'] == 'millionaire' or admin:
         s['mil'] = serialize_mil(admin=admin)
     if state['mode'] == 'auction' or admin:
@@ -983,6 +1096,35 @@ class H(BaseHTTPRequestHandler):
                 if not (isinstance(t, int) and 0 <= t < len(state['teams'])):
                     t = None
                 state['players'][name] = t
+                k = state.get('kahoot')
+                if k is not None:
+                    if name not in k['scores']:
+                        k['scores'][name] = {'pts': 0, 'streak': 0, 'correct': 0, 'team': t}
+                    else:
+                        k['scores'][name]['team'] = t
+                return self._json({'ok': True})
+
+        if p == '/api/kahoot_play':
+            with lock:
+                k = state.get('kahoot')
+                if state['mode'] != 'kahoot' or not k or k['phase'] != 'question':
+                    return self._json({'error': 'Hozir javob qabul qilinmayapti'}, 400)
+                if time.time() - k['q_start'] > k['duration']:
+                    finalize_kahoot_round(k)
+                    return self._json({'error': 'Vaqt tugadi!'}, 400)
+                name = str(data.get('name', '')).strip()[:30] or 'Ishtirokchi'
+                t = data.get('team')
+                if not (isinstance(t, int) and 0 <= t < 4):
+                    t = state['players'].get(name)
+                choice = data.get('choice')
+                if not (isinstance(choice, int) and 0 <= choice < 4):
+                    return self._json({'error': 'Noto‘g‘ri variant'}, 400)
+                if name not in k['round_answers']:
+                    k['round_answers'][name] = {'choice': choice, 'ts': time.time(), 'team': t}
+                if name not in k['scores']:
+                    k['scores'][name] = {'pts': 0, 'streak': 0, 'correct': 0, 'team': t}
+                if len(state['players']) > 0 and len(k['round_answers']) >= len(state['players']):
+                    finalize_kahoot_round(k)
                 return self._json({'ok': True})
 
         if p == '/api/answer':
@@ -1264,7 +1406,7 @@ class H(BaseHTTPRequestHandler):
             with lock:
                 if act == 'set_mode':
                     m = data.get('mode')
-                    if m not in ('jeopardy', 'millionaire', 'auction', 'territory', 'bomb'):
+                    if m not in ('jeopardy', 'kahoot', 'millionaire', 'auction', 'territory', 'bomb'):
                         return self._json({'error': 'Noto‘g‘ri rejim'}, 400)
                     state['mode'] = m
                     try:
@@ -1278,6 +1420,48 @@ class H(BaseHTTPRequestHandler):
                             start_bomb_game(20)
                     except Exception as e:
                         return self._json({'error': str(e)}, 400)
+
+                # --- KAHOOT ADMIN ---
+                elif act == 'kahoot_start':
+                    dur = data.get('duration', 20)
+                    try:
+                        start_kahoot_game(dur)
+                    except Exception as e:
+                        return self._json({'error': str(e)}, 400)
+                elif act == 'kahoot_next':
+                    k = state.get('kahoot')
+                    if not k:
+                        return self._json({'error': 'Avval Kahoot xonasini oching'}, 400)
+                    if k['phase'] == 'question':
+                        finalize_kahoot_round(k)
+                    if k['phase'] != 'lobby':
+                        k['q_num'] += 1
+                    if k['q_num'] >= k['total_q']:
+                        k['phase'] = 'podium'
+                    else:
+                        q_idx = k['order'][k['q_num']]
+                        shown_opts, shown_c = shuffled_opts(q_idx)
+                        k['shown_opts'] = shown_opts
+                        k['shown_c'] = shown_c
+                        k['round_answers'] = {}
+                        k['q_start'] = time.time()
+                        k['phase'] = 'question'
+                elif act == 'kahoot_reveal':
+                    k = state.get('kahoot')
+                    if k and k['phase'] == 'question':
+                        finalize_kahoot_round(k)
+                elif act == 'kahoot_podium':
+                    k = state.get('kahoot')
+                    if k:
+                        if k['phase'] == 'question':
+                            finalize_kahoot_round(k)
+                        k['phase'] = 'podium'
+                elif act == 'kahoot_sync_scores':
+                    k = state.get('kahoot')
+                    if k:
+                        for i in range(4):
+                            state['scores'][i] += k['team_pts'][i]
+                        k['team_pts'] = [0, 0, 0, 0]
 
                 # --- MIL ADMIN ---
                 elif act == 'mil_start':
@@ -1463,7 +1647,7 @@ class H(BaseHTTPRequestHandler):
                         scores=[0, 0, 0, 0], cur=None, revealed=False,
                         used=[False] * len(QS), answers={},
                         text_answers={}, ai_grades={}, ai_note='',
-                        mil=None, auc=None, ter=None, bomb=None
+                        kahoot=None, mil=None, auc=None, ter=None, bomb=None
                     )
                 else:
                     return self._json({'error': 'Noma‘lum amal'}, 400)
