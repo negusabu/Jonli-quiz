@@ -1,26 +1,29 @@
 <!DOCTYPE html>
 <html lang="uz"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Boshqaruv — Jeo Quiz</title>
+<title>Boshqaruv — Jeo Quiz & Millioner</title>
 <style>
 body{margin:0;background:#08102B;color:#fff;font-family:Arial,Helvetica,sans-serif}
 .w{max-width:1100px;margin:0 auto;padding:12px}
-h1{color:#FFC72C;margin:6px 0 12px;font-size:24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+h1{color:#FFC72C;margin:6px 0 12px;font-size:22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 .badge{font-size:13px;padding:4px 10px;border-radius:20px;background:#13245C;color:#7CFC9A;border:1px solid #1E8E4E}
 .badge.off{color:#FF8A80;border-color:#B3261E}
 .row{display:flex;gap:12px;flex-wrap:wrap}
 .card{background:#13245C;border-radius:12px;padding:14px;flex:1;min-width:300px;margin-bottom:12px}
 .card h2{font-size:16px;color:#2F8BFF;margin:0 0 8px}
+.modebar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.modebtn{flex:1;min-width:200px;padding:12px;border-radius:10px;border:2px solid #2F8BFF;background:#0c1842;color:#fff;font-weight:bold;cursor:pointer;font-size:15px}
+.modebtn.active{background:linear-gradient(135deg,#FFC72C,#F59E0B);color:#000;border-color:#FFC72C}
 .board{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .cat{background:#1E63D6;text-align:center;font-size:12px;font-weight:bold;padding:8px 4px;border-radius:6px;min-height:34px;display:flex;align-items:center;justify-content:center}
-.cell{background:#13245C;color:#FFC72C;font-weight:bold;font-size:20px;border:2px solid #1E63D6;border-radius:6px;padding:12px 0;cursor:pointer}
+.cell{background:#13245C;color:#FFC72C;font-weight:bold;font-size:20px;border:2px solid #1E63D6;border-radius:6px;padding:12px 0;cursor:pointer;text-align:center}
 .cell.used{background:#3a3f4e;color:#7b8190;border-color:#3a3f4e;text-decoration:line-through}
 .cell.cur{background:#FFC72C;color:#000;border-color:#FFC72C}
 button{font:inherit;color:#fff;background:#1B3180;border:none;border-radius:8px;padding:10px 12px;cursor:pointer;font-size:15px}
 button.gold{background:#FFC72C;color:#000;font-weight:bold}
 button.ai{background:linear-gradient(135deg,#2563EB,#7C3AED);color:#fff;font-weight:bold}
 button.green{background:#1E8E4E;font-weight:bold}
-button.red{background:#B3261E}
-button:disabled{opacity:.4;cursor:default}
+button.red{background:#B3261E;font-weight:bold}
+button:disabled{opacity:.38;cursor:default}
 .q{font-size:20px;font-weight:bold;line-height:1.35;margin:6px 0}
 .opt{font-size:16px;margin:4px 0}
 .opt.c{color:#7CFC9A;font-weight:bold}
@@ -28,6 +31,20 @@ button:disabled{opacity:.4;cursor:default}
 .aibox{background:#0c1842;border-left:4px solid #8B5CF6;padding:10px;border-radius:8px;margin-top:8px;font-size:14px;line-height:1.45}
 .divider{border-top:1px dashed #3b4f94;margin:12px 0;padding-top:10px}
 .filebox{background:#0c1842;color:#fff;border:1px dashed #7C3AED;padding:8px;border-radius:8px}
+.milopt{display:block;width:100%;text-align:left;padding:11px 14px;margin:6px 0;border-radius:10px;border:2px solid #2F8BFF;background:#0c1842;color:#fff;font-size:16px}
+.milopt.sel{background:#D97706;border-color:#FFC72C;color:#000;font-weight:bold}
+.milopt.ok{background:#1E8E4E;border-color:#7CFC9A;color:#fff;font-weight:bold}
+.milopt.bad{background:#B3261E;border-color:#FF8A80;color:#fff;font-weight:bold}
+.milopt.truehint{border-color:#7CFC9A}
+.milopt.hid{opacity:.25;text-decoration:line-through;pointer-events:none}
+.ladder{display:flex;flex-direction:column-reverse;gap:3px}
+.lstep{display:flex;justify-content:space-between;padding:4px 8px;border-radius:5px;font-size:13px;background:#0c1842;color:#B8C4E0}
+.lstep.safe{color:#FFC72C;font-weight:bold;border:1px solid #3b4f94}
+.lstep.done{background:#133b2e;color:#7CFC9A}
+.lstep.cur{background:#FFC72C;color:#000;font-weight:bold}
+.barwrap{background:#0c1842;border-radius:6px;overflow:hidden;height:22px;margin:4px 0;position:relative}
+.barfill{background:#2563EB;height:100%;transition:width .3s}
+.bartxt{position:absolute;left:8px;top:2px;font-size:13px;font-weight:bold}
 table{width:100%;border-collapse:collapse}
 td{padding:6px 2px;border-bottom:1px solid #1B3180;font-size:15px}
 input{font:inherit;padding:8px;border-radius:6px;border:none;width:100%;margin:4px 0;box-sizing:border-box}
@@ -39,10 +56,15 @@ textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border
 <h1><span>Boshqaruv paneli — Jeo Quiz</span> <span id="aibadge" class="badge off">Gemini AI: tekshirilmoqda...</span></h1>
 <div class="msg" id="msg"></div>
 
+<div class="modebar">
+  <button id="mjeo" class="modebtn active" onclick="switchMode('jeopardy')">1. Jeo Quiz (5×5 Jadval)</button>
+  <button id="mmil" class="modebtn" onclick="switchMode('millionaire')">2. Kim millioner bo‘lishni xohlaydi?</button>
+</div>
+
 <div class="card" style="border:1px solid #7C3AED">
-  <h2 style="color:#C4B5FD">GEMINI AI — MAVZU YOKI FAYLDAN JADVAL YARATISH</h2>
+  <h2 style="color:#C4B5FD">GEMINI AI — MAVZU YOKI FAYLDAN 25 TA SAVOL YARATISH</h2>
   <div class="row" style="align-items:center">
-    <div style="flex:2;min-width:210px"><input id="aitopic" placeholder="Mavzu nomini yozing (masalan: Dinshunoslik)"></div>
+    <div style="flex:2;min-width:210px"><input id="aitopic" placeholder="Mavzu nomini yozing (masalan: Yashil iqtisodiyot)"></div>
     <div style="flex:1;min-width:160px">
       <select id="ailevel">
         <option value="universitet talabalari">Talabalar darajasi</option>
@@ -62,10 +84,10 @@ textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border
     </div>
   </div>
 
-  <div class="ans" id="aigenmsg" style="color:#7CFC9A;font-weight:bold">Mavzu yozing yoki fayl yuklang — Gemini 5 ta bo‘lim va 25 ta savol-javobni tuzadi.</div>
+  <div class="ans" id="aigenmsg" style="color:#7CFC9A;font-weight:bold">Mavzu yozing yoki fayl yuklang — tuzilgan 25 ta savol ikkala o‘yinda ham ishlaydi.</div>
 </div>
 
-<div class="row">
+<div id="jeosection" class="row">
   <div class="card" style="flex:2">
     <h2>ASOSIY JADVAL (bosing — savol ochiladi)</h2>
     <div class="board" id="board"></div>
@@ -73,6 +95,24 @@ textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border
   <div class="card">
     <h2>SAVOL</h2>
     <div id="qpanel" class="muted">Savol tanlanmagan</div>
+  </div>
+</div>
+
+<div id="milsection" style="display:none">
+  <div class="card" style="border:1px solid #FFC72C">
+    <h2 style="color:#FFC72C">KIM MILLIONER BO‘LISHNI XOHLAYDI? — YANGI O‘YIN</h2>
+    <div class="row" style="align-items:center">
+      <div style="flex:2;min-width:180px"><input id="milplayer" placeholder="Ishtirokchi ismi (ixtiyoriy)"></div>
+      <div style="flex:1;min-width:160px"><select id="milteam"></select></div>
+      <div><button class="gold" onclick="startMil()">Yangi Millioner o‘yini</button></div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="card" style="flex:2" id="milpanel">O‘yin boshlanmagan</div>
+    <div class="card" style="flex:1;min-width:240px">
+      <h2 style="color:#FFC72C">YUTUQ ZINAPOYASI (15 POG‘ONA)</h2>
+      <div id="milladder" class="ladder"></div>
+    </div>
   </div>
 </div>
 
@@ -106,8 +146,9 @@ textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border
 <script>
 let CATS = [], lastCatsKey = '';
 const L = ['A','B','C','D'];
-let S = null, PIN = sessionStorage.getItem('pin') || '', namesDrawn = false, QL = [], busyAI = false;
+let S = null, PIN = sessionStorage.getItem('pin') || '', namesDrawn = false, QL = [], busyAI = false, milTeamsDrawn = false;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = n => Number(n || 0).toLocaleString('ru-RU');
 
 async function load(){
   if (!PIN){ PIN = prompt('Admin PIN (serverda ko‘rsatilgan):') || ''; sessionStorage.setItem('pin', PIN); }
@@ -132,30 +173,33 @@ async function act(obj){
   return j;
 }
 
+function switchMode(m){
+  act({action:'set_mode', mode:m});
+}
+
 function render(){
   if (!S) return;
   const badge = document.getElementById('aibadge');
   if (S.ai_ready){ badge.textContent = 'Gemini AI: Faol'; badge.className = 'badge'; }
   else { badge.textContent = 'Gemini AI: Kalit kiritilmagan'; badge.className = 'badge off'; }
 
+  const isMil = S.mode === 'millionaire';
+  document.getElementById('mjeo').className = 'modebtn' + (isMil ? '' : ' active');
+  document.getElementById('mmil').className = 'modebtn' + (isMil ? ' active' : '');
+  document.getElementById('jeosection').style.display = isMil ? 'none' : 'flex';
+  document.getElementById('milsection').style.display = isMil ? 'block' : 'none';
+
   const genBtn = document.getElementById('aigenbtn');
   const fileBtn = document.getElementById('aifilebtn');
   const genMsg = document.getElementById('aigenmsg');
   if (S.ai_busy){
-    genBtn.disabled = true;
-    fileBtn.disabled = true;
+    genBtn.disabled = true; fileBtn.disabled = true;
     genMsg.style.color = '#FFC72C';
     genMsg.textContent = S.ai_status || 'AI savollarni tuzmoqda...';
   } else {
-    genBtn.disabled = false;
-    fileBtn.disabled = false;
-    if (S.ai_error){
-      genMsg.style.color = '#FF8A80';
-      genMsg.textContent = 'Xato: ' + S.ai_error;
-    } else if (S.ai_status){
-      genMsg.style.color = '#7CFC9A';
-      genMsg.textContent = S.ai_status;
-    }
+    genBtn.disabled = false; fileBtn.disabled = false;
+    if (S.ai_error){ genMsg.style.color = '#FF8A80'; genMsg.textContent = 'Xato: ' + S.ai_error; }
+    else if (S.ai_status){ genMsg.style.color = '#7CFC9A'; genMsg.textContent = S.ai_status; }
   }
 
   if (S.cats) CATS = S.cats;
@@ -204,6 +248,13 @@ function render(){
     qp.innerHTML = '<div class="muted">Jadvaldan katakchani tanlang</div>';
   }
 
+  if (!milTeamsDrawn){
+    document.getElementById('milteam').innerHTML = `<option value="">Jamoasiz (shaxsiy)</option>` +
+      S.teams.map((t,i)=>`<option value="${i}">${esc(t)}</option>`).join('');
+    milTeamsDrawn = true;
+  }
+  renderMillionaire();
+
   const cur = S.question;
   document.getElementById('teams').innerHTML = '<table>' + S.teams.map((t,i)=>`
     <tr><td>${esc(t)}</td><td style="text-align:right;font-size:22px;color:#FFC72C;font-weight:bold">${S.scores[i]}</td>
@@ -221,6 +272,115 @@ function render(){
     document.getElementById('names').innerHTML = S.teams.map((t,i)=>`<input id="n${i}" value="${esc(t)}">`).join('');
     namesDrawn = true;
   }
+}
+
+function renderMillionaire(){
+  const mp = document.getElementById('milpanel');
+  const ml = document.getElementById('milladder');
+  const m = S.mil;
+  if (!m){
+    mp.innerHTML = '<div class="ans">Yuqoridagi «Yangi Millioner o‘yini» tugmasini bosing.</div>';
+    ml.innerHTML = '';
+    return;
+  }
+  const prizes = m.prizes || [];
+  const safes = m.safe_steps || [];
+  ml.innerHTML = prizes.map((p, idx) => {
+    let cls = 'lstep';
+    if (safes.includes(idx)) cls += ' safe';
+    if (idx < m.step || (idx === m.step && m.revealed && m.status !== 'lost')) cls += ' done';
+    else if (idx === m.step) cls += ' cur';
+    return `<div class="${cls}"><span>${idx + 1}-savol</span><span>${fmt(p)} ball</span></div>`;
+  }).join('');
+
+  const q = m.question;
+  const curPrize = prizes[m.step] || 0;
+  const ll = m.lifelines || {};
+  let x = `<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+    <div><b>Ishtirokchi:</b> <span style="color:#FFC72C">${esc(m.player)}</span></div>
+    <div><b>Pog‘ona:</b> ${m.step + 1}/${m.total_steps} (<span style="color:#7CFC9A">${fmt(curPrize)} ball</span>) • <b>Yutuq:</b> <span style="color:#FFC72C">${fmt(m.won)}</span></div>
+  </div>`;
+
+  x += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <button class="gold" ${(!m.active || m.revealed || !ll.fifty)?'disabled':''} onclick="act({action:'mil_5050'})">50:50</button>
+    <button class="gold" ${(!m.active || m.revealed || !ll.audience)?'disabled':''} onclick="act({action:'mil_audience'})">Guruh yordami</button>
+    <button class="ai" ${(!m.active || m.revealed || !ll.ai || busyAI)?'disabled':''} onclick="askMilAI()">Gemini AI maslahati</button>
+  </div>`;
+
+  x += `<div style="font-size:13px;color:#93C5FD">${esc(q.cat)}</div><div class="q">${esc(q.q)}</div>`;
+
+  q.opts.forEach((opt, i) => {
+    const isHid = (m.hidden_opts || []).includes(i);
+    let cls = 'milopt';
+    if (isHid) cls += ' hid';
+    if (m.revealed){
+      if (i === q.c) cls += ' ok';
+      else if (i === m.selected) cls += ' bad';
+    } else {
+      if (i === m.selected) cls += ' sel';
+      if (i === q.c) cls += ' truehint';
+    }
+    const mark = (!m.revealed && i === q.c) ? ' ✓' : '';
+    x += `<button class="${cls}" ${(m.revealed || isHid)?'disabled':''} onclick="act({action:'mil_select',choice:${i}})">${L[i]}) ${esc(opt)}${mark}</button>`;
+  });
+
+  if (m.audience_open || m.vote_total > 0){
+    const tot = m.vote_total || 0;
+    x += `<div class="aibox"><b>Guruh ovozi (${tot} ta ovoz):</b>`;
+    for (let i = 0; i < 4; i++){
+      if ((m.hidden_opts || []).includes(i)) continue;
+      const cnt = (m.vote_counts || [])[i] || 0;
+      const pct = tot ? Math.round(cnt * 100 / tot) : 0;
+      x += `<div class="barwrap"><div class="barfill" style="width:${pct}%"></div><div class="bartxt">${L[i]}: ${pct}% (${cnt})</div></div>`;
+    }
+    x += `</div>`;
+  }
+
+  if (m.ai_hint){
+    x += `<div class="aibox"><b>Gemini AI maslahati:</b><br>${esc(m.ai_hint)}</div>`;
+  }
+
+  if (m.revealed && q.exp){
+    x += `<div class="ans"><b>Izoh:</b> ${esc(q.exp)}</div>`;
+  }
+
+  if (m.status === 'won'){
+    x += `<div class="aibox" style="border-color:#FFC72C;color:#FFC72C;font-weight:bold;font-size:16px">TABRIKLAYMIZ! ${esc(m.player)} 1 000 000 BALL YUTDI!</div>`;
+  } else if (m.status === 'lost'){
+    x += `<div class="aibox" style="border-color:#B3261E;color:#FF8A80;font-weight:bold">O‘yin tugadi! Kafolatlangan yutuq: ${fmt(m.won)} ball.</div>`;
+  } else if (m.status === 'walked'){
+    x += `<div class="aibox" style="border-color:#1E8E4E;color:#7CFC9A;font-weight:bold">${esc(m.player)} o‘yinni to‘xtatib, ${fmt(m.won)} ball yutuqni oldi!</div>`;
+  }
+
+  x += `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">`;
+  if (m.active && !m.revealed){
+    x += `<button class="gold" ${m.selected===null?'disabled':''} onclick="act({action:'mil_reveal'})">Javobni tekshirish</button>`;
+    if (m.won > 0){
+      x += `<button class="red" onclick="walkMil()">Yutuqni olish (${fmt(m.won)})</button>`;
+    }
+  } else if (m.active && m.revealed && m.status === 'playing'){
+    x += `<button class="green" onclick="act({action:'mil_next'})">Keyingi savol (${m.step + 2}-pog‘ona) ➔</button>`;
+    x += `<button class="red" onclick="walkMil()">Yutuqni olish (${fmt(m.won)})</button>`;
+  }
+  if (!m.active && m.won > 0 && m.team !== null && !m.credited){
+    x += `<button class="green" onclick="act({action:'mil_credit'})">+${fmt(m.won)} ballni jamoaga qo‘shish</button>`;
+  }
+  x += `</div>`;
+  mp.innerHTML = x;
+}
+
+function startMil(){
+  const player = document.getElementById('milplayer').value.trim();
+  const team = document.getElementById('milteam').value;
+  act({action:'mil_start', player, team});
+}
+function walkMil(){
+  if (confirm('Ishtirokchi joriy yutuqni olib o‘yinni to‘xtatsinmi?')) act({action:'mil_walk'});
+}
+async function askMilAI(){
+  busyAI = true; render();
+  await act({action:'mil_ai'});
+  busyAI = false; render();
 }
 
 async function genBoard(){
@@ -297,6 +457,7 @@ function manual(i){
 }
 function saveNames(){
   const names = [0,1,2,3].map(i=>document.getElementById('n'+i).value.trim());
+  milTeamsDrawn = false;
   act({action:'rename', teams:names});
 }
 function resetAll(){
