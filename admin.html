@@ -43,6 +43,20 @@ body{margin:0;background:#08102B;color:#fff;font-family:Arial,Helvetica,sans-ser
 .tcell.t2{background:#15803D;border-color:#86EFAC}
 .tcell.t3{background:#D97706;border-color:#FDE047;color:#000}
 .tcell.cur{outline:3px solid #fff}
+
+.kgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0}
+.kcard{padding:12px 14px;border-radius:10px;font-weight:bold;font-size:16px;display:flex;align-items:center;gap:10px;color:#fff;border:2px solid rgba(255,255,255,.25)}
+.kcard.k0{background:#B91C1C}
+.kcard.k1{background:#1D4ED8}
+.kcard.k2{background:#B45309}
+.kcard.k3{background:#15803D}
+.kcard.ok{outline:4px solid #7CFC9A}
+.kcard.dim{opacity:.38}
+.pchip{display:inline-block;background:#0c1842;border:1px solid #3b4f94;padding:5px 10px;border-radius:20px;margin:3px;font-size:13px}
+.podium{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
+.podbox{background:#0c1842;border-radius:12px;padding:14px;text-align:center;border:2px solid #2F8BFF}
+.podbox.p1{border-color:#FFC72C;background:linear-gradient(180deg,#2a2105,#0c1842)}
+
 button{font:inherit;color:#fff;background:#1B3180;border:none;border-radius:8px;padding:10px 12px;cursor:pointer;font-size:15px}
 button.gold{background:#FFC72C;color:#000;font-weight:bold}
 button.ai{background:linear-gradient(135deg,#2563EB,#7C3AED);color:#fff;font-weight:bold}
@@ -106,7 +120,7 @@ textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <div>
         <div style="font-size:18px;font-weight:bold;color:#FFC72C">O‘yin turini tanlang</div>
-        <div style="font-size:13px;color:#B8C4E0">Barcha 5 ta o‘yin tayyor 25 ta savol asosida ishlaydi</div>
+        <div style="font-size:13px;color:#B8C4E0">Barcha 6 ta o‘yin tayyor 25 ta savol asosida ishlaydi</div>
       </div>
       <button class="ai" onclick="openTab('ai')">+ Yangi mavzu / Fayl yuklash</button>
     </div>
@@ -173,6 +187,11 @@ textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border
   <div id="bombsection" style="display:none">
     <div class="card" style="border:1px solid #EF4444" id="bombpanel">Yuklanmoqda...</div>
   </div>
+
+  <!-- 6. TEST (KAHOOT LIVE) -->
+  <div id="kahootsection" style="display:none">
+    <div class="card" style="border:1px solid #A855F7" id="kahootpanel">Yuklanmoqda...</div>
+  </div>
 </div>
 
 <!-- TAB 3: AI SAVOL YARATISH -->
@@ -200,7 +219,7 @@ textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border
       </div>
     </div>
 
-    <div class="ans" id="aigenmsg" style="color:#7CFC9A;font-weight:bold">Mavzu yozing yoki fayl yuklang — tuzilgan 25 ta savol barcha 5 o‘yinda ishlaydi.</div>
+    <div class="ans" id="aigenmsg" style="color:#7CFC9A;font-weight:bold">Mavzu yozing yoki fayl yuklang — tuzilgan 25 ta savol barcha 6 o‘yinda ishlaydi.</div>
   </div>
 </div>
 
@@ -239,6 +258,7 @@ textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border
 <script>
 let CATS = [], lastCatsKey = '';
 const L = ['A','B','C','D'];
+const SHAPES = ['▲','◆','●','■'];
 const TICONS = ['🛡️','⚔️','🏰','👑'];
 const GAMES = [
   {id:'jeopardy', icon:'🟦', title:'1. Jeo Quiz (5×5 Jadval)', desc:'5 ta bo‘lim va 100–500 ballik katakchalar. Jamoalar navbat bilan katakcha tanlab ball yig‘adi.'},
@@ -246,6 +266,7 @@ const GAMES = [
   {id:'auction', icon:'💰', title:'3. Auksion va Stavka', desc:'Savoldan oldin kapitaldan 10%–ALL-IN stavka tikiladi. To‘g‘ri javob stavkani 2 barobar oshiradi.'},
   {id:'territory', icon:'🗺️', title:'4. Hududlar jangi (5×5)', desc:'25 ta sektorli xaritada 4 jamoa hudud talashadi. Birinchi to‘g‘ri javob bergan jamoa katakni egallaydi.'},
   {id:'bomb', icon:'💣', title:'5. Zanjirli Bomba', desc:'Har jamoada 3 ta jon bor. Taymer tugamasidan to‘g‘ri javob berib bombani keyingi jamoaga uzating!'},
+  {id:'kahoot', icon:'⚡', title:'6. TEST (Jonli Viktorina)', desc:'Barcha talabalar bir vaqtda ▲ ◆ ● ■ tugmalarini bosadi. Tezlik uchun 1000+ ball, 🔥 seriya va shohsupa!'},
 ];
 
 let S = null, PIN = sessionStorage.getItem('pin') || '', namesDrawn = false, QL = [], busyAI = false, milTeamsDrawn = false;
@@ -304,7 +325,6 @@ function render(){
   const gObj = GAMES.find(x => x.id === m) || GAMES[0];
   document.getElementById('curmodelabel').textContent = gObj.icon + ' ' + gObj.title;
 
-  // Game menu grid
   document.getElementById('gamemenugrid').innerHTML = GAMES.map(g => {
     const isLive = g.id === m;
     return `<div class="gamecard ${isLive?'live':''}" onclick="selectGameFromMenu('${g.id}')">
@@ -317,7 +337,6 @@ function render(){
     </div>`;
   }).join('');
 
-  // Compact score strip in Play tab
   document.getElementById('scorestrip').innerHTML = S.teams.map((t,i)=>
     `<div class="scmini"><div class="t">${esc(t)}</div><div class="v">${S.scores[i]}</div></div>`
   ).join('');
@@ -327,6 +346,7 @@ function render(){
   document.getElementById('aucsection').style.display = m==='auction' ? 'block' : 'none';
   document.getElementById('tersection').style.display = m==='territory' ? 'block' : 'none';
   document.getElementById('bombsection').style.display = m==='bomb' ? 'block' : 'none';
+  document.getElementById('kahootsection').style.display = m==='kahoot' ? 'block' : 'none';
 
   const genBtn = document.getElementById('aigenbtn');
   const fileBtn = document.getElementById('aifilebtn');
@@ -396,6 +416,7 @@ function render(){
   renderAuctionAdmin();
   renderTerritoryAdmin();
   renderBombAdmin();
+  renderKahootAdmin();
 
   const cur = S.question;
   document.getElementById('teams').innerHTML = '<table>' + S.teams.map((t,i)=>`
@@ -414,6 +435,118 @@ function render(){
     document.getElementById('names').innerHTML = S.teams.map((t,i)=>`<input id="n${i}" value="${esc(t)}">`).join('');
     namesDrawn = true;
   }
+}
+
+function renderKahootAdmin(){
+  const p = document.getElementById('kahootpanel');
+  const k = S.kahoot;
+  if (!k){
+    p.innerHTML = `<h2 style="color:#D8B4FE">⚡ TEST (JONLI VIKTORINA)</h2>
+      <div class="ans" style="margin-bottom:10px">Talabalar telefonida <b>▲ ◆ ● ■</b> tugmalari chiqadi. Kim tez va to‘g‘ri topsa ko‘proq ball oladi!</div>
+      <div class="row" style="align-items:center">
+        <div style="max-width:200px"><select id="kdur">
+          <option value="15">Har savolga 15 soniya</option>
+          <option value="20" selected>Har savolga 20 soniya</option>
+          <option value="30">Har savolga 30 soniya</option>
+        </select></div>
+        <div><button class="gold" onclick="startKahootRoom()">⚡ TEST xonasini ochish</button></div>
+      </div>`;
+    return;
+  }
+
+  let x = `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+    <h2 style="color:#D8B4FE;margin:0">⚡ TEST LIVE — ${k.phase==='lobby'?'LOBBY (KUTISH)':k.phase==='podium'?'YAKUNIY SHOHSUPA':`${k.q_num+1}/${k.total_q}-SAVOL`}</h2>
+    ${k.phase==='question' ? `<div style="font-size:24px;font-weight:bold;color:${k.time_left<=5?'#FF8A80':'#7CFC9A'}">⏱ ${k.time_left} s</div>` : ''}
+  </div>`;
+
+  if (k.phase === 'lobby'){
+    const pls = S.players || [];
+    x += `<div class="aibox"><b>Ulangan ishtirokchilar (${pls.length} ta):</b><div style="margin-top:8px">` +
+      (pls.length ? pls.map(pl => `<span class="pchip">👤 ${esc(pl.name)}${pl.team!==null?' ('+esc(S.teams[pl.team])+')':''}</span>`).join('') : 'Talabalar telefonidan saytga kirishini kuting...') +
+      `</div></div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="green" onclick="act({action:'kahoot_next'})">🚀 1-savolni boshlash ➔</button>
+        <button class="red" onclick="startKahootRoom()">Qaytadan aralashtirish</button>
+      </div>`;
+    p.innerHTML = x;
+    return;
+  }
+
+  if (k.question && (k.phase === 'question' || k.phase === 'reveal')){
+    const q = k.question;
+    x += `<div style="font-size:13px;color:#93C5FD">${esc(q.cat)}</div><div class="q">${esc(q.q)}</div>`;
+    x += `<div class="kgrid">`;
+    q.opts.forEach((o, i) => {
+      let cls = `kcard k${i}`;
+      if (k.phase === 'reveal'){
+        cls += (i === q.c) ? ' ok' : ' dim';
+      }
+      const mark = (i === q.c) ? ' ✓' : '';
+      x += `<div class="${cls}"><span>${SHAPES[i]}</span><span>${esc(o)}${mark}</span></div>`;
+    });
+    x += `</div>`;
+
+    if (k.phase === 'question'){
+      const totalP = (S.players || []).length;
+      x += `<div class="aibox"><b>Javob berganlar:</b> <span style="color:#FFC72C;font-weight:bold">${k.answered_count}${totalP ? ' / ' + totalP : ''}</span>` +
+        (k.answered_names.length ? `<div style="margin-top:6px">${k.answered_names.map(n=>`<span class="pchip">✔ ${esc(n)}</span>`).join('')}</div>` : '') +
+        `</div>`;
+    } else if (k.phase === 'reveal'){
+      const totVotes = (k.vote_counts || []).reduce((a,b)=>a+b, 0);
+      x += `<div class="aibox"><b>Javoblar taqsimoti (${totVotes} ta):</b>`;
+      for (let i=0;i<4;i++){
+        const cnt = (k.vote_counts || [])[i] || 0;
+        const pct = totVotes ? Math.round(cnt * 100 / totVotes) : 0;
+        x += `<div class="barwrap"><div class="barfill" style="width:${pct}%"></div><div class="bartxt">${SHAPES[i]}: ${cnt} ta (${pct}%)</div></div>`;
+      }
+      if (q.exp) x += `<div class="ans"><b>Izoh:</b> ${esc(q.exp)}</div>`;
+      x += `</div>`;
+    }
+  }
+
+  if (k.phase === 'podium'){
+    const top3 = (k.leaderboard || []).slice(0, 3);
+    const medals = ['🥇 1-O‘RIN','🥈 2-O‘RIN','🥉 3-O‘RIN'];
+    x += `<div class="podium">` + [0,1,2].map(idx => {
+      const item = top3[idx];
+      return `<div class="podbox ${idx===0?'p1':''}">
+        <div style="font-size:14px;color:#FFC72C;font-weight:bold">${medals[idx]}</div>
+        <div style="font-size:19px;font-weight:bold;margin:6px 0">${item ? esc(item.name) : '—'}</div>
+        <div style="color:#7CFC9A;font-weight:bold">${item ? fmt(item.pts) + ' ball' : ''}</div>
+      </div>`;
+    }).join('') + `</div>`;
+  }
+
+  const lb = (k.leaderboard || []).slice(0, 8);
+  if (lb.length && k.phase !== 'question'){
+    x += `<div class="aibox"><b>Reyting (Top ${lb.length}):</b><table>` +
+      lb.map((r, idx) => `<tr><td><b>${idx+1}.</b> ${esc(r.name)} ${r.streak>=2?'🔥'+r.streak:''}</td>
+        <td style="color:#93C5FD">${r.team!==null && S.teams[r.team] ? esc(S.teams[r.team]) : ''}</td>
+        <td style="text-align:right;color:#FFC72C;font-weight:bold">${fmt(r.pts)}</td></tr>`).join('') +
+      `</table></div>`;
+  }
+
+  x += `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">`;
+  if (k.phase === 'question'){
+    x += `<button class="gold" onclick="act({action:'kahoot_reveal'})">⏹ Vaqtni to‘xtatish va Javobni ochish</button>`;
+  } else if (k.phase === 'reveal'){
+    if (k.q_num + 1 < k.total_q){
+      x += `<button class="green" onclick="act({action:'kahoot_next'})">➡️ Keyingi savol (${k.q_num + 2}/${k.total_q})</button>`;
+    }
+    x += `<button class="gold" onclick="act({action:'kahoot_podium'})">🏆 Shohsupani ko‘rsatish</button>`;
+  }
+  const hasTeamPts = (k.team_pts || []).some(v => v > 0);
+  if (hasTeamPts){
+    x += `<button class="green" onclick="act({action:'kahoot_sync_scores'})">➕ Jamoa ballarini asosiy hisobga qo‘shish</button>`;
+  }
+  x += `<button class="red" onclick="startKahootRoom()">Yangi TEST o‘yini</button></div>`;
+  p.innerHTML = x;
+}
+
+function startKahootRoom(){
+  const el = document.getElementById('kdur');
+  const duration = el ? Number(el.value) : 20;
+  act({action:'kahoot_start', duration});
 }
 
 function renderMillionaire(){
