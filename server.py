@@ -1263,4 +1263,125 @@ class Handler(BaseHTTPRequestHandler):
                         a["phase"] = "betting"
                         a["bets"] = {}
                         a["answers"] = {}
-                        a["deltas"] = [0,
+                        a["deltas"] = [0, 0, 0, 0]
+
+                elif action == "auc_sync_scores" and room.auc:
+                    for i in range(4):
+                        room.scores[i] += room.auc["bank"][i]
+
+                # --- TERRITORY ---
+                elif action == "ter_start":
+                    room.ter = {
+                        "owners": [None] * 25,
+                        "cur_cell": None,
+                        "phase": "idle",
+                        "wrong_teams": [],
+                        "last_msg": "Xaritadan bo‘sh katakchani tanlang!",
+                    }
+
+                elif action == "ter_pick" and room.ter:
+                    idx = int(data.get("idx", 0))
+                    room.ter["cur_cell"] = idx
+                    room.ter["phase"] = "battle"
+                    room.ter["wrong_teams"] = []
+                    room.ter["last_msg"] = f"⚔️ {idx + 1}-sektor uchun jang boshlandi! Birinchi to‘g‘ri topgan egallaydi!"
+
+                elif action == "ter_reveal" and room.ter:
+                    room.ter["phase"] = "revealed"
+
+                elif action == "ter_sync_scores" and room.ter:
+                    for i in range(4):
+                        cnt = sum(1 for ow in room.ter["owners"] if ow == i)
+                        room.scores[i] += cnt * 100
+
+                # --- BOMB ---
+                elif action == "bomb_start":
+                    sec = int(data.get("sec", 20))
+                    pool = room.get_mc_pool()
+                    room.bomb = {
+                        "holder": 0,
+                        "lives": [3, 3, 3, 3],
+                        "sec": sec,
+                        "deadline": time.time() + sec,
+                        "time_left": sec,
+                        "status": "playing",
+                        "last_choice": None,
+                        "last_msg": f"💣 Bomba {room.teams[0]} qo‘lida! Tez javob bering!",
+                        "pool": pool,
+                        "pool_idx": 0,
+                        "cur_q": pool[0],
+                    }
+
+                elif action == "bomb_resume" and room.bomb:
+                    b = room.bomb
+                    alive = [i for i in range(4) if b["lives"][i] > 0]
+                    if len(alive) <= 1:
+                        b["status"] = "win"
+                        winner = room.teams[alive[0]] if alive else "Hech kim"
+                        b["last_msg"] = f"👑 G‘OLIB: {winner}!"
+                    else:
+                        nxt = (b["holder"] + 1) % 4
+                        for _ in range(4):
+                            if b["lives"][nxt] > 0:
+                                break
+                            nxt = (nxt + 1) % 4
+                        b["holder"] = nxt
+                        b["pool_idx"] = (b["pool_idx"] + 1) % len(b["pool"])
+                        b["cur_q"] = b["pool"][b["pool_idx"]]
+                        b["deadline"] = time.time() + b["sec"]
+                        b["time_left"] = b["sec"]
+                        b["last_choice"] = None
+                        b["status"] = "playing"
+                        b["last_msg"] = f"💣 Bomba {room.teams[nxt]} ga uzatildi!"
+
+                # --- TEST (KAHOOT) ---
+                elif action == "kahoot_start":
+                    dur = int(data.get("duration", 20))
+                    pool = room.get_mc_pool()[:15]
+                    recs = {nm: {"team": tm, "pts": 0, "streak": 0, "correct": 0} for nm, tm in room.players.items()}
+                    room.kahoot = {
+                        "phase": "lobby",
+                        "duration": dur,
+                        "pool": pool,
+                        "q_num": -1,
+                        "cur_q": None,
+                        "deadline": 0,
+                        "time_left": dur,
+                        "round_results": {},
+                        "records": recs,
+                        "team_pts": [0, 0, 0, 0],
+                    }
+
+                elif action == "kahoot_next" and room.kahoot:
+                    k = room.kahoot
+                    if k["q_num"] + 1 < len(k["pool"]):
+                        k["q_num"] += 1
+                        k["cur_q"] = k["pool"][k["q_num"]]
+                        k["phase"] = "question"
+                        k["deadline"] = time.time() + k["duration"]
+                        k["time_left"] = k["duration"]
+                        k["round_results"] = {}
+
+                elif action == "kahoot_reveal" and room.kahoot:
+                    room.kahoot_do_reveal()
+
+                elif action == "kahoot_podium" and room.kahoot:
+                    room.kahoot["phase"] = "podium"
+
+                elif action == "kahoot_sync_scores" and room.kahoot:
+                    for i in range(4):
+                        room.scores[i] += room.kahoot["team_pts"][i]
+                    room.kahoot["team_pts"] = [0, 0, 0, 0]
+
+                room.touch()
+                st = room.serialize(is_admin=True)
+            self.send_json(st)
+            return
+
+        self.send_json({"error": "Noma’lum so‘rov"}, 404)
+
+
+if __name__ == "__main__":
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    print(f"JEO QUIZ universal server ishga tushdi: port {PORT}", flush=True)
+    server.serve_forever()
