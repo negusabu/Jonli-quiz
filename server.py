@@ -1,6 +1,7 @@
-"""JEO QUIZ — jonli server va barqaror Gemini AI integratsiyasi."""
-import json, os, random, re, socket, sys, threading, collections, glob, time
+"""JEO QUIZ — jonli server, mavzu va fayldan savol tuzuvchi Gemini AI."""
+import base64, collections, glob, io, json, os, random, re, socket, sys, threading, time, zipfile
 import urllib.request, urllib.error
+import xml.etree.ElementTree as ET
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
@@ -98,6 +99,26 @@ def extract_json_obj(text):
         cleaned = re.sub(r',\s*([}\]])', r'\1', text)
         return json.loads(cleaned, strict=False)
 
+def extract_docx_text(raw_bytes):
+    with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
+        xml_bytes = zf.read('word/document.xml')
+    root = ET.fromstring(xml_bytes)
+    lines = []
+    for p in root.iter():
+        if p.tag.endswith('}p'):
+            parts = [t.text for t in p.iter() if t.tag.endswith('}t') and t.text]
+            if parts:
+                lines.append(''.join(parts))
+    return '\n'.join(lines)
+
+def decode_text_bytes(raw_bytes):
+    for enc in ('utf-8', 'utf-8-sig', 'cp1251', 'latin-1'):
+        try:
+            return raw_bytes.decode(enc)
+        except Exception:
+            continue
+    return raw_bytes.decode('utf-8', errors='ignore')
+
 def discover_models(api_key):
     url = f'{API_BASE}?key={api_key}'
     try:
@@ -114,7 +135,7 @@ def discover_models(api_key):
     except Exception:
         return []
 
-def call_gemini(prompt, json_mode=False, temperature=0.6):
+def call_gemini(prompt, json_mode=False, temperature=0.6, file_part=None):
     api_key = os.environ.get('GEMINI_API_KEY', '').strip() or GEMINI_API_KEY
     primary = os.environ.get('GEMINI_MODEL', '').strip() or GEMINI_MODEL
     if not api_key:
@@ -132,7 +153,14 @@ def call_gemini(prompt, json_mode=False, temperature=0.6):
     candidates = []
     for m in base_list:
         if m and m != 'gemini-2.5-flash-lite' and m not in candidates:
+            if file_part and m.startswith('gemma'):
+                continue
             candidates.append(m)
+
+    parts = []
+    if file_part:
+        parts.append({'inlineData': {'mimeType': file_part['mime_type'], 'data': file_part['data']}})
+    parts.append({'text': prompt})
 
     raw = None
     real_err = None
@@ -141,6 +169,8 @@ def call_gemini(prompt, json_mode=False, temperature=0.6):
     def try_models(model_list):
         nonlocal raw, real_err, fallback_err
         for model in model_list:
+            if file_part and model.startswith('gemma'):
+                continue
             url = f'{API_BASE}/{model}:generateContent?key={api_key}'
             is_gemma = model.startswith('gemma')
             think_mode = 'none' if is_gemma else ('minimal' if 'gemini-3' in model else 'zero')
@@ -155,7 +185,7 @@ def call_gemini(prompt, json_mode=False, temperature=0.6):
                     gen_cfg['thinkingConfig'] = {'thinkingBudget': 0}
 
                 payload = {
-                    'contents': [{'parts': [{'text': prompt}]}],
+                    'contents': [{'parts': parts}],
                     'generationConfig': gen_cfg
                 }
                 req = urllib.request.Request(
@@ -165,7 +195,7 @@ def call_gemini(prompt, json_mode=False, temperature=0.6):
                     method='POST'
                 )
                 try:
-                    with urllib.request.urlopen(req, timeout=55) as resp:
+                    with urllib.request.urlopen(req, timeout=65) as resp:
                         raw = json.loads(resp.read().decode('utf8'))
                         return
                 except urllib.error.HTTPError as e:
@@ -208,6 +238,28 @@ def call_gemini(prompt, json_mode=False, temperature=0.6):
         return extract_json_obj(text)
     return text
 
+def parse_category_items(data, cname):
+    qs_list = data.get('s') or data.get('questions') or []
+    if len(qs_list) != 5:
+        return None
+    cat_qs = []
+    for idx, item in enumerate(qs_list):
+        opts = [str(x).strip() for x in (item.get('o') or item.get('opts') or [])][:4]
+        if len(opts) < 4:
+            return None
+        c = int(item.get('c', 0))
+        if not (0 <= c < 4):
+            c = 0
+        cat_qs.append({
+            'cat': cname,
+            'pts': (idx + 1) * 100,
+            'q': str(item.get('q', '')).strip(),
+            'opts': opts,
+            'c': c,
+            'exp': str(item.get('e') or item.get('exp') or 'Izoh').strip()
+        })
+    return cat_qs
+
 def ai_generate_category(topic, cname, level):
     prompt = f"""O‘zbek tilida "{topic}" mavzusining "{cname}" bo‘limi uchun ({level}) 5 ta qisqa test savoli tuz (100, 200, 300, 400, 500 ball).
 FAQAT shu JSON formatida qaytar:
@@ -219,33 +271,38 @@ Qoidalar:
     for _ in range(3):
         try:
             data = call_gemini(prompt, json_mode=True, temperature=0.6)
-            qs_list = data.get('s') or data.get('questions') or []
-            if len(qs_list) != 5:
-                last_e = RuntimeError(f'"{cname}" bo‘limida 5 ta savol chiqmadi')
-                continue
-            cat_qs = []
-            ok = True
-            for idx, item in enumerate(qs_list):
-                opts = [str(x).strip() for x in (item.get('o') or item.get('opts') or [])][:4]
-                if len(opts) < 4:
-                    ok = False
-                    break
-                c = int(item.get('c', 0))
-                if not (0 <= c < 4):
-                    c = 0
-                cat_qs.append({
-                    'cat': cname,
-                    'pts': (idx + 1) * 100,
-                    'q': str(item.get('q', '')).strip(),
-                    'opts': opts,
-                    'c': c,
-                    'exp': str(item.get('e') or item.get('exp') or 'Izoh').strip()
-                })
-            if ok:
+            cat_qs = parse_category_items(data, cname)
+            if cat_qs:
                 return cat_qs
+            last_e = RuntimeError(f'"{cname}" bo‘limida 5 ta savol chiqmadi')
         except Exception as e:
             last_e = e
-            time.sleep(0.6)
+            time.sleep(0.5)
+    raise RuntimeError(f'"{cname}" bo‘limida xato: {last_e}')
+
+def ai_generate_category_from_source(cname, level, hint, doc_text='', file_part=None):
+    source_block = f'\nHUJJAT MATNI:\n"""\n{doc_text}\n"""\n' if doc_text else ''
+    hint_line = f'Qo‘shimcha ko‘rsatma: {hint}.' if hint else ''
+    prompt = f"""Yuklangan hujjat asosida o‘zbek tilida "{cname}" bo‘limi uchun ({level}) 5 ta test savoli tayyorla (100, 200, 300, 400, 500 ball).
+{hint_line}
+Muhim:
+- Agar hujjatda tayyor test savollari va javoblari berilgan bo‘lsa, shu bo‘limga mos 5 ta savol-javobni ajratib ol va 4 ta variantli test ko‘rinishiga keltir (to‘g‘ri javobini aniq saqla).
+- Agar hujjat ma’ruza matni yoki nazariy material bo‘lsa, faqat shu hujjatdagi faktlar asosida 5 ta savol tuz.
+- Savol, variant va izoh ichida qo‘shtirnoq (") belgisini umuman ishlatma (kerak bo‘lsa « » ishlat).
+{source_block}
+FAQAT shu JSON formatida qaytar:
+{{"s":[{{"q":"Savol matni","o":["A","B","C","D"],"c":0,"e":"1 gap izoh"}}]}}"""
+    last_e = None
+    for _ in range(3):
+        try:
+            data = call_gemini(prompt, json_mode=True, temperature=0.45, file_part=file_part)
+            cat_qs = parse_category_items(data, cname)
+            if cat_qs:
+                return cat_qs
+            last_e = RuntimeError(f'"{cname}" bo‘limida 5 ta savol chiqmadi')
+        except Exception as e:
+            last_e = e
+            time.sleep(0.5)
     raise RuntimeError(f'"{cname}" bo‘limida xato: {last_e}')
 
 def bg_generate_board(topic, level):
@@ -291,6 +348,90 @@ FAQAT shu JSONni qaytar: {{"categories":["1-nom","2-nom","3-nom","4-nom","5-nom"
                 answers={}, text_answers={}, ai_grades={}, ai_note='',
                 ai_busy=False, ai_error='',
                 ai_status=f'Tayyor! "{topic}" bo‘yicha 25 ta savol jadvalga yuklandi ✔'
+            )
+    except Exception as e:
+        with lock:
+            state['ai_busy'] = False
+            state['ai_status'] = ''
+            state['ai_error'] = str(e)
+
+def bg_generate_from_file(filename, mime, b64_data, hint, level):
+    global QS, _cats
+    try:
+        with lock:
+            state['ai_status'] = f'"{filename}" fayli o‘qilmoqda...'
+        raw_bytes = base64.b64decode(b64_data)
+        fname_low = filename.lower()
+        doc_text = ''
+        file_part = None
+
+        if fname_low.endswith('.docx') or 'wordprocessingml' in mime:
+            doc_text = extract_docx_text(raw_bytes).strip()
+            if len(doc_text) < 30:
+                raise RuntimeError('Word (.docx) fayl ichidan yetarli matn topilmadi')
+            doc_text = doc_text[:45000]
+        elif fname_low.endswith(('.txt', '.md', '.csv')) or mime.startswith('text/'):
+            doc_text = decode_text_bytes(raw_bytes).strip()
+            if len(doc_text) < 30:
+                raise RuntimeError('Matnli fayl bo‘sh yoki juda qisqa')
+            doc_text = doc_text[:45000]
+        elif fname_low.endswith('.doc'):
+            raise RuntimeError('Eski .doc formati qo‘llab-quvvatlanmaydi. Faylni .docx yoki .pdf qilib saqlab yuklang.')
+        else:
+            if not mime:
+                if fname_low.endswith('.pdf'):
+                    mime = 'application/pdf'
+                elif fname_low.endswith('.png'):
+                    mime = 'image/png'
+                else:
+                    mime = 'image/jpeg'
+            file_part = {'mime_type': mime, 'data': b64_data}
+
+        with lock:
+            state['ai_status'] = 'Fayl tahlil qilinmoqda, 5 ta bo‘lim ajratilmoqda...'
+
+        source_block = f'\nHUJJAT MATNI:\n"""\n{doc_text}\n"""\n' if doc_text else ''
+        cat_prompt = f"""Yuklangan hujjatni tahlil qil va undagi mavzular asosida o‘zbek tilida 5 ta alohida bo‘lim nomini tuz ({level}).
+Qo‘shimcha ko‘rsatma: "{hint or 'hujjat mazmunini to‘liq qamrab ol'}".
+Matn ichida qo‘shtirnoq (") ishlatma.
+{source_block}
+FAQAT shu JSONni qaytar: {{"categories":["1-bo‘lim","2-bo‘lim","3-bo‘lim","4-bo‘lim","5-bo‘lim"]}}"""
+
+        cat_data = call_gemini(cat_prompt, json_mode=True, temperature=0.45, file_part=file_part)
+        raw_cats = [str(x).strip()[:35] for x in (cat_data.get('categories') or []) if str(x).strip()]
+        cats = []
+        for c in raw_cats:
+            if c not in cats:
+                cats.append(c)
+        if len(cats) < 5:
+            raise RuntimeError('Fayldan 5 ta bo‘lim ajratib bo‘lmadi, qayta urinib ko‘ring')
+        cats = cats[:5]
+
+        result = []
+        for i, cname in enumerate(cats):
+            with lock:
+                state['ai_status'] = f'{i+1}/5-bo‘lim savollari tuzilmoqda: {cname}...'
+            cat_qs = ai_generate_category_from_source(cname, level, hint, doc_text=doc_text, file_part=file_part)
+            result.extend(cat_qs)
+            if i < 4:
+                time.sleep(0.4)
+
+        errs, new_cats, _ = check_quiz(result)
+        if errs:
+            raise RuntimeError(errs[0])
+
+        with lock:
+            QS = result
+            _cats = new_cats
+            try:
+                save_questions()
+            except Exception:
+                pass
+            state.update(
+                cur=None, revealed=False, used=[False] * len(QS),
+                answers={}, text_answers={}, ai_grades={}, ai_note='',
+                ai_busy=False, ai_error='',
+                ai_status=f'Tayyor! "{filename}" faylidan 25 ta savol-javob jadvalga yuklandi ✔'
             )
     except Exception as e:
         with lock:
@@ -450,6 +591,8 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         global QS, _cats
         n = int(self.headers.get('Content-Length', 0) or 0)
+        if n > 16 * 1024 * 1024:
+            return self._json({'error': 'Fayl hajmi juda katta (maksimum 10 MB)'}, 413)
         try:
             data = json.loads(self.rfile.read(n) or b'{}')
         except Exception:
@@ -507,6 +650,28 @@ class H(BaseHTTPRequestHandler):
                     state['ai_error'] = ''
                     state['ai_status'] = 'AI ishga tushdi...'
                 threading.Thread(target=bg_generate_board, args=(topic, level), daemon=True).start()
+                with lock:
+                    return self._json(public_state(admin=True))
+
+            if act == 'ai_generate_from_file':
+                filename = str(data.get('filename', 'hujjat')).strip()
+                mime = str(data.get('mime', '')).strip()
+                b64_data = str(data.get('data_b64', '')).strip()
+                hint = str(data.get('hint', '')).strip()
+                level = str(data.get('level', 'universitet talabalari')).strip()
+                if not b64_data:
+                    return self._json({'error': 'Avval faylni tanlang'}, 400)
+                with lock:
+                    if state['ai_busy']:
+                        return self._json({'error': 'AI hozir savol tuzmoqda, biroz kuting'}, 400)
+                    state['ai_busy'] = True
+                    state['ai_error'] = ''
+                    state['ai_status'] = f'"{filename}" yuklanmoqda...'
+                threading.Thread(
+                    target=bg_generate_from_file,
+                    args=(filename, mime, b64_data, hint, level),
+                    daemon=True
+                ).start()
                 with lock:
                     return self._json(public_state(admin=True))
 
