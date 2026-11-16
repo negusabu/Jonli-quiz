@@ -4,7 +4,15 @@
 <style>
 body{margin:0;background:#08102B;color:#fff;font-family:Arial,Helvetica,sans-serif}
 .w{max-width:960px;margin:0 auto;padding:12px}
-h1{color:#FFC72C;text-align:center;margin:6px 0 12px;font-size:23px}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#101D4A;padding:10px 14px;border-radius:12px;border:1px solid #1E63D6;margin-bottom:10px}
+.brand{font-size:19px;font-weight:bold;color:#FFC72C}
+.menutoggle{background:#FFC72C;color:#000;font-weight:bold;padding:8px 14px;border-radius:8px;border:none;cursor:pointer;font-size:14px}
+.navdrawer{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:#0E1A42;padding:8px;border-radius:12px;border:1px solid #2F8BFF;margin-bottom:12px}
+.navdrawer.hidden{display:none}
+.navitem{padding:10px 6px;border-radius:8px;border:1px solid #2F8BFF;background:#13245C;color:#fff;font-weight:bold;font-size:13px;cursor:pointer;text-align:center}
+.navitem.active{background:#FFC72C;color:#000;border-color:#FFC72C}
+
+.profilebar{display:flex;justify-content:space-between;align-items:center;background:#101D4A;padding:8px 12px;border-radius:10px;border:1px solid #1E8E4E;margin-bottom:10px;font-size:14px}
 .card{background:#13245C;border-radius:12px;padding:14px;margin-bottom:12px}
 .scores{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
 .sc{background:#13245C;border:1px solid #1E63D6;border-radius:10px;padding:8px;text-align:center}
@@ -17,7 +25,9 @@ h1{color:#FFC72C;text-align:center;margin:6px 0 12px;font-size:23px}
 .cell.cur{background:#FFC72C;color:#000;border-color:#FFC72C}
 .q{font-size:20px;font-weight:bold;line-height:1.35;margin:8px 0 12px}
 
-/* Standart variant tugmalari (Jeo Quiz & Millioner) */
+.gameitem{background:#13245C;border:2px solid #2F8BFF;border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer}
+.gameitem.live{border-color:#FFC72C;background:#182D73}
+
 .optbtn{display:block;width:100%;text-align:left;padding:13px 14px;margin:7px 0;border-radius:10px;border:2px solid #2F8BFF;background:#0c1842;color:#fff;font-size:17px;cursor:pointer}
 .optbtn.chosen{background:#2563EB;border-color:#FFC72C}
 .optbtn.sel{background:#D97706;border-color:#FFC72C;color:#000;font-weight:bold}
@@ -25,7 +35,6 @@ h1{color:#FFC72C;text-align:center;margin:6px 0 12px;font-size:23px}
 .optbtn.bad{background:#B3261E;border-color:#FF8A80;color:#fff;font-weight:bold}
 .optbtn.hid{opacity:.22;text-decoration:line-through;pointer-events:none}
 
-/* 3. AUKSION: Birja Ticket Karta tugmalari (01-04) */
 .aucticket{display:flex;align-items:stretch;width:100%;text-align:left;margin:8px 0;border-radius:10px;border:2px solid #F59E0B;background:#0b132b;color:#fff;overflow:hidden;cursor:pointer;padding:0}
 .aucticket .stub{background:#F59E0B;color:#000;font-weight:bold;font-size:16px;padding:14px 12px;display:flex;align-items:center;justify-content:center;min-width:44px}
 .aucticket .body{padding:13px 14px;font-size:16px;flex:1}
@@ -39,7 +48,6 @@ h1{color:#FFC72C;text-align:center;margin:6px 0 12px;font-size:23px}
 .betbtn{padding:12px 6px;border-radius:8px;border:2px solid #F59E0B;background:#0c1842;color:#FBBF24;font-weight:bold;cursor:pointer;font-size:14px}
 .betbtn.active{background:#F59E0B;color:#000}
 
-/* 4. HUDUDLAR JANGI: 2-ustunli Taktik Vektor tugmalari (I-IV) */
 .tergrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:8px}
 .terbtn{display:flex;align-items:center;gap:10px;text-align:left;padding:14px;border-radius:4px 18px 4px 18px;border-left:6px solid #10B981;border-top:1px solid #34D399;border-right:1px solid #34D399;border-bottom:1px solid #34D399;background:#081c24;color:#fff;font-size:16px;cursor:pointer}
 .terbtn .roman{font-weight:bold;color:#6EE7B7;background:#064e3b;padding:6px 10px;border-radius:6px;font-size:14px}
@@ -51,7 +59,6 @@ h1{color:#FFC72C;text-align:center;margin:6px 0 12px;font-size:23px}
 .tcell.t3{background:#D97706;border-color:#FDE047;color:#000}
 .tcell.cur{outline:3px solid #fff}
 
-/* 5. ZANJIRLI BOMBA: Detonator Kapsula tugmalari (ALPHA-DELTA) */
 .bombbtn{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;padding:13px 18px;margin:8px 0;border-radius:999px;border:2px solid #EF4444;background:linear-gradient(90deg,#1f0912,#0c1842);color:#fff;font-size:16px;cursor:pointer}
 .bombbtn .code{font-size:12px;font-weight:bold;letter-spacing:1px;padding:4px 10px;border-radius:999px;background:#EF4444;color:#fff}
 .bombbtn.ok{border-color:#7CFC9A;background:#14532d}
@@ -78,9 +85,28 @@ button:disabled{opacity:.4;cursor:default}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 </style></head>
 <body><div class="w">
-<h1 id="title">JEO QUIZ</h1>
 
+<div class="topbar">
+  <div class="brand" id="title">JEO QUIZ</div>
+  <button class="menutoggle" onclick="toggleStudentMenu()">☰ Menyu</button>
+</div>
+
+<div id="snav" class="navdrawer hidden">
+  <button id="stab_play" class="navitem active" onclick="openStudentTab('play')">🎯 Jonli o‘yin</button>
+  <button id="stab_modes" class="navitem" onclick="openStudentTab('modes')">🎮 O‘yin turlari</button>
+  <button id="stab_rank" class="navitem" onclick="openStudentTab('rank')">🏆 Reyting</button>
+  <button id="stab_prof" class="navitem" onclick="openStudentTab('prof')">👤 Profil</button>
+</div>
+
+<!-- COMPACT PROFILE BAR (when logged in) -->
+<div class="profilebar" id="profbar" style="display:none">
+  <div id="profinfo"></div>
+  <button onclick="openStudentTab('prof')" style="background:#1B3180;color:#fff;padding:6px 10px;font-size:13px">O‘zgartirish</button>
+</div>
+
+<!-- LOGIN CARD (shown if not logged in OR when Profil tab is opened) -->
 <div class="card" id="loginbox">
+  <div style="font-size:14px;color:#FFC72C;font-weight:bold;margin-bottom:6px">Ismingiz va jamoangizni tanlang:</div>
   <div class="row">
     <input id="pname" placeholder="Ismingiz" style="flex:2;min-width:140px">
     <select id="pteam" style="flex:2;min-width:140px"></select>
@@ -89,19 +115,69 @@ button:disabled{opacity:.4;cursor:default}
   <div id="lstatus" style="font-size:13px;color:#7CFC9A;margin-top:6px"></div>
 </div>
 
-<div class="scores" id="scores"></div>
-<div id="main"></div>
+<!-- VIEW 1: JONLI O'YIN -->
+<div id="sview_play">
+  <div class="scores" id="scores"></div>
+  <div id="main"></div>
+</div>
+
+<!-- VIEW 2: O'YIN TURLARI MENYUSI -->
+<div id="sview_modes" style="display:none">
+  <div id="smodeslist"></div>
+</div>
+
+<!-- VIEW 3: REYTING -->
+<div id="sview_rank" style="display:none">
+  <div class="card" id="srankbox"></div>
+</div>
+
 </div>
 <script>
 const L = ['A','B','C','D'];
 const TICONS = ['🛡️','⚔️','🏰','👑'];
+const SGAMES = [
+  {id:'jeopardy', icon:'🟦', title:'1. Jeo Quiz (5×5 Jadval)', desc:'5 ta bo‘lim va 100–500 ballik savollar. Jamoangiz uchun to‘g‘ri variantni belgilang.'},
+  {id:'millionaire', icon:'💎', title:'2. Kim millioner bo‘lishni xohlaydi?', desc:'15 pog‘onali o‘yin. Ishtirokchi variant tanlaydi, qolganlar Guruh yordamida ovoz beradi.'},
+  {id:'auction', icon:'💰', title:'3. Auksion va Stavka', desc:'Avval kapitaldan stavka tiking, so‘ng 01–04 kartalardan to‘g‘ri javobni tanlang.'},
+  {id:'territory', icon:'🗺️', title:'4. Hududlar jangi (5×5)', desc:'I–IV taktik tugmalarni birinchi bo‘lib to‘g‘ri bosing va xaritadagi sektorni egallang.'},
+  {id:'bomb', icon:'💣', title:'5. Zanjirli Bomba', desc:'Bomba sizning jamoangizga kelganda taymer tugamasidan ALPHA–DELTA tugmasini bosing!'},
+];
+
 let S = null, teamsBuilt = false, myChoice = null, lastCur = null, myVote = null, lastMilStep = null, busyAI = false;
-let myAucChoice = null, lastAucRound = null;
+let myAucChoice = null, lastAucRound = null, sTab = 'play';
 let myName = sessionStorage.getItem('pname') || '';
 let myTeam = sessionStorage.getItem('pteam');
 myTeam = (myTeam !== null && myTeam !== '') ? Number(myTeam) : null;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = n => Number(n || 0).toLocaleString('ru-RU');
+
+function toggleStudentMenu(){
+  document.getElementById('snav').classList.toggle('hidden');
+}
+
+function openStudentTab(tab){
+  sTab = tab;
+  ['play','modes','rank','prof'].forEach(t => {
+    const b = document.getElementById('stab_' + t);
+    if (b) b.className = 'navitem' + (t === tab ? ' active' : '');
+  });
+  document.getElementById('sview_play').style.display = (tab === 'play' || tab === 'prof') ? 'block' : 'none';
+  document.getElementById('sview_modes').style.display = (tab === 'modes') ? 'block' : 'none';
+  document.getElementById('sview_rank').style.display = (tab === 'rank') ? 'block' : 'none';
+  updateProfileVisibility();
+  document.getElementById('snav').classList.add('hidden');
+}
+
+function updateProfileVisibility(){
+  const loggedIn = Boolean(myName);
+  const showForm = !loggedIn || sTab === 'prof';
+  document.getElementById('loginbox').style.display = showForm ? 'block' : 'none';
+  document.getElementById('profbar').style.display = (loggedIn && !showForm) ? 'flex' : 'none';
+  if (loggedIn && S){
+    const tName = (myTeam !== null && S.teams[myTeam]) ? S.teams[myTeam] : 'Jamoasiz';
+    document.getElementById('profinfo').innerHTML = `👤 <b>${esc(myName)}</b> • <span style="color:#FFC72C">${esc(tName)}</span>`;
+  }
+}
 
 async function load(){
   const r = await fetch('/api/state', {cache:'no-store'});
@@ -123,11 +199,13 @@ async function doLogin(){
   myName = name; myTeam = team;
   sessionStorage.setItem('pname', myName);
   sessionStorage.setItem('pteam', myTeam === null ? '' : String(myTeam));
-  document.getElementById('lstatus').textContent = `Kirdingiz: ${myName}`;
+  sTab = 'play';
+  updateProfileVisibility();
+  render();
 }
 
 async function sendAnswer(choice){
-  if (myTeam === null){ alert('Avval yuqoridan jamoangizni tanlab «Kirish» tugmasini bosing!'); return; }
+  if (myTeam === null){ alert('Avval jamoangizni tanlab «Kirish» tugmasini bosing!'); openStudentTab('prof'); return; }
   const r = await fetch('/api/answer', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({team: myTeam, choice})
@@ -136,7 +214,7 @@ async function sendAnswer(choice){
 }
 
 async function sendTextAnswer(){
-  if (myTeam === null){ alert('Avval yuqoridan jamoangizni tanlab «Kirish» tugmasini bosing!'); return; }
+  if (myTeam === null){ alert('Avval jamoangizni tanlab «Kirish» tugmasini bosing!'); openStudentTab('prof'); return; }
   const txt = document.getElementById('txtans').value.trim();
   if (!txt) return;
   const r = await fetch('/api/answer', {
@@ -178,7 +256,7 @@ function handleMilOptionClick(i, isPlayer){
 }
 
 async function sendAucBet(amount){
-  if (myTeam === null){ alert('Avval yuqoridan jamoangizni tanlab «Kirish» tugmasini bosing!'); return; }
+  if (myTeam === null){ alert('Avval jamoangizni tanlang!'); openStudentTab('prof'); return; }
   const r = await fetch('/api/auc_play', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({action:'bet', team: myTeam, amount})
@@ -189,7 +267,7 @@ async function sendAucBet(amount){
 }
 
 async function sendAucAnswer(choice){
-  if (myTeam === null){ alert('Avval yuqoridan jamoangizni tanlab «Kirish» tugmasini bosing!'); return; }
+  if (myTeam === null){ alert('Avval jamoangizni tanlang!'); openStudentTab('prof'); return; }
   const r = await fetch('/api/auc_play', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({action:'answer', team: myTeam, choice})
@@ -201,7 +279,7 @@ async function sendAucAnswer(choice){
 }
 
 async function sendTerAnswer(choice){
-  if (myTeam === null){ alert('Avval yuqoridan jamoangizni tanlab «Kirish» tugmasini bosing!'); return; }
+  if (myTeam === null){ alert('Avval jamoangizni tanlang!'); openStudentTab('prof'); return; }
   const r = await fetch('/api/ter_play', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({team: myTeam, choice})
@@ -212,7 +290,7 @@ async function sendTerAnswer(choice){
 }
 
 async function sendBombAnswer(choice){
-  if (myTeam === null){ alert('Avval yuqoridan jamoangizni tanlab «Kirish» tugmasini bosing!'); return; }
+  if (myTeam === null){ alert('Avval jamoangizni tanlang!'); openStudentTab('prof'); return; }
   const r = await fetch('/api/bomb_play', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({team: myTeam, choice})
@@ -229,9 +307,27 @@ function render(){
     sel.innerHTML = `<option value="">Jamoani tanlang</option>` + S.teams.map((t,i)=>`<option value="${i}">${esc(t)}</option>`).join('');
     if (myName) document.getElementById('pname').value = myName;
     if (myTeam !== null) sel.value = String(myTeam);
-    if (myName) document.getElementById('lstatus').textContent = `Kirdingiz: ${myName}`;
     teamsBuilt = true;
   }
+  updateProfileVisibility();
+
+  // Render Modes Menu for student
+  document.getElementById('smodeslist').innerHTML = SGAMES.map(g => {
+    const isLive = g.id === S.mode;
+    return `<div class="gameitem ${isLive?'live':''}" onclick="openStudentTab('play')">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <b style="font-size:17px;color:#FFC72C">${g.icon} ${esc(g.title)}</b>
+        ${isLive ? '<span style="background:#1E8E4E;padding:3px 9px;border-radius:20px;font-size:12px;font-weight:bold">● JONLI</span>' : ''}
+      </div>
+      <div style="font-size:14px;color:#CBD5E1;margin-top:6px;line-height:1.4">${esc(g.desc)}</div>
+    </div>`;
+  }).join('');
+
+  // Render Ranking
+  const ranked = S.teams.map((t, i) => ({name: t, score: S.scores[i]})).sort((a, b) => b.score - a.score);
+  document.getElementById('srankbox').innerHTML = `<h3 style="margin:0 0 10px;color:#FFC72C">🏆 JAMOALAR REYTINGI</h3>` +
+    ranked.map((r, idx) => `<div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid #1E63D6;font-size:17px">
+      <span><b>${idx+1}.</b> ${esc(r.name)}</span><b style="color:#FFC72C">${fmt(r.score)} ball</b></div>`).join('');
 
   document.getElementById('scores').innerHTML = S.teams.map((t,i)=>
     `<div class="sc"><div class="t">${esc(t)}</div><div class="v">${S.scores[i]}</div></div>`
@@ -239,27 +335,27 @@ function render(){
 
   const main = document.getElementById('main');
   if (S.mode === 'millionaire'){
-    document.getElementById('title').textContent = 'KIM MILLIONER BO‘LISHNI XOHLAYDI?';
+    document.getElementById('title').textContent = '💎 MILLIONER';
     renderMilPlayer(main);
     return;
   }
   if (S.mode === 'auction'){
-    document.getElementById('title').textContent = 'AUKSION VA STAVKA';
+    document.getElementById('title').textContent = '💰 AUKSION';
     renderAucPlayer(main);
     return;
   }
   if (S.mode === 'territory'){
-    document.getElementById('title').textContent = 'HUDUDLAR JANGI (5×5)';
+    document.getElementById('title').textContent = '🗺️ HUDUDLAR JANGI';
     renderTerPlayer(main);
     return;
   }
   if (S.mode === 'bomb'){
-    document.getElementById('title').textContent = 'ZANJIRLI BOMBA';
+    document.getElementById('title').textContent = '💣 ZANJIRLI BOMBA';
     renderBombPlayer(main);
     return;
   }
 
-  document.getElementById('title').textContent = 'JEO QUIZ';
+  document.getElementById('title').textContent = '🟦 JEO QUIZ';
   if (S.cur !== lastCur){ lastCur = S.cur; myChoice = null; }
 
   let h = '';
