@@ -1,4 +1,4 @@
-"""JEO QUIZ + MILLIONER BO'LISH — jonli server va Gemini AI."""
+"""JEO QUIZ + MILLIONER + AUKSION + HUDUDLAR JANGI + ZANJIRLI BOMBA."""
 import base64, collections, glob, io, json, os, random, re, socket, sys, threading, time, zipfile
 import urllib.request, urllib.error
 import xml.etree.ElementTree as ET
@@ -83,15 +83,27 @@ state = {
     'players': {},
     'shown_opts': [], 'shown_c': None,
     'mil': None,
+    'auc': None,
+    'ter': None,
+    'bomb': None,
 }
 
+def mc_indices():
+    return [i for i, q in enumerate(QS) if len(q.get('opts') or []) >= 4]
+
+def shuffled_opts(q_idx):
+    q = QS[q_idx]
+    opts = list(q.get('opts') or [])[:4]
+    perm = list(range(len(opts)))
+    random.shuffle(perm)
+    return [opts[i] for i in perm], (perm.index(q['c']) if opts else 0)
+
+# --- 2. MILLIONAIRE ---
 def build_millionaire_ladder():
     by_pts = collections.defaultdict(list)
-    all_mc = []
-    for i, q in enumerate(QS):
-        if len(q.get('opts') or []) >= 4:
-            by_pts[q.get('pts', 100)].append(i)
-            all_mc.append(i)
+    all_mc = mc_indices()
+    for i in all_mc:
+        by_pts[QS[i].get('pts', 100)].append(i)
     ladder = []
     for pts in (100, 200, 300, 400, 500):
         pool = list(by_pts.get(pts, []))
@@ -104,13 +116,10 @@ def build_millionaire_ladder():
     return ladder[:15]
 
 def prepare_mil_step(mil, step_idx):
-    q = QS[mil['ladder'][step_idx]]
-    opts = list(q.get('opts') or [])[:4]
-    perm = list(range(len(opts)))
-    random.shuffle(perm)
+    shown_opts, shown_c = shuffled_opts(mil['ladder'][step_idx])
     mil['step'] = step_idx
-    mil['shown_opts'] = [opts[i] for i in perm]
-    mil['shown_c'] = perm.index(q['c']) if opts else 0
+    mil['shown_opts'] = shown_opts
+    mil['shown_c'] = shown_c
     mil['hidden_opts'] = []
     mil['selected'] = None
     mil['revealed'] = False
@@ -215,6 +224,165 @@ def apply_mil_action(act, data):
         return None
     return 'Noma‘lum amal'
 
+# --- 3. AUKSION VA STAVKA ---
+def start_auction_game():
+    order = mc_indices()
+    random.shuffle(order)
+    if not order:
+        raise RuntimeError('Auksion o‘yini uchun 4 variantli savollar topilmadi')
+    auc = {
+        'bank': [1000, 1000, 1000, 1000],
+        'order': order,
+        'idx': 0,
+        'phase': 'betting',
+        'bets': {},
+        'answers': {},
+        'shown_opts': [],
+        'shown_c': 0,
+        'deltas': [0, 0, 0, 0],
+    }
+    shown_opts, shown_c = shuffled_opts(order[0])
+    auc['shown_opts'] = shown_opts
+    auc['shown_c'] = shown_c
+    state['auc'] = auc
+
+def serialize_auc(admin=False):
+    auc = state.get('auc')
+    if not auc:
+        return None
+    q_idx = auc['order'][auc['idx']]
+    q = QS[q_idx]
+    out = {
+        'bank': list(auc['bank']),
+        'round': auc['idx'] + 1,
+        'total_rounds': len(auc['order']),
+        'phase': auc['phase'],
+        'bets': {str(k): v for k, v in auc['bets'].items()},
+        'answered_teams': sorted(list(auc['answers'].keys())),
+        'deltas': list(auc['deltas']),
+        'cat': q['cat'],
+        'pts': q['pts'],
+    }
+    if auc['phase'] in ('question', 'revealed') or admin:
+        out['question'] = {
+            'q': q['q'],
+            'opts': list(auc['shown_opts']),
+        }
+        if auc['phase'] == 'revealed' or admin:
+            out['question']['c'] = auc['shown_c']
+            out['question']['exp'] = q.get('exp', '')
+            out['answers'] = {str(k): v for k, v in auc['answers'].items()}
+    return out
+
+# --- 4. HUDUDLAR JANGI (5x5 XARITA) ---
+def start_territory_game():
+    state['ter'] = {
+        'owners': [None] * 25,
+        'cur_cell': None,
+        'phase': 'pick',
+        'shown_opts': [],
+        'shown_c': 0,
+        'winner': None,
+        'wrong_teams': [],
+        'last_msg': 'Xaritadan biror katakchani tanlang',
+    }
+
+def serialize_ter(admin=False):
+    ter = state.get('ter')
+    if not ter:
+        return None
+    counts = [sum(1 for o in ter['owners'] if o == t) for t in range(4)]
+    out = {
+        'owners': list(ter['owners']),
+        'counts': counts,
+        'cur_cell': ter['cur_cell'],
+        'phase': ter['phase'],
+        'winner': ter['winner'],
+        'wrong_teams': list(ter['wrong_teams']),
+        'last_msg': ter['last_msg'],
+    }
+    if ter['cur_cell'] is not None:
+        q = QS[ter['cur_cell']]
+        qq = {'cat': q['cat'], 'pts': q['pts'], 'q': q['q'], 'opts': list(ter['shown_opts'])}
+        if ter['phase'] == 'revealed' or admin:
+            qq['c'] = ter['shown_c']
+            qq['exp'] = q.get('exp', '')
+        out['question'] = qq
+    return out
+
+# --- 5. ZANJIRLI BOMBA ---
+def start_bomb_game(start_sec=20):
+    order = mc_indices()
+    random.shuffle(order)
+    if not order:
+        raise RuntimeError('Bomba o‘yini uchun 4 variantli savollar topilmadi')
+    shown_opts, shown_c = shuffled_opts(order[0])
+    sec = max(8, min(40, int(start_sec or 20)))
+    state['bomb'] = {
+        'lives': [3, 3, 3, 3],
+        'holder': 0,
+        'order': order,
+        'idx': 0,
+        'base_sec': sec,
+        'cur_sec': sec,
+        'deadline': time.time() + sec,
+        'status': 'playing',
+        'shown_opts': shown_opts,
+        'shown_c': shown_c,
+        'last_choice': None,
+        'last_msg': 'Bomba 1-jamoaning qo‘lida!',
+    }
+
+def next_alive_team(lives, current):
+    for step in range(1, 5):
+        cand = (current + step) % 4
+        if lives[cand] > 0:
+            return cand
+    return current
+
+def check_bomb_timeout():
+    bomb = state.get('bomb')
+    if not bomb or bomb['status'] != 'playing':
+        return
+    if time.time() >= bomb['deadline']:
+        h = bomb['holder']
+        bomb['lives'][h] = max(0, bomb['lives'][h] - 1)
+        alive = [i for i, lv in enumerate(bomb['lives']) if lv > 0]
+        if len(alive) <= 1:
+            bomb['status'] = 'gameover'
+            win_t = alive[0] if alive else h
+            bomb['last_msg'] = f'VAQT TUGADI! 💥 Oxirgi omon qolgan g‘olib: {state["teams"][win_t]}!'
+        else:
+            bomb['status'] = 'boom'
+            bomb['last_msg'] = f'VAQT TUGADI! 💥 {state["teams"][h]} 1 ta jon yo‘qotdi!'
+
+def serialize_bomb(admin=False):
+    check_bomb_timeout()
+    bomb = state.get('bomb')
+    if not bomb:
+        return None
+    q = QS[bomb['order'][bomb['idx'] % len(bomb['order'])]]
+    left = max(0.0, round(bomb['deadline'] - time.time(), 1)) if bomb['status'] == 'playing' else 0.0
+    out = {
+        'lives': list(bomb['lives']),
+        'holder': bomb['holder'],
+        'cur_sec': bomb['cur_sec'],
+        'time_left': left,
+        'status': bomb['status'],
+        'last_choice': bomb['last_choice'],
+        'last_msg': bomb['last_msg'],
+        'question': {
+            'cat': q['cat'],
+            'q': q['q'],
+            'opts': list(bomb['shown_opts']),
+        }
+    }
+    if bomb['status'] in ('boom', 'gameover') or admin:
+        out['question']['c'] = bomb['shown_c']
+        out['question']['exp'] = q.get('exp', '')
+    return out
+
+# --- GEMINI AI HELPERS ---
 def extract_json_obj(text):
     text = text.strip()
     if text.startswith('```'):
@@ -440,6 +608,17 @@ FAQAT shu JSON formatida qaytar:
             time.sleep(0.5)
     raise RuntimeError(f'"{cname}" bo‘limida xato: {last_e}')
 
+def refresh_active_mode_after_new_qs():
+    m = state['mode']
+    if m == 'millionaire':
+        start_millionaire_run('Ishtirokchi', None)
+    elif m == 'auction':
+        start_auction_game()
+    elif m == 'territory':
+        start_territory_game()
+    elif m == 'bomb':
+        start_bomb_game(20)
+
 def bg_generate_board(topic, level):
     global QS, _cats
     try:
@@ -484,8 +663,7 @@ FAQAT shu JSONni qaytar: {{"categories":["1-nom","2-nom","3-nom","4-nom","5-nom"
                 ai_busy=False, ai_error='',
                 ai_status=f'Tayyor! "{topic}" bo‘yicha 25 ta savol jadvalga yuklandi ✔'
             )
-            if state['mode'] == 'millionaire':
-                start_millionaire_run('Ishtirokchi', None)
+            refresh_active_mode_after_new_qs()
     except Exception as e:
         with lock:
             state['ai_busy'] = False
@@ -570,8 +748,7 @@ FAQAT shu JSONni qaytar: {{"categories":["1-bo‘lim","2-bo‘lim","3-bo‘lim",
                 ai_busy=False, ai_error='',
                 ai_status=f'Tayyor! "{filename}" faylidan 25 ta savol-javob jadvalga yuklandi ✔'
             )
-            if state['mode'] == 'millionaire':
-                start_millionaire_run('Ishtirokchi', None)
+            refresh_active_mode_after_new_qs()
     except Exception as e:
         with lock:
             state['ai_busy'] = False
@@ -710,6 +887,12 @@ def public_state(admin=False):
         s['question'] = qq
     if state['mode'] == 'millionaire' or admin:
         s['mil'] = serialize_mil(admin=admin)
+    if state['mode'] == 'auction' or admin:
+        s['auc'] = serialize_auc(admin=admin)
+    if state['mode'] == 'territory' or admin:
+        s['ter'] = serialize_ter(admin=admin)
+    if state['mode'] == 'bomb' or admin:
+        s['bomb'] = serialize_bomb(admin=admin)
     if admin:
         s['answers'] = {str(k): v for k, v in state['answers'].items()}
         s['text_answers'] = {str(k): v for k, v in state['text_answers'].items()}
@@ -869,6 +1052,108 @@ class H(BaseHTTPRequestHandler):
                     return self._json({'error': err}, 400)
                 return self._json({'ok': True})
 
+        # --- STUDENT API: AUCTION ---
+        if p == '/api/auc_play':
+            with lock:
+                auc = state.get('auc')
+                if state['mode'] != 'auction' or not auc:
+                    return self._json({'error': 'Auksion rejimi faol emas'}, 400)
+                t = data.get('team')
+                if not (isinstance(t, int) and 0 <= t < 4):
+                    return self._json({'error': 'Avval jamoangizni tanlang'}, 400)
+                act = data.get('action')
+                if act == 'bet':
+                    if auc['phase'] != 'betting':
+                        return self._json({'error': 'Stavka vaqti tugagan'}, 400)
+                    amt = int(data.get('amount') or 0)
+                    cap = max(100, auc['bank'][t])
+                    if amt < 50 or amt > cap:
+                        return self._json({'error': f'Stavka 50 dan {cap} gacha bo‘lishi kerak'}, 400)
+                    auc['bets'][t] = amt
+                    return self._json({'ok': True})
+                if act == 'answer':
+                    if auc['phase'] != 'question':
+                        return self._json({'error': 'Hozir javob berish vaqti emas'}, 400)
+                    c = data.get('choice')
+                    if not (isinstance(c, int) and 0 <= c < 4):
+                        return self._json({'error': 'Noto‘g‘ri variant'}, 400)
+                    if t not in auc['answers']:
+                        auc['answers'][t] = c
+                    return self._json({'ok': True})
+                return self._json({'error': 'Noma‘lum amal'}, 400)
+
+        # --- STUDENT API: TERRITORY ---
+        if p == '/api/ter_play':
+            with lock:
+                ter = state.get('ter')
+                if state['mode'] != 'territory' or not ter:
+                    return self._json({'error': 'Hududlar jangi faol emas'}, 400)
+                t = data.get('team')
+                if not (isinstance(t, int) and 0 <= t < 4):
+                    return self._json({'error': 'Avval jamoangizni tanlang'}, 400)
+                if ter['phase'] != 'battle' or ter['cur_cell'] is None:
+                    return self._json({'error': 'Hozir jang ketmayapti'}, 400)
+                if t in ter['wrong_teams']:
+                    return self._json({'error': 'Sizning jamoangiz bu katakda xato javob berdi'}, 400)
+                c = data.get('choice')
+                if not (isinstance(c, int) and 0 <= c < 4):
+                    return self._json({'error': 'Noto‘g‘ri variant'}, 400)
+                if c == ter['shown_c']:
+                    cell = ter['cur_cell']
+                    prev_owner = ter['owners'][cell]
+                    ter['owners'][cell] = t
+                    ter['winner'] = t
+                    ter['phase'] = 'revealed'
+                    if prev_owner is not None and prev_owner != t:
+                        ter['last_msg'] = f'{state["teams"][t]} ({cell+1}-sektor)ni {state["teams"][prev_owner]}dan tortib oldi!'
+                    else:
+                        ter['last_msg'] = f'{state["teams"][t]} ({cell+1}-sektor)ni egalladi!'
+                else:
+                    ter['wrong_teams'].append(t)
+                    if len(ter['wrong_teams']) >= 4:
+                        ter['phase'] = 'revealed'
+                        ter['last_msg'] = 'Barcha jamoalar xato javob berdi — sektor egasiz qoldi!'
+                return self._json({'ok': True})
+
+        # --- STUDENT API: BOMB ---
+        if p == '/api/bomb_play':
+            with lock:
+                check_bomb_timeout()
+                bomb = state.get('bomb')
+                if state['mode'] != 'bomb' or not bomb or bomb['status'] != 'playing':
+                    return self._json({'error': 'Bomba hozir faol emas'}, 400)
+                t = data.get('team')
+                if t != bomb['holder']:
+                    return self._json({'error': 'Bomba hozir sizning jamoangizda emas!'}, 400)
+                c = data.get('choice')
+                if not (isinstance(c, int) and 0 <= c < 4):
+                    return self._json({'error': 'Noto‘g‘ri variant'}, 400)
+                bomb['last_choice'] = c
+                if c == bomb['shown_c']:
+                    nxt = next_alive_team(bomb['lives'], t)
+                    bomb['holder'] = nxt
+                    bomb['idx'] += 1
+                    bomb['cur_sec'] = max(8, bomb['cur_sec'] - 2)
+                    bomb['deadline'] = time.time() + bomb['cur_sec']
+                    bomb['last_choice'] = None
+                    q_idx = bomb['order'][bomb['idx'] % len(bomb['order'])]
+                    shown_opts, shown_c = shuffled_opts(q_idx)
+                    bomb['shown_opts'] = shown_opts
+                    bomb['shown_c'] = shown_c
+                    bomb['last_msg'] = f'To‘g‘ri! Bomba {state["teams"][nxt]}ga o‘tdi ({bomb["cur_sec"]}s)!'
+                else:
+                    bomb['lives'][t] = max(0, bomb['lives'][t] - 1)
+                    alive = [i for i, lv in enumerate(bomb['lives']) if lv > 0]
+                    if len(alive) <= 1:
+                        bomb['status'] = 'gameover'
+                        win_t = alive[0] if alive else t
+                        bomb['last_msg'] = f'XATO! 💥 Oxirgi omon qolgan g‘olib: {state["teams"][win_t]}!'
+                    else:
+                        bomb['status'] = 'boom'
+                        bomb['last_msg'] = f'XATO JAVOB! 💥 {state["teams"][t]} 1 ta jon yo‘qotdi!'
+                return self._json({'ok': True})
+
+        # --- ADMIN API ---
         if p == '/api/admin':
             if data.get('pin') != PIN:
                 return self._json({'error': 'PIN noto‘g‘ri'}, 403)
@@ -979,14 +1264,22 @@ class H(BaseHTTPRequestHandler):
             with lock:
                 if act == 'set_mode':
                     m = data.get('mode')
-                    if m not in ('jeopardy', 'millionaire'):
+                    if m not in ('jeopardy', 'millionaire', 'auction', 'territory', 'bomb'):
                         return self._json({'error': 'Noto‘g‘ri rejim'}, 400)
                     state['mode'] = m
-                    if m == 'millionaire' and not state.get('mil'):
-                        try:
+                    try:
+                        if m == 'millionaire' and not state.get('mil'):
                             start_millionaire_run('Ishtirokchi', None)
-                        except Exception as e:
-                            return self._json({'error': str(e)}, 400)
+                        elif m == 'auction' and not state.get('auc'):
+                            start_auction_game()
+                        elif m == 'territory' and not state.get('ter'):
+                            start_territory_game()
+                        elif m == 'bomb' and not state.get('bomb'):
+                            start_bomb_game(20)
+                    except Exception as e:
+                        return self._json({'error': str(e)}, 400)
+
+                # --- MIL ADMIN ---
                 elif act == 'mil_start':
                     player = str(data.get('player', '')).strip()
                     team = data.get('team')
@@ -1001,8 +1294,7 @@ class H(BaseHTTPRequestHandler):
                     except Exception as e:
                         return self._json({'error': str(e)}, 400)
                 elif act in ('mil_select', 'mil_reveal', 'mil_next', 'mil_walk', 'mil_5050', 'mil_audience'):
-                    sub = act.replace('mil_', '')
-                    err = apply_mil_action(sub, data)
+                    err = apply_mil_action(act.replace('mil_', ''), data)
                     if err:
                         return self._json({'error': err}, 400)
                 elif act == 'mil_credit':
@@ -1014,6 +1306,110 @@ class H(BaseHTTPRequestHandler):
                         return self._json({'error': 'O‘yin boshida jamoa tanlanmagan'}, 400)
                     state['scores'][t] += mil['won']
                     mil['credited'] = True
+
+                # --- AUCTION ADMIN ---
+                elif act == 'auc_start':
+                    try:
+                        start_auction_game()
+                    except Exception as e:
+                        return self._json({'error': str(e)}, 400)
+                elif act == 'auc_open_q':
+                    auc = state.get('auc')
+                    if not auc or auc['phase'] != 'betting':
+                        return self._json({'error': 'Avval stavka bosqichi bo‘lishi kerak'}, 400)
+                    for t in range(4):
+                        if t not in auc['bets']:
+                            auc['bets'][t] = min(100, max(50, auc['bank'][t]))
+                    auc['phase'] = 'question'
+                elif act == 'auc_reveal':
+                    auc = state.get('auc')
+                    if not auc or auc['phase'] != 'question':
+                        return self._json({'error': 'Savol ochiq emas'}, 400)
+                    deltas = [0, 0, 0, 0]
+                    for t in range(4):
+                        bet = auc['bets'].get(t, 0)
+                        ans = auc['answers'].get(t)
+                        if ans == auc['shown_c']:
+                            auc['bank'][t] += bet
+                            deltas[t] = bet
+                        else:
+                            auc['bank'][t] = max(100, auc['bank'][t] - bet)
+                            deltas[t] = -bet
+                    auc['deltas'] = deltas
+                    auc['phase'] = 'revealed'
+                elif act == 'auc_next':
+                    auc = state.get('auc')
+                    if not auc:
+                        return self._json({'error': 'Auksion boshlanmagan'}, 400)
+                    auc['idx'] = (auc['idx'] + 1) % len(auc['order'])
+                    auc['phase'] = 'betting'
+                    auc['bets'] = {}
+                    auc['answers'] = {}
+                    auc['deltas'] = [0, 0, 0, 0]
+                    shown_opts, shown_c = shuffled_opts(auc['order'][auc['idx']])
+                    auc['shown_opts'] = shown_opts
+                    auc['shown_c'] = shown_c
+                elif act == 'auc_sync_scores':
+                    auc = state.get('auc')
+                    if auc:
+                        for t in range(4):
+                            state['scores'][t] += auc['bank'][t]
+
+                # --- TERRITORY ADMIN ---
+                elif act == 'ter_start':
+                    start_territory_game()
+                elif act == 'ter_pick':
+                    ter = state.get('ter')
+                    idx = data.get('idx')
+                    if not ter or not (isinstance(idx, int) and 0 <= idx < 25):
+                        return self._json({'error': 'Noto‘g‘ri katakcha'}, 400)
+                    if len(QS[idx].get('opts') or []) < 4:
+                        return self._json({'error': 'Bu katakda 4 variantli savol yo‘q'}, 400)
+                    shown_opts, shown_c = shuffled_opts(idx)
+                    ter['cur_cell'] = idx
+                    ter['phase'] = 'battle'
+                    ter['shown_opts'] = shown_opts
+                    ter['shown_c'] = shown_c
+                    ter['winner'] = None
+                    ter['wrong_teams'] = []
+                    ter['last_msg'] = f'{idx+1}-sektor uchun jang boshlandi!'
+                elif act == 'ter_reveal':
+                    ter = state.get('ter')
+                    if ter and ter['cur_cell'] is not None:
+                        ter['phase'] = 'revealed'
+                        ter['last_msg'] = 'Javob ochildi!'
+                elif act == 'ter_sync_scores':
+                    ter = state.get('ter')
+                    if ter:
+                        for t in range(4):
+                            cnt = sum(1 for o in ter['owners'] if o == t)
+                            state['scores'][t] += cnt * 100
+
+                # --- BOMB ADMIN ---
+                elif act == 'bomb_start':
+                    sec = data.get('sec', 20)
+                    try:
+                        start_bomb_game(sec)
+                    except Exception as e:
+                        return self._json({'error': str(e)}, 400)
+                elif act == 'bomb_resume':
+                    bomb = state.get('bomb')
+                    if not bomb or bomb['status'] == 'gameover':
+                        return self._json({'error': 'Davom ettirib bo‘lmaydi'}, 400)
+                    nxt = next_alive_team(bomb['lives'], bomb['holder'])
+                    bomb['holder'] = nxt
+                    bomb['idx'] += 1
+                    bomb['cur_sec'] = bomb['base_sec']
+                    bomb['deadline'] = time.time() + bomb['cur_sec']
+                    bomb['status'] = 'playing'
+                    bomb['last_choice'] = None
+                    q_idx = bomb['order'][bomb['idx'] % len(bomb['order'])]
+                    shown_opts, shown_c = shuffled_opts(q_idx)
+                    bomb['shown_opts'] = shown_opts
+                    bomb['shown_c'] = shown_c
+                    bomb['last_msg'] = f'Yangi raund! Bomba {state["teams"][nxt]}da ({bomb["cur_sec"]}s)!'
+
+                # --- JEOPARDY ADMIN ---
                 elif act == 'open':
                     idx = data.get('idx')
                     if isinstance(idx, int) and 0 <= idx < len(QS):
@@ -1066,7 +1462,8 @@ class H(BaseHTTPRequestHandler):
                     state.update(
                         scores=[0, 0, 0, 0], cur=None, revealed=False,
                         used=[False] * len(QS), answers={},
-                        text_answers={}, ai_grades={}, ai_note='', mil=None
+                        text_answers={}, ai_grades={}, ai_note='',
+                        mil=None, auc=None, ter=None, bomb=None
                     )
                 else:
                     return self._json({'error': 'Noma‘lum amal'}, 400)
