@@ -18,7 +18,7 @@ h1{color:#FFC72C;margin:6px 0 12px;font-size:24px;display:flex;justify-content:s
 button{font:inherit;color:#fff;background:#1B3180;border:none;border-radius:8px;padding:10px 12px;cursor:pointer;font-size:15px}
 button.gold{background:#FFC72C;color:#000;font-weight:bold}
 button.ai{background:linear-gradient(135deg,#2563EB,#7C3AED);color:#fff;font-weight:bold}
-button.green{background:#1E8E4E}
+button.green{background:#1E8E4E;font-weight:bold}
 button.red{background:#B3261E}
 button:disabled{opacity:.4;cursor:default}
 .q{font-size:20px;font-weight:bold;line-height:1.35;margin:6px 0}
@@ -26,6 +26,8 @@ button:disabled{opacity:.4;cursor:default}
 .opt.c{color:#7CFC9A;font-weight:bold}
 .ans{font-size:14px;color:#B8C4E0;margin-top:8px;line-height:1.6}
 .aibox{background:#0c1842;border-left:4px solid #8B5CF6;padding:10px;border-radius:8px;margin-top:8px;font-size:14px;line-height:1.45}
+.divider{border-top:1px dashed #3b4f94;margin:12px 0;padding-top:10px}
+.filebox{background:#0c1842;color:#fff;border:1px dashed #7C3AED;padding:8px;border-radius:8px}
 table{width:100%;border-collapse:collapse}
 td{padding:6px 2px;border-bottom:1px solid #1B3180;font-size:15px}
 input{font:inherit;padding:8px;border-radius:6px;border:none;width:100%;margin:4px 0;box-sizing:border-box}
@@ -38,9 +40,9 @@ textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border
 <div class="msg" id="msg"></div>
 
 <div class="card" style="border:1px solid #7C3AED">
-  <h2 style="color:#C4B5FD">GEMINI AI — YANGI O‘YIN JADVALI YARATISH</h2>
+  <h2 style="color:#C4B5FD">GEMINI AI — MAVZU YOKI FAYLDAN JADVAL YARATISH</h2>
   <div class="row" style="align-items:center">
-    <div style="flex:2;min-width:220px"><input id="aitopic" placeholder="Mavzuni yozing (masalan: YaIM)"></div>
+    <div style="flex:2;min-width:210px"><input id="aitopic" placeholder="Mavzu nomini yozing (masalan: Dinshunoslik)"></div>
     <div style="flex:1;min-width:160px">
       <select id="ailevel">
         <option value="universitet talabalari">Talabalar darajasi</option>
@@ -48,9 +50,19 @@ textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border
         <option value="chuqurlashtirilgan mutaxassislar">Murakkab / Olimpiada</option>
       </select>
     </div>
-    <div><button class="ai" id="aigenbtn" onclick="genBoard()">25 ta savol yaratish</button></div>
+    <div><button class="ai" id="aigenbtn" onclick="genBoard()">Mavzudan 25 savol</button></div>
   </div>
-  <div class="ans" id="aigenmsg" style="color:#7CFC9A;font-weight:bold">Mavzu kiriting — Gemini 5 ta bo‘lim va 25 ta savolni avtomatik tuzadi.</div>
+
+  <div class="divider">
+    <div style="font-size:13px;color:#C4B5FD;font-weight:bold;margin-bottom:4px">YOKI TAYYOR FAYL YUKLANG (PDF, Word .docx, TXT, Rasm):</div>
+    <div class="row" style="align-items:center">
+      <div style="flex:2;min-width:220px"><input class="filebox" type="file" id="aifile" accept=".pdf,.docx,.txt,.md,.csv,.jpg,.jpeg,.png,.webp"></div>
+      <div style="flex:2;min-width:200px"><input id="aifilehint" placeholder="Ixtiyoriy izoh (masalan: faqat 1-bobdan yoki tayyor testlar)"></div>
+      <div><button class="green" id="aifilebtn" onclick="genFromFile()">Fayldan 25 savol</button></div>
+    </div>
+  </div>
+
+  <div class="ans" id="aigenmsg" style="color:#7CFC9A;font-weight:bold">Mavzu yozing yoki fayl yuklang — Gemini 5 ta bo‘lim va 25 ta savol-javobni tuzadi.</div>
 </div>
 
 <div class="row">
@@ -127,15 +139,16 @@ function render(){
   else { badge.textContent = 'Gemini AI: Kalit kiritilmagan'; badge.className = 'badge off'; }
 
   const genBtn = document.getElementById('aigenbtn');
+  const fileBtn = document.getElementById('aifilebtn');
   const genMsg = document.getElementById('aigenmsg');
   if (S.ai_busy){
     genBtn.disabled = true;
-    genBtn.textContent = 'Tuzilmoqda...';
+    fileBtn.disabled = true;
     genMsg.style.color = '#FFC72C';
     genMsg.textContent = S.ai_status || 'AI savollarni tuzmoqda...';
   } else {
     genBtn.disabled = false;
-    genBtn.textContent = '25 ta savol yaratish';
+    fileBtn.disabled = false;
     if (S.ai_error){
       genMsg.style.color = '#FF8A80';
       genMsg.textContent = 'Xato: ' + S.ai_error;
@@ -216,6 +229,36 @@ async function genBoard(){
   if (!topic){ alert('Avval mavzu nomini yozing'); return; }
   if (!confirm(`"${topic}" mavzusida 25 ta yangi savol yaratilsinmi?`)) return;
   await act({action:'ai_generate_board', topic, level});
+}
+
+function genFromFile(){
+  const inp = document.getElementById('aifile');
+  const file = inp.files && inp.files[0];
+  if (!file){ alert('Avval PDF, Word (.docx), TXT yoki rasm faylini tanlang'); return; }
+  if (file.size > 10 * 1024 * 1024){ alert('Fayl hajmi 10 MB dan kichik bo‘lishi kerak'); return; }
+  const level = document.getElementById('ailevel').value;
+  const hint = document.getElementById('aifilehint').value.trim();
+  if (!confirm(`"${file.name}" faylidan 25 ta savol-javob tuzilsinmi?`)) return;
+
+  const genMsg = document.getElementById('aigenmsg');
+  genMsg.style.color = '#FFC72C';
+  genMsg.textContent = `"${file.name}" fayli tayyorlanmoqda...`;
+
+  const reader = new FileReader();
+  reader.onload = async function(){
+    const res = String(reader.result || '');
+    const comma = res.indexOf(',');
+    const b64 = comma !== -1 ? res.slice(comma + 1) : '';
+    await act({
+      action: 'ai_generate_from_file',
+      filename: file.name,
+      mime: file.type || '',
+      data_b64: b64,
+      hint: hint,
+      level: level
+    });
+  };
+  reader.readAsDataURL(file);
 }
 
 async function genSingleSlot(){
