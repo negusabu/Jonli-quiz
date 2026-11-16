@@ -1,10 +1,11 @@
-"""JEO QUIZ — jonli server va barqaror JSON parserli Gemini AI."""
+"""JEO QUIZ — jonli server va barqaror Gemini AI integratsiyasi."""
 import json, os, random, re, socket, sys, threading, collections, glob, time
 import urllib.request, urllib.error
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 BASE = os.path.dirname(os.path.abspath(__file__))
+API_BASE = 'https' + '://generativelanguage.googleapis.com/v1beta/models'
 
 def load_dotenv():
     env_file = os.path.join(BASE, '.env')
@@ -98,7 +99,7 @@ def extract_json_obj(text):
         return json.loads(cleaned, strict=False)
 
 def discover_models(api_key):
-    url = f'[https://generativelanguage.googleapis.com/v1beta/models?key=](https://generativelanguage.googleapis.com/v1beta/models?key=){api_key}'
+    url = f'{API_BASE}?key={api_key}'
     try:
         with urllib.request.urlopen(url, timeout=15) as resp:
             data = json.loads(resp.read().decode('utf8'))
@@ -140,7 +141,7 @@ def call_gemini(prompt, json_mode=False, temperature=0.6):
     def try_models(model_list):
         nonlocal raw, real_err, fallback_err
         for model in model_list:
-            url = f'[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){model}:generateContent?key={api_key}'
+            url = f'{API_BASE}/{model}:generateContent?key={api_key}'
             is_gemma = model.startswith('gemma')
             think_mode = 'none' if is_gemma else ('minimal' if 'gemini-3' in model else 'zero')
 
@@ -614,8 +615,9 @@ class H(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     ip = local_ip()
+    srv_url = 'http' + f'://{ip}:{PORT}/admin'
     print('=' * 52)
-    print(f'  JEO QUIZ server: http://{ip}:{PORT}/admin  (PIN: {PIN})')
+    print(f'  JEO QUIZ server: {srv_url}  (PIN: {PIN})')
     print('=' * 52)
     try:
         srv = QuietServer(('0.0.0.0', PORT), H)
