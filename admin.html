@@ -1,17 +1,18 @@
 <!DOCTYPE html>
 <html lang="uz"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Boshqaruv — Jeo Quiz Menyu</title>
+<title>Boshqaruv — Jeo Quiz Universal</title>
 <style>
 body{margin:0;background:#08102B;color:#fff;font-family:Arial,Helvetica,sans-serif}
 .w{max-width:1100px;margin:0 auto;padding:12px}
 .topbar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#101D4A;padding:10px 14px;border-radius:12px;border:1px solid #1E63D6;margin-bottom:10px;flex-wrap:wrap}
-.brand{font-size:20px;font-weight:bold;color:#FFC72C;display:flex;align-items:center;gap:8px}
+.brand{font-size:19px;font-weight:bold;color:#FFC72C;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .badge{font-size:12px;padding:3px 9px;border-radius:20px;background:#13245C;color:#7CFC9A;border:1px solid #1E8E4E}
 .badge.off{color:#FF8A80;border-color:#B3261E}
-.menutoggle{background:#FFC72C;color:#000;font-weight:bold;padding:8px 14px;border-radius:8px;border:none;cursor:pointer;font-size:15px}
-.navdrawer{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;background:#0E1A42;padding:10px;border-radius:12px;border:1px solid #2F8BFF;margin-bottom:12px}
+.roompill{font-size:13px;padding:4px 10px;border-radius:20px;background:#1E3A8A;color:#FDE047;border:1px solid #60A5FA}
+.menutoggle{background:#FFC72C;color:#000;font-weight:bold;padding:8px 14px;border-radius:8px;border:none;cursor:pointer;font-size:14px}
+.navdrawer{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px;background:#0E1A42;padding:10px;border-radius:12px;border:1px solid #2F8BFF;margin-bottom:12px}
 .navdrawer.hidden{display:none}
-.navitem{padding:11px 10px;border-radius:9px;border:1px solid #2F8BFF;background:#13245C;color:#fff;font-weight:bold;font-size:14px;cursor:pointer;text-align:center}
+.navitem{padding:11px 8px;border-radius:9px;border:1px solid #2F8BFF;background:#13245C;color:#fff;font-weight:bold;font-size:13px;cursor:pointer;text-align:center}
 .navitem.active{background:#FFC72C;color:#000;border-color:#FFC72C}
 
 .scorestrip{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px}
@@ -20,8 +21,7 @@ body{margin:0;background:#08102B;color:#fff;font-family:Arial,Helvetica,sans-ser
 .scmini .v{font-size:19px;font-weight:bold;color:#FFC72C}
 
 .menugrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
-.gamecard{background:#13245C;border:2px solid #2F8BFF;border-radius:14px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;cursor:pointer;transition:transform .12s}
-.gamecard:hover{transform:translateY(-2px)}
+.gamecard{background:#13245C;border:2px solid #2F8BFF;border-radius:14px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;cursor:pointer}
 .gamecard.live{border-color:#FFC72C;background:linear-gradient(160deg,#182D73,#0E1A42)}
 .gamecard .ghead{display:flex;justify-content:space-between;align-items:center}
 .gamecard .gicon{font-size:30px}
@@ -30,7 +30,7 @@ body{margin:0;background:#08102B;color:#fff;font-family:Arial,Helvetica,sans-ser
 .gamecard .gdesc{font-size:14px;color:#CBD5E1;line-height:1.4}
 
 .row{display:flex;gap:12px;flex-wrap:wrap}
-.card{background:#13245C;border-radius:12px;padding:14px;flex:1;min-width:300px;margin-bottom:12px}
+.card{background:#13245C;border-radius:12px;padding:14px;flex:1;min-width:290px;margin-bottom:12px}
 .card h2{font-size:16px;color:#2F8BFF;margin:0 0 8px}
 .board{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .cat{background:#1E63D6;text-align:center;font-size:12px;font-weight:bold;padding:8px 4px;border-radius:6px;min-height:34px;display:flex;align-items:center;justify-content:center}
@@ -86,170 +86,228 @@ button:disabled{opacity:.38;cursor:default}
 .bartxt{position:absolute;left:8px;top:2px;font-size:13px;font-weight:bold}
 table{width:100%;border-collapse:collapse}
 td{padding:6px 2px;border-bottom:1px solid #1B3180;font-size:15px}
-input{font:inherit;padding:8px;border-radius:6px;border:none;width:100%;margin:4px 0;box-sizing:border-box}
+input,textarea,select{font:inherit;padding:8px;border-radius:6px;border:none;width:100%;margin:4px 0;box-sizing:border-box;color:#000}
 .msg{color:#FF8A80;min-height:0;margin-bottom:6px;font-weight:bold}
-textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:none;margin:4px 0;color:#000}
-#fopts input[type=text],#fopts input{width:100%}
 </style></head>
 <body><div class="w">
 
-<div class="topbar">
-  <div class="brand">
-    <span>Jeo Quiz</span>
-    <span id="aibadge" class="badge off">AI...</span>
+<!-- BOSHLOVCHI KIRISH / YANGI XONA EKRANI -->
+<div id="adminsetup" style="display:none">
+  <div class="topbar">
+    <div class="brand">⚡ JEO QUIZ — Boshlovchi</div>
+    <a href="/" style="color:#93C5FD;text-decoration:none;font-size:13px">← Bosh sahifaga</a>
   </div>
-  <div style="display:flex;gap:8px;align-items:center">
-    <button onclick="openTab('games')" style="background:#1B3180;font-size:14px">🎮 O‘yinlar</button>
-    <button class="menutoggle" onclick="toggleMenu()">☰ Menyu</button>
-  </div>
-</div>
-
-<div id="navdrawer" class="navdrawer">
-  <button id="tab_games" class="navitem active" onclick="openTab('games')">🎮 O‘yinlar menyusi</button>
-  <button id="tab_play" class="navitem" onclick="openTab('play')">▶️ Joriy o‘yin</button>
-  <button id="tab_ai" class="navitem" onclick="openTab('ai')">🤖 AI Savol tuzish</button>
-  <button id="tab_edit" class="navitem" onclick="openTab('edit')">✏️ Savollar (25)</button>
-  <button id="tab_teams" class="navitem" onclick="openTab('teams')">👥 Jamoalar</button>
-</div>
-
-<div class="msg" id="msg"></div>
-
-<!-- TAB 1: O'YINLAR MENYUSI -->
-<div id="view_games">
-  <div class="card" style="background:#0E1A42;border:1px solid #2F8BFF">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-      <div>
-        <div style="font-size:18px;font-weight:bold;color:#FFC72C">O‘yin turini tanlang</div>
-        <div style="font-size:13px;color:#B8C4E0">Barcha 6 ta o‘yin tayyor 25 ta savol asosida ishlaydi</div>
-      </div>
-      <button class="ai" onclick="openTab('ai')">+ Yangi mavzu / Fayl yuklash</button>
-    </div>
-  </div>
-  <div id="gamemenugrid" class="menugrid"></div>
-</div>
-
-<!-- TAB 2: JORIY O'YIN -->
-<div id="view_play" style="display:none">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
-    <button onclick="openTab('games')" style="background:#1B3180;font-size:14px">← O‘yinlar menyusiga qaytish</button>
-    <span id="curmodelabel" style="color:#FFC72C;font-weight:bold;font-size:15px"></span>
-  </div>
-  <div class="scorestrip" id="scorestrip"></div>
-
-  <!-- 1. JEOPARDY -->
-  <div id="jeosection" class="row">
-    <div class="card" style="flex:2">
-      <h2>ASOSIY JADVAL (bosing — savol ochiladi)</h2>
-      <div class="board" id="board"></div>
+  <div class="row">
+    <div class="card" style="border:2px solid #FFC72C">
+      <h2 style="color:#FFC72C">🚀 YANGI XONA OCHISH (4 XONALI KOD + QR)</h2>
+      <div class="ans" style="margin-bottom:10px">Mavzuni tanlang — server sizga alohida xona kodi, QR-kod va boshqaruv PIN beradi:</div>
+      <select id="newpreset">
+        <option value="econ">📈 Iqtisodiyot va Moliya (25 savol)</option>
+        <option value="logic">🧠 Mantiq va Zehn (25 savol)</option>
+        <option value="history">🏛️ O‘zbekiston va Jahon Tarixi (25 savol)</option>
+        <option value="it">💻 IT va Sun’iy Idrok (25 savol)</option>
+        <option value="general">🌍 Umumiy Bilimlar (25 savol)</option>
+      </select>
+      <button class="gold" style="width:100%;margin-top:8px;padding:12px" onclick="createHostRoom()">Yangi o‘yin xonasini yaratish ➔</button>
     </div>
     <div class="card">
-      <h2>SAVOL</h2>
-      <div id="qpanel" class="muted">Savol tanlanmagan</div>
+      <h2>🔑 MAVJUD XONAGA KIRISH</h2>
+      <div class="ans" style="margin-bottom:8px">Avval ochilgan xona kodi va PIN raqamini kiriting (umumiy zal: <b>0000</b>):</div>
+      <input id="exroom" placeholder="Xona kodi (masalan: 0000)">
+      <input id="expin" type="password" placeholder="Admin PIN">
+      <button class="green" style="width:100%;margin-top:8px" onclick="loginExistingRoom()">Boshqaruvga kirish</button>
+      <div id="setupmsg" class="msg" style="margin-top:6px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ASOSIY BOSHQARUV PANELI -->
+<div id="adminmain" style="display:none">
+  <div class="topbar">
+    <div class="brand">
+      <span>Jeo Quiz</span>
+      <span id="roompill" class="roompill">Xona #0000</span>
+      <span id="aibadge" class="badge off">AI...</span>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <button class="green" onclick="openTab('invite')" style="font-size:13px;padding:8px 10px">📲 QR / Taklif</button>
+      <button onclick="openTab('games')" style="font-size:13px;padding:8px 10px">🎮 O‘yinlar</button>
+      <button class="menutoggle" onclick="toggleMenu()">☰ Menyu</button>
     </div>
   </div>
 
-  <!-- 2. MILLIONAIRE -->
-  <div id="milsection" style="display:none">
-    <div class="card" style="border:1px solid #FFC72C">
-      <h2 style="color:#FFC72C">KIM MILLIONER BO‘LISHNI XOHLAYDI? — YANGI O‘YIN</h2>
+  <div id="navdrawer" class="navdrawer">
+    <button id="tab_games" class="navitem active" onclick="openTab('games')">🎮 O‘yinlar (6)</button>
+    <button id="tab_play" class="navitem" onclick="openTab('play')">▶️ Joriy o‘yin</button>
+    <button id="tab_invite" class="navitem" onclick="openTab('invite')">📲 QR-kod va PIN</button>
+    <button id="tab_library" class="navitem" onclick="openTab('library')">📚 Tayyor mavzular</button>
+    <button id="tab_ai" class="navitem" onclick="openTab('ai')">🤖 AI Savol tuzish</button>
+    <button id="tab_edit" class="navitem" onclick="openTab('edit')">✏️ Savollar (25)</button>
+    <button id="tab_teams" class="navitem" onclick="openTab('teams')">👥 Jamoalar</button>
+    <button class="navitem" style="background:#7F1D1D;border-color:#EF4444" onclick="switchHostRoom()">🚪 Xonani almashtirish</button>
+  </div>
+
+  <div class="msg" id="msg"></div>
+
+  <!-- TAB: O'YINLAR MENYUSI -->
+  <div id="view_games">
+    <div class="card" style="background:#0E1A42;border:1px solid #2F8BFF">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-size:17px;font-weight:bold;color:#FFC72C">Mavzu: <span id="curtopictitle" style="color:#fff">...</span></div>
+          <div style="font-size:13px;color:#B8C4E0">Xona kodi: <b id="inlinecode" style="color:#7CFC9A">0000</b> • Barcha 6 ta o‘yin tayyor 25 ta savolda ishlaydi</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button onclick="openTab('library')">📚 Mavzuni almashtirish</button>
+          <button class="ai" onclick="openTab('ai')">🤖 AI / Fayl yuklash</button>
+        </div>
+      </div>
+    </div>
+    <div id="gamemenugrid" class="menugrid"></div>
+  </div>
+
+  <!-- TAB: QR-KOD VA TAKLIF -->
+  <div id="view_invite" style="display:none">
+    <div class="card" style="text-align:center;border:2px solid #FFC72C">
+      <h2 style="color:#FFC72C;font-size:20px">TALABALAR ULANISHI UCHUN</h2>
+      <div style="font-size:15px;color:#CBD5E1;margin-bottom:8px">Telefon kamerasi bilan QR-kodni skanerlang yoki saytga kirib xona kodini tering:</div>
+      <div style="display:inline-block;background:#fff;padding:12px;border-radius:14px;margin:8px 0">
+        <img id="qrimg" src="" alt="QR kod" style="width:210px;height:210px;display:block">
+      </div>
+      <div style="font-size:34px;font-weight:bold;color:#7CFC9A;letter-spacing:6px;margin:6px 0" id="bigroomcode">0000</div>
+      <div style="font-size:13px;color:#93C5FD;margin-bottom:10px">Boshlovchi PIN kodi: <b id="bigpin" style="color:#FFC72C">****</b></div>
+      <div class="row" style="justify-content:center;max-width:520px;margin:0 auto">
+        <input id="invitelink" readonly style="flex:3;text-align:center;font-size:13px">
+        <button class="gold" onclick="copyInvite()" style="flex:1">Nusxalash</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: TAYYOR MAVZULAR KUTUBXONASI -->
+  <div id="view_library" style="display:none">
+    <div class="card">
+      <h2 style="color:#FFC72C">TAYYOR SAVOLLAR TO‘PLAMLARI (1 BOSISHDA YUKLANADI)</h2>
+      <div id="librarygrid" class="menugrid"></div>
+    </div>
+  </div>
+
+  <!-- TAB: JORIY O'YIN -->
+  <div id="view_play" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+      <button onclick="openTab('games')" style="background:#1B3180;font-size:14px">← O‘yinlar menyusiga qaytish</button>
+      <span id="curmodelabel" style="color:#FFC72C;font-weight:bold;font-size:15px"></span>
+    </div>
+    <div class="scorestrip" id="scorestrip"></div>
+
+    <div id="jeosection" class="row">
+      <div class="card" style="flex:2">
+        <h2>ASOSIY JADVAL (bosing — savol ochiladi)</h2>
+        <div class="board" id="board"></div>
+      </div>
+      <div class="card">
+        <h2>SAVOL</h2>
+        <div id="qpanel">Savol tanlanmagan</div>
+      </div>
+    </div>
+
+    <div id="milsection" style="display:none">
+      <div class="card" style="border:1px solid #FFC72C">
+        <h2 style="color:#FFC72C">KIM MILLIONER BO‘LISHNI XOHLAYDI? — YANGI O‘YIN</h2>
+        <div class="row" style="align-items:center">
+          <div style="flex:2;min-width:180px"><input id="milplayer" placeholder="Ishtirokchi ismi (ixtiyoriy)"></div>
+          <div style="flex:1;min-width:160px"><select id="milteam"></select></div>
+          <div><button class="gold" onclick="startMil()">Yangi Millioner o‘yini</button></div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="card" style="flex:2" id="milpanel">O‘yin boshlanmagan</div>
+        <div class="card" style="flex:1;min-width:240px">
+          <h2 style="color:#FFC72C">YUTUQ ZINAPOYASI (15 POG‘ONA)</h2>
+          <div id="milladder" class="ladder"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="aucsection" style="display:none">
+      <div class="card" style="border:1px solid #F59E0B" id="aucpanel">Yuklanmoqda...</div>
+    </div>
+
+    <div id="tersection" style="display:none">
+      <div class="row">
+        <div class="card" style="flex:2;border:1px solid #10B981">
+          <h2 style="color:#6EE7B7">HUDUDLAR JANGI (5×5 XARITA — KATAKCHANI BOSING)</h2>
+          <div class="board" id="termap"></div>
+        </div>
+        <div class="card" style="flex:1" id="terpanel">Yuklanmoqda...</div>
+      </div>
+    </div>
+
+    <div id="bombsection" style="display:none">
+      <div class="card" style="border:1px solid #EF4444" id="bombpanel">Yuklanmoqda...</div>
+    </div>
+
+    <div id="kahootsection" style="display:none">
+      <div class="card" style="border:1px solid #A855F7" id="kahootpanel">Yuklanmoqda...</div>
+    </div>
+  </div>
+
+  <!-- TAB: AI SAVOL YARATISH -->
+  <div id="view_ai" style="display:none">
+    <div class="card" style="border:1px solid #7C3AED">
+      <h2 style="color:#C4B5FD">GEMINI AI — MAVZU YOKI FAYLDAN 25 TA SAVOL YARATISH</h2>
       <div class="row" style="align-items:center">
-        <div style="flex:2;min-width:180px"><input id="milplayer" placeholder="Ishtirokchi ismi (ixtiyoriy)"></div>
-        <div style="flex:1;min-width:160px"><select id="milteam"></select></div>
-        <div><button class="gold" onclick="startMil()">Yangi Millioner o‘yini</button></div>
+        <div style="flex:2;min-width:210px"><input id="aitopic" placeholder="Mavzu nomini yozing (masalan: Yashil iqtisodiyot)"></div>
+        <div style="flex:1;min-width:160px">
+          <select id="ailevel">
+            <option value="universitet talabalari">Talabalar darajasi</option>
+            <option value="maktab o‘quvchilari">O‘quvchilar darajasi</option>
+            <option value="chuqurlashtirilgan mutaxassislar">Murakkab / Olimpiada</option>
+          </select>
+        </div>
+        <div><button class="ai" id="aigenbtn" onclick="genBoard()">Mavzudan 25 savol</button></div>
       </div>
-    </div>
-    <div class="row">
-      <div class="card" style="flex:2" id="milpanel">O‘yin boshlanmagan</div>
-      <div class="card" style="flex:1;min-width:240px">
-        <h2 style="color:#FFC72C">YUTUQ ZINAPOYASI (15 POG‘ONA)</h2>
-        <div id="milladder" class="ladder"></div>
-      </div>
-    </div>
-  </div>
 
-  <!-- 3. AUCTION -->
-  <div id="aucsection" style="display:none">
-    <div class="card" style="border:1px solid #F59E0B" id="aucpanel">Yuklanmoqda...</div>
-  </div>
-
-  <!-- 4. TERRITORY -->
-  <div id="tersection" style="display:none">
-    <div class="row">
-      <div class="card" style="flex:2;border:1px solid #10B981">
-        <h2 style="color:#6EE7B7">HUDUDLAR JANGI (5×5 XARITA — KATAKCHANI BOSING)</h2>
-        <div class="board" id="termap"></div>
+      <div class="divider">
+        <div style="font-size:13px;color:#C4B5FD;font-weight:bold;margin-bottom:4px">YOKI TAYYOR FAYL YUKLANG (PDF, Word .docx, TXT, Rasm):</div>
+        <div class="row" style="align-items:center">
+          <div style="flex:2;min-width:220px"><input class="filebox" type="file" id="aifile" accept=".pdf,.docx,.txt,.md,.csv,.jpg,.jpeg,.png,.webp"></div>
+          <div style="flex:2;min-width:200px"><input id="aifilehint" placeholder="Ixtiyoriy izoh (masalan: faqat 1-bobdan)"></div>
+          <div><button class="green" id="aifilebtn" onclick="genFromFile()">Fayldan 25 savol</button></div>
+        </div>
       </div>
-      <div class="card" style="flex:1" id="terpanel">Yuklanmoqda...</div>
+
+      <div class="ans" id="aigenmsg" style="color:#7CFC9A;font-weight:bold">Mavzu yozing yoki fayl yuklang — tuzilgan 25 ta savol barcha 6 o‘yinda ishlaydi.</div>
     </div>
   </div>
 
-  <!-- 5. BOMB -->
-  <div id="bombsection" style="display:none">
-    <div class="card" style="border:1px solid #EF4444" id="bombpanel">Yuklanmoqda...</div>
-  </div>
-
-  <!-- 6. TEST (KAHOOT LIVE) -->
-  <div id="kahootsection" style="display:none">
-    <div class="card" style="border:1px solid #A855F7" id="kahootpanel">Yuklanmoqda...</div>
-  </div>
-</div>
-
-<!-- TAB 3: AI SAVOL YARATISH -->
-<div id="view_ai" style="display:none">
-  <div class="card" style="border:1px solid #7C3AED">
-    <h2 style="color:#C4B5FD">GEMINI AI — MAVZU YOKI FAYLDAN 25 TA SAVOL YARATISH</h2>
-    <div class="row" style="align-items:center">
-      <div style="flex:2;min-width:210px"><input id="aitopic" placeholder="Mavzu nomini yozing (masalan: Yashil iqtisodiyot)"></div>
-      <div style="flex:1;min-width:160px">
-        <select id="ailevel">
-          <option value="universitet talabalari">Talabalar darajasi</option>
-          <option value="maktab o‘quvchilari">O‘quvchilar darajasi</option>
-          <option value="chuqurlashtirilgan mutaxassislar">Murakkab / Olimpiada</option>
-        </select>
-      </div>
-      <div><button class="ai" id="aigenbtn" onclick="genBoard()">Mavzudan 25 savol</button></div>
-    </div>
-
-    <div class="divider">
-      <div style="font-size:13px;color:#C4B5FD;font-weight:bold;margin-bottom:4px">YOKI TAYYOR FAYL YUKLANG (PDF, Word .docx, TXT, Rasm):</div>
+  <!-- TAB: SAVOLLARNI TAHRIRLASH -->
+  <div id="view_edit" style="display:none">
+    <div class="card">
+      <h2>SAVOLNI TAHRIRLASH (katakcha tanlang)</h2>
       <div class="row" style="align-items:center">
-        <div style="flex:2;min-width:220px"><input class="filebox" type="file" id="aifile" accept=".pdf,.docx,.txt,.md,.csv,.jpg,.jpeg,.png,.webp"></div>
-        <div style="flex:2;min-width:200px"><input id="aifilehint" placeholder="Ixtiyoriy izoh (masalan: faqat 1-bobdan yoki tayyor testlar)"></div>
-        <div><button class="green" id="aifilebtn" onclick="genFromFile()">Fayldan 25 savol</button></div>
+        <div style="flex:2"><select id="slot" onchange="loadSlot()"></select></div>
+        <div><button class="ai" id="aislotbtn" onclick="genSingleSlot()">AI bitta savol tuzsin</button></div>
       </div>
+      <textarea id="fq" rows="2" placeholder="Savol matni"></textarea>
+      <label style="font-size:14px"><input type="checkbox" id="fshort" style="width:auto" onchange="toggleShort()"> Variantsiz (qisqa javobli) savol</label>
+      <div id="fopts"></div>
+      <input id="fans" placeholder="To‘g‘ri javob (qisqa)" style="display:none">
+      <textarea id="fexp" rows="2" placeholder="Qisqa izoh"></textarea>
+      <div style="margin-top:8px"><button class="gold" onclick="saveSlot()">SAQLASH</button> <span id="fmsg" class="msg"></span></div>
     </div>
-
-    <div class="ans" id="aigenmsg" style="color:#7CFC9A;font-weight:bold">Mavzu yozing yoki fayl yuklang — tuzilgan 25 ta savol barcha 6 o‘yinda ishlaydi.</div>
   </div>
-</div>
 
-<!-- TAB 4: SAVOLLARNI TAHRIRLASH -->
-<div id="view_edit" style="display:none">
-  <div class="card">
-    <h2>SAVOLNI TAHRIRLASH (katakcha tanlang)</h2>
-    <div class="row" style="align-items:center">
-      <div style="flex:2"><select id="slot" onchange="loadSlot()"></select></div>
-      <div><button class="ai" id="aislotbtn" onclick="genSingleSlot()">AI bitta savol tuzsin</button></div>
-    </div>
-    <textarea id="fq" rows="2" placeholder="Savol matni"></textarea>
-    <label style="font-size:14px"><input type="checkbox" id="fshort" style="width:auto" onchange="toggleShort()"> Variantsiz (qisqa javobli) savol</label>
-    <div id="fopts"></div>
-    <input id="fans" placeholder="To‘g‘ri javob (qisqa)" style="display:none;color:#000">
-    <textarea id="fexp" rows="2" placeholder="Qisqa izoh"></textarea>
-    <div style="margin-top:8px"><button class="gold" onclick="saveSlot()">SAQLASH</button> <span id="fmsg" class="msg"></span></div>
-  </div>
-</div>
-
-<!-- TAB 5: JAMOALAR VA SOZLAMALAR -->
-<div id="view_teams" style="display:none">
-  <div class="row">
-    <div class="card"><h2>JAMOALAR VA BALLAR</h2><div id="teams"></div>
-      <h2 style="margin-top:14px">KIRGANLAR (<span id="pc">0</span>)</h2><div class="ans" id="players"></div></div>
-    <div class="card"><h2>JAMOA NOMLARI</h2>
-      <div id="names"></div>
-      <button class="gold" style="width:100%;margin-top:8px" onclick="saveNames()">Nomlarni saqlash</button>
-      <h2 style="margin-top:16px">BOSHQARUV</h2>
-      <button class="red" style="width:100%" onclick="resetAll()">Hammasini tozalash (yangi o‘yin)</button>
+  <!-- TAB: JAMOALAR -->
+  <div id="view_teams" style="display:none">
+    <div class="row">
+      <div class="card"><h2>JAMOALAR VA BALLAR</h2><div id="teams"></div>
+        <h2 style="margin-top:14px">KIRGANLAR (<span id="pc">0</span>)</h2><div class="ans" id="players"></div></div>
+      <div class="card"><h2>JAMOA NOMLARI</h2>
+        <div id="names"></div>
+        <button class="gold" style="width:100%;margin-top:8px" onclick="saveNames()">Nomlarni saqlash</button>
+        <h2 style="margin-top:16px">BOSHQARUV</h2>
+        <button class="red" style="width:100%" onclick="resetAll()">Hammasini tozalash (yangi o‘yin)</button>
+      </div>
     </div>
   </div>
 </div>
@@ -266,21 +324,89 @@ const GAMES = [
   {id:'auction', icon:'💰', title:'3. Auksion va Stavka', desc:'Savoldan oldin kapitaldan 10%–ALL-IN stavka tikiladi. To‘g‘ri javob stavkani 2 barobar oshiradi.'},
   {id:'territory', icon:'🗺️', title:'4. Hududlar jangi (5×5)', desc:'25 ta sektorli xaritada 4 jamoa hudud talashadi. Birinchi to‘g‘ri javob bergan jamoa katakni egallaydi.'},
   {id:'bomb', icon:'💣', title:'5. Zanjirli Bomba', desc:'Har jamoada 3 ta jon bor. Taymer tugamasidan to‘g‘ri javob berib bombani keyingi jamoaga uzating!'},
-  {id:'kahoot', icon:'⚡', title:'6. TEST (Jonli Viktorina)', desc:'Barcha talabalar bir vaqtda ▲ ◆ ● ■ tugmalarini bosadi. Tezlik uchun 1000+ ball, 🔥 seriya va shohsupa!'},
+  {id:'kahoot', icon:'⚡', title:'6. TEST', desc:'Barcha talabalar bir vaqtda ▲ ◆ ● ■ tugmalarini bosadi. Tezlik uchun 1000+ ball, 🔥 seriya va shohsupa!'},
 ];
 
-let S = null, PIN = sessionStorage.getItem('pin') || '', namesDrawn = false, QL = [], busyAI = false, milTeamsDrawn = false;
-let activeTab = 'games';
+const urlParams = new URLSearchParams(window.location.search);
+let curRoom = urlParams.get('room') || sessionStorage.getItem('admin_room') || '';
+let PIN = curRoom ? (sessionStorage.getItem('admin_pin_' + curRoom) || '') : '';
+let S = null, namesDrawn = false, QL = [], busyAI = false, milTeamsDrawn = false, formBuilt = false;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = n => Number(n || 0).toLocaleString('ru-RU');
+
+function showSetup(){
+  document.getElementById('adminsetup').style.display = 'block';
+  document.getElementById('adminmain').style.display = 'none';
+}
+
+function showMain(){
+  document.getElementById('adminsetup').style.display = 'none';
+  document.getElementById('adminmain').style.display = 'block';
+  const joinUrl = window.location.origin + '/?room=' + encodeURIComponent(curRoom);
+  document.getElementById('roompill').textContent = 'Xona #' + curRoom;
+  document.getElementById('inlinecode').textContent = curRoom;
+  document.getElementById('bigroomcode').textContent = curRoom;
+  document.getElementById('bigpin').textContent = PIN;
+  document.getElementById('invitelink').value = joinUrl;
+  document.getElementById('qrimg').src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(joinUrl);
+}
+
+async function createHostRoom(){
+  const preset = document.getElementById('newpreset').value;
+  const r = await fetch('/api/create_room', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({preset})
+  });
+  const j = await r.json();
+  if (!r.ok){ alert(j.error || 'Xatolik'); return; }
+  curRoom = j.room;
+  PIN = j.pin;
+  sessionStorage.setItem('admin_room', curRoom);
+  sessionStorage.setItem('admin_pin_' + curRoom, PIN);
+  if (window.history.replaceState) window.history.replaceState({}, '', '/admin?room=' + encodeURIComponent(curRoom));
+  namesDrawn = false; milTeamsDrawn = false; QL = [];
+  showMain();
+  load();
+}
+
+async function loginExistingRoom(){
+  const code = document.getElementById('exroom').value.trim() || '0000';
+  const pin = document.getElementById('expin').value.trim();
+  const msg = document.getElementById('setupmsg');
+  const r = await fetch(`/api/state?room=${encodeURIComponent(code)}&admin=1&pin=${encodeURIComponent(pin)}`, {cache:'no-store'});
+  const j = await r.json();
+  if (!r.ok){ msg.textContent = j.error || 'Xona yoki PIN noto‘g‘ri'; return; }
+  msg.textContent = '';
+  curRoom = code;
+  PIN = pin;
+  sessionStorage.setItem('admin_room', curRoom);
+  sessionStorage.setItem('admin_pin_' + curRoom, PIN);
+  if (window.history.replaceState) window.history.replaceState({}, '', '/admin?room=' + encodeURIComponent(curRoom));
+  namesDrawn = false; milTeamsDrawn = false; QL = [];
+  showMain();
+  S = j; render();
+}
+
+function switchHostRoom(){
+  curRoom = ''; PIN = ''; S = null;
+  sessionStorage.removeItem('admin_room');
+  if (window.history.replaceState) window.history.replaceState({}, '', '/admin');
+  showSetup();
+}
+
+function copyInvite(){
+  const inp = document.getElementById('invitelink');
+  inp.select();
+  navigator.clipboard && navigator.clipboard.writeText(inp.value);
+  alert('Havola nusxalandi: ' + inp.value);
+}
 
 function toggleMenu(){
   document.getElementById('navdrawer').classList.toggle('hidden');
 }
 
 function openTab(tab){
-  activeTab = tab;
-  ['games','play','ai','edit','teams'].forEach(t => {
+  ['games','play','invite','library','ai','edit','teams'].forEach(t => {
     document.getElementById('view_' + t).style.display = (t === tab) ? 'block' : 'none';
     const btn = document.getElementById('tab_' + t);
     if (btn) btn.className = 'navitem' + (t === tab ? ' active' : '');
@@ -288,15 +414,34 @@ function openTab(tab){
 }
 
 async function selectGameFromMenu(mode){
-  const res = await act({action:'set_mode', mode: mode});
+  const res = await act({action:'set_mode', mode});
   if (res) openTab('play');
 }
 
+async function choosePreset(pid){
+  if (!confirm('Tanlangan mavzudagi 25 ta savol yuklansinmi?')) return;
+  const res = await act({action:'load_preset', preset: pid});
+  if (res){ QL = []; openTab('games'); }
+}
+
 async function load(){
-  if (!PIN){ PIN = prompt('Admin PIN (serverda ko‘rsatilgan):') || ''; sessionStorage.setItem('pin', PIN); }
-  const r = await fetch('/api/state?admin=1&pin=' + encodeURIComponent(PIN), {cache:'no-store'});
+  if (!curRoom){ showSetup(); return; }
+  if (!PIN){
+    PIN = prompt(`Xona #${curRoom} uchun Admin PIN kodini kiriting:`) || '';
+    if (!PIN){ showSetup(); return; }
+    sessionStorage.setItem('admin_pin_' + curRoom, PIN);
+  }
+  const r = await fetch(`/api/state?room=${encodeURIComponent(curRoom)}&admin=1&pin=${encodeURIComponent(PIN)}`, {cache:'no-store'});
   const j = await r.json();
-  if (!r.ok){ sessionStorage.removeItem('pin'); PIN=''; document.getElementById('msg').textContent = j.error; return; }
+  if (!r.ok){
+    sessionStorage.removeItem('admin_pin_' + curRoom);
+    PIN = '';
+    document.getElementById('exroom').value = curRoom;
+    document.getElementById('setupmsg').textContent = j.error || 'Xatolik';
+    showSetup();
+    return;
+  }
+  showMain();
   S = j; render();
   const ck = (S.cats || []).join('|');
   if (!QL.length || ck !== lastCatsKey){
@@ -306,6 +451,7 @@ async function load(){
 }
 
 async function act(obj){
+  obj.room = curRoom;
   obj.pin = PIN;
   const r = await fetch('/api/admin', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(obj)});
   const j = await r.json();
@@ -321,6 +467,7 @@ function render(){
   if (S.ai_ready){ badge.textContent = 'AI: Faol'; badge.className = 'badge'; }
   else { badge.textContent = 'AI: Yo‘q'; badge.className = 'badge off'; }
 
+  document.getElementById('curtopictitle').textContent = S.topic_title || 'Tayyor to‘plam';
   const m = S.mode || 'jeopardy';
   const gObj = GAMES.find(x => x.id === m) || GAMES[0];
   document.getElementById('curmodelabel').textContent = gObj.icon + ' ' + gObj.title;
@@ -336,6 +483,18 @@ function render(){
       <button class="${isLive?'gold':''}" style="width:100%">${isLive?'Davom ettirish ➔':'O‘yinni ochish ➔'}</button>
     </div>`;
   }).join('');
+
+  if (S.presets){
+    document.getElementById('librarygrid').innerHTML = S.presets.map(pr => `
+      <div class="gamecard" onclick="choosePreset('${pr.id}')">
+        <div>
+          <div class="gicon">${pr.icon}</div>
+          <div class="gtitle" style="margin-top:6px">${esc(pr.title)}</div>
+          <div class="gdesc" style="margin-top:6px">${esc(pr.desc)}</div>
+        </div>
+        <button class="gold" style="width:100%">Shu mavzuni yuklash (25 savol)</button>
+      </div>`).join('');
+  }
 
   document.getElementById('scorestrip').innerHTML = S.teams.map((t,i)=>
     `<div class="scmini"><div class="t">${esc(t)}</div><div class="v">${S.scores[i]}</div></div>`
@@ -376,7 +535,7 @@ function render(){
   const qp = document.getElementById('qpanel');
   if (S.question){
     const q = S.question;
-    let x = `<div class="muted">${esc(q.cat)} • ${q.pts} ball</div><div class="q">${esc(q.q)}</div>`;
+    let x = `<div>${esc(q.cat)} • ${q.pts} ball</div><div class="q">${esc(q.q)}</div>`;
     if (q.opts.length) q.opts.forEach((o,i)=>{ x += `<div class="opt ${i===q.c?'c':''}">${L[i]}) ${esc(o)}</div>`; });
     else x += `<div class="opt c">Etalon javob: ${esc(q.ans)}</div>`;
     x += `<div class="ans">${esc(q.exp)}</div>`;
@@ -384,8 +543,7 @@ function render(){
       const a = S.answers || {};
       x += '<div class="ans"><b>Jamoalar javobi:</b><br>' + S.teams.map((t,i)=>`${esc(t)}: ${a[i]!==undefined ? L[a[i]] : '—'}`).join('<br>') + '</div>';
     } else {
-      const ta = S.text_answers || {};
-      const gr = S.ai_grades || {};
+      const ta = S.text_answers || {}, gr = S.ai_grades || {};
       x += '<div class="ans"><b>Yozma javoblar:</b><br>' + S.teams.map((t,i)=>{
         const ansTxt = ta[i] ? esc(ta[i]) : '—';
         const g = gr[String(i)];
@@ -393,18 +551,16 @@ function render(){
         return `${esc(t)}: ${ansTxt}${gTxt}`;
       }).join('<br>') + '</div>';
     }
-    if (S.ai_note){
-      x += `<div class="aibox"><b>Gemini AI misoli:</b><br>${esc(S.ai_note)}</div>`;
-    }
+    if (S.ai_note) x += `<div class="aibox"><b>Gemini AI misoli:</b><br>${esc(S.ai_note)}</div>`;
     x += `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
       <button class="gold" ${S.revealed?'disabled':''} onclick="act({action:'reveal'})">Javobni ko‘rsatish</button>
       <button class="ai" ${busyAI?'disabled':''} onclick="askAIExplain()">AI tushuntirish</button>
-      ${!q.opts.length ? `<button class="ai" ${busyAI?'disabled':''} onclick="askAIGrade()">AI javoblarni tekshirsin</button>` : ''}
+      ${!q.opts.length ? `<button class="ai" ${busyAI?'disabled':''} onclick="askAIGrade()">AI tekshirsin</button>` : ''}
       <button onclick="act({action:'close'})">Yopish</button>
       <button onclick="editSlot(${S.cur})">Tahrirlash</button></div>`;
     qp.innerHTML = x;
   } else {
-    qp.innerHTML = '<div class="muted">Jadvaldan katakchani tanlang</div>';
+    qp.innerHTML = '<div>Jadvaldan katakchani tanlang</div>';
   }
 
   if (!milTeamsDrawn){
@@ -441,7 +597,7 @@ function renderKahootAdmin(){
   const p = document.getElementById('kahootpanel');
   const k = S.kahoot;
   if (!k){
-    p.innerHTML = `<h2 style="color:#D8B4FE">⚡ TEST (JONLI VIKTORINA)</h2>
+    p.innerHTML = `<h2 style="color:#D8B4FE">⚡ TEST</h2>
       <div class="ans" style="margin-bottom:10px">Talabalar telefonida <b>▲ ◆ ● ■</b> tugmalari chiqadi. Kim tez va to‘g‘ri topsa ko‘proq ball oladi!</div>
       <div class="row" style="align-items:center">
         <div style="max-width:200px"><select id="kdur">
@@ -453,44 +609,35 @@ function renderKahootAdmin(){
       </div>`;
     return;
   }
-
   let x = `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-    <h2 style="color:#D8B4FE;margin:0">⚡ TEST LIVE — ${k.phase==='lobby'?'LOBBY (KUTISH)':k.phase==='podium'?'YAKUNIY SHOHSUPA':`${k.q_num+1}/${k.total_q}-SAVOL`}</h2>
+    <h2 style="color:#D8B4FE;margin:0">⚡ TEST — ${k.phase==='lobby'?'LOBBY (KUTISH)':k.phase==='podium'?'YAKUNIY SHOHSUPA':`${k.q_num+1}/${k.total_q}-SAVOL`}</h2>
     ${k.phase==='question' ? `<div style="font-size:24px;font-weight:bold;color:${k.time_left<=5?'#FF8A80':'#7CFC9A'}">⏱ ${k.time_left} s</div>` : ''}
   </div>`;
 
   if (k.phase === 'lobby'){
     const pls = S.players || [];
     x += `<div class="aibox"><b>Ulangan ishtirokchilar (${pls.length} ta):</b><div style="margin-top:8px">` +
-      (pls.length ? pls.map(pl => `<span class="pchip">👤 ${esc(pl.name)}${pl.team!==null?' ('+esc(S.teams[pl.team])+')':''}</span>`).join('') : 'Talabalar telefonidan saytga kirishini kuting...') +
+      (pls.length ? pls.map(pl => `<span class="pchip">👤 ${esc(pl.name)}${pl.team!==null?' ('+esc(S.teams[pl.team])+')':''}</span>`).join('') : 'Talabalar telefonidan xona kodini terib kirishini kuting...') +
       `</div></div>
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
         <button class="green" onclick="act({action:'kahoot_next'})">🚀 1-savolni boshlash ➔</button>
         <button class="red" onclick="startKahootRoom()">Qaytadan aralashtirish</button>
       </div>`;
-    p.innerHTML = x;
-    return;
+    p.innerHTML = x; return;
   }
 
   if (k.question && (k.phase === 'question' || k.phase === 'reveal')){
     const q = k.question;
-    x += `<div style="font-size:13px;color:#93C5FD">${esc(q.cat)}</div><div class="q">${esc(q.q)}</div>`;
-    x += `<div class="kgrid">`;
+    x += `<div style="font-size:13px;color:#93C5FD">${esc(q.cat)}</div><div class="q">${esc(q.q)}</div><div class="kgrid">`;
     q.opts.forEach((o, i) => {
-      let cls = `kcard k${i}`;
-      if (k.phase === 'reveal'){
-        cls += (i === q.c) ? ' ok' : ' dim';
-      }
-      const mark = (i === q.c) ? ' ✓' : '';
-      x += `<div class="${cls}"><span>${SHAPES[i]}</span><span>${esc(o)}${mark}</span></div>`;
+      let cls = `kcard k${i}` + (k.phase === 'reveal' ? (i === q.c ? ' ok' : ' dim') : '');
+      x += `<div class="${cls}"><span>${SHAPES[i]}</span><span>${esc(o)}${i===q.c?' ✓':''}</span></div>`;
     });
     x += `</div>`;
-
     if (k.phase === 'question'){
       const totalP = (S.players || []).length;
       x += `<div class="aibox"><b>Javob berganlar:</b> <span style="color:#FFC72C;font-weight:bold">${k.answered_count}${totalP ? ' / ' + totalP : ''}</span>` +
-        (k.answered_names.length ? `<div style="margin-top:6px">${k.answered_names.map(n=>`<span class="pchip">✔ ${esc(n)}</span>`).join('')}</div>` : '') +
-        `</div>`;
+        (k.answered_names.length ? `<div style="margin-top:6px">${k.answered_names.map(n=>`<span class="pchip">✔ ${esc(n)}</span>`).join('')}</div>` : '') + `</div>`;
     } else if (k.phase === 'reveal'){
       const totVotes = (k.vote_counts || []).reduce((a,b)=>a+b, 0);
       x += `<div class="aibox"><b>Javoblar taqsimoti (${totVotes} ta):</b>`;
@@ -509,11 +656,9 @@ function renderKahootAdmin(){
     const medals = ['🥇 1-O‘RIN','🥈 2-O‘RIN','🥉 3-O‘RIN'];
     x += `<div class="podium">` + [0,1,2].map(idx => {
       const item = top3[idx];
-      return `<div class="podbox ${idx===0?'p1':''}">
-        <div style="font-size:14px;color:#FFC72C;font-weight:bold">${medals[idx]}</div>
+      return `<div class="podbox ${idx===0?'p1':''}"><div style="font-size:14px;color:#FFC72C;font-weight:bold">${medals[idx]}</div>
         <div style="font-size:19px;font-weight:bold;margin:6px 0">${item ? esc(item.name) : '—'}</div>
-        <div style="color:#7CFC9A;font-weight:bold">${item ? fmt(item.pts) + ' ball' : ''}</div>
-      </div>`;
+        <div style="color:#7CFC9A;font-weight:bold">${item ? fmt(item.pts) + ' ball' : ''}</div></div>`;
     }).join('') + `</div>`;
   }
 
@@ -522,81 +667,54 @@ function renderKahootAdmin(){
     x += `<div class="aibox"><b>Reyting (Top ${lb.length}):</b><table>` +
       lb.map((r, idx) => `<tr><td><b>${idx+1}.</b> ${esc(r.name)} ${r.streak>=2?'🔥'+r.streak:''}</td>
         <td style="color:#93C5FD">${r.team!==null && S.teams[r.team] ? esc(S.teams[r.team]) : ''}</td>
-        <td style="text-align:right;color:#FFC72C;font-weight:bold">${fmt(r.pts)}</td></tr>`).join('') +
-      `</table></div>`;
+        <td style="text-align:right;color:#FFC72C;font-weight:bold">${fmt(r.pts)}</td></tr>`).join('') + `</table></div>`;
   }
 
   x += `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">`;
-  if (k.phase === 'question'){
-    x += `<button class="gold" onclick="act({action:'kahoot_reveal'})">⏹ Vaqtni to‘xtatish va Javobni ochish</button>`;
-  } else if (k.phase === 'reveal'){
-    if (k.q_num + 1 < k.total_q){
-      x += `<button class="green" onclick="act({action:'kahoot_next'})">➡️ Keyingi savol (${k.q_num + 2}/${k.total_q})</button>`;
-    }
+  if (k.phase === 'question') x += `<button class="gold" onclick="act({action:'kahoot_reveal'})">⏹ Vaqtni to‘xtatish va Javobni ochish</button>`;
+  else if (k.phase === 'reveal'){
+    if (k.q_num + 1 < k.total_q) x += `<button class="green" onclick="act({action:'kahoot_next'})">➡️ Keyingi savol (${k.q_num + 2}/${k.total_q})</button>`;
     x += `<button class="gold" onclick="act({action:'kahoot_podium'})">🏆 Shohsupani ko‘rsatish</button>`;
   }
-  const hasTeamPts = (k.team_pts || []).some(v => v > 0);
-  if (hasTeamPts){
-    x += `<button class="green" onclick="act({action:'kahoot_sync_scores'})">➕ Jamoa ballarini asosiy hisobga qo‘shish</button>`;
-  }
+  if ((k.team_pts || []).some(v => v > 0)) x += `<button class="green" onclick="act({action:'kahoot_sync_scores'})">➕ Jamoa ballarini asosiy hisobga qo‘shish</button>`;
   x += `<button class="red" onclick="startKahootRoom()">Yangi TEST o‘yini</button></div>`;
   p.innerHTML = x;
 }
 
 function startKahootRoom(){
   const el = document.getElementById('kdur');
-  const duration = el ? Number(el.value) : 20;
-  act({action:'kahoot_start', duration});
+  act({action:'kahoot_start', duration: el ? Number(el.value) : 20});
 }
 
 function renderMillionaire(){
-  const mp = document.getElementById('milpanel');
-  const ml = document.getElementById('milladder');
-  const m = S.mil;
-  if (!m){
-    mp.innerHTML = '<div class="ans">Yuqoridagi «Yangi Millioner o‘yini» tugmasini bosing.</div>';
-    ml.innerHTML = '';
-    return;
-  }
-  const prizes = m.prizes || [];
-  const safes = m.safe_steps || [];
+  const mp = document.getElementById('milpanel'), ml = document.getElementById('milladder'), m = S.mil;
+  if (!m){ mp.innerHTML = '<div class="ans">Yuqoridagi «Yangi Millioner o‘yini» tugmasini bosing.</div>'; ml.innerHTML = ''; return; }
+  const prizes = m.prizes || [], safes = m.safe_steps || [];
   ml.innerHTML = prizes.map((p, idx) => {
-    let cls = 'lstep';
-    if (safes.includes(idx)) cls += ' safe';
+    let cls = 'lstep' + (safes.includes(idx) ? ' safe' : '');
     if (idx < m.step || (idx === m.step && m.revealed && m.status !== 'lost')) cls += ' done';
     else if (idx === m.step) cls += ' cur';
     return `<div class="${cls}"><span>${idx + 1}-savol</span><span>${fmt(p)} ball</span></div>`;
   }).join('');
 
-  const q = m.question;
-  const curPrize = prizes[m.step] || 0;
-  const ll = m.lifelines || {};
+  const q = m.question, curPrize = prizes[m.step] || 0, ll = m.lifelines || {};
   let x = `<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px">
     <div><b>Ishtirokchi:</b> <span style="color:#FFC72C">${esc(m.player)}</span></div>
     <div><b>Pog‘ona:</b> ${m.step + 1}/${m.total_steps} (<span style="color:#7CFC9A">${fmt(curPrize)} ball</span>) • <b>Yutuq:</b> <span style="color:#FFC72C">${fmt(m.won)}</span></div>
-  </div>`;
-
-  x += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
     <button class="gold" ${(!m.active || m.revealed || !ll.fifty)?'disabled':''} onclick="act({action:'mil_5050'})">50:50</button>
     <button class="gold" ${(!m.active || m.revealed || !ll.audience)?'disabled':''} onclick="act({action:'mil_audience'})">Guruh yordami</button>
     <button class="ai" ${(!m.active || m.revealed || !ll.ai || busyAI)?'disabled':''} onclick="askMilAI()">Gemini AI maslahati</button>
-  </div>`;
-
-  x += `<div style="font-size:13px;color:#93C5FD">${esc(q.cat)}</div><div class="q">${esc(q.q)}</div>`;
+  </div>
+  <div style="font-size:13px;color:#93C5FD">${esc(q.cat)}</div><div class="q">${esc(q.q)}</div>`;
 
   q.opts.forEach((opt, i) => {
     const isHid = (m.hidden_opts || []).includes(i);
-    let cls = 'milopt';
-    if (isHid) cls += ' hid';
-    if (m.revealed){
-      if (i === q.c) cls += ' ok';
-      else if (i === m.selected) cls += ' bad';
-    } else {
-      if (i === m.selected) cls += ' sel';
-      if (i === q.c) cls += ' truehint';
-    }
-    const mark = (!m.revealed && i === q.c) ? ' ✓' : '';
-    x += `<button class="${cls}" ${(m.revealed || isHid)?'disabled':''} onclick="act({action:'mil_select',choice:${i}})">${L[i]}) ${esc(opt)}${mark}</button>`;
+    let cls = 'milopt' + (isHid ? ' hid' : '');
+    if (m.revealed){ if (i === q.c) cls += ' ok'; else if (i === m.selected) cls += ' bad'; }
+    else { if (i === m.selected) cls += ' sel'; if (i === q.c) cls += ' truehint'; }
+    x += `<button class="${cls}" ${(m.revealed || isHid)?'disabled':''} onclick="act({action:'mil_select',choice:${i}})">${L[i]}) ${esc(opt)}${(!m.revealed && i === q.c)?' ✓':''}</button>`;
   });
 
   if (m.audience_open || m.vote_total > 0){
@@ -604,23 +722,16 @@ function renderMillionaire(){
     x += `<div class="aibox"><b>Guruh ovozi (${tot} ta ovoz):</b>`;
     for (let i = 0; i < 4; i++){
       if ((m.hidden_opts || []).includes(i)) continue;
-      const cnt = (m.vote_counts || [])[i] || 0;
-      const pct = tot ? Math.round(cnt * 100 / tot) : 0;
+      const cnt = (m.vote_counts || [])[i] || 0, pct = tot ? Math.round(cnt * 100 / tot) : 0;
       x += `<div class="barwrap"><div class="barfill" style="width:${pct}%"></div><div class="bartxt">${L[i]}: ${pct}% (${cnt})</div></div>`;
     }
     x += `</div>`;
   }
-
   if (m.ai_hint) x += `<div class="aibox"><b>Gemini AI maslahati:</b><br>${esc(m.ai_hint)}</div>`;
   if (m.revealed && q.exp) x += `<div class="ans"><b>Izoh:</b> ${esc(q.exp)}</div>`;
-
-  if (m.status === 'won'){
-    x += `<div class="aibox" style="border-color:#FFC72C;color:#FFC72C;font-weight:bold;font-size:16px">TABRIKLAYMIZ! ${esc(m.player)} 1 000 000 BALL YUTDI!</div>`;
-  } else if (m.status === 'lost'){
-    x += `<div class="aibox" style="border-color:#B3261E;color:#FF8A80;font-weight:bold">O‘yin tugadi! Kafolatlangan yutuq: ${fmt(m.won)} ball.</div>`;
-  } else if (m.status === 'walked'){
-    x += `<div class="aibox" style="border-color:#1E8E4E;color:#7CFC9A;font-weight:bold">${esc(m.player)} o‘yinni to‘xtatib, ${fmt(m.won)} ball yutuqni oldi!</div>`;
-  }
+  if (m.status === 'won') x += `<div class="aibox" style="border-color:#FFC72C;color:#FFC72C;font-weight:bold">TABRIKLAYMIZ! 1 000 000 BALL YUTDI!</div>`;
+  else if (m.status === 'lost') x += `<div class="aibox" style="border-color:#B3261E;color:#FF8A80;font-weight:bold">O‘yin tugadi! Kafolatlangan yutuq: ${fmt(m.won)} ball.</div>`;
+  else if (m.status === 'walked') x += `<div class="aibox" style="border-color:#1E8E4E;color:#7CFC9A;font-weight:bold">${esc(m.player)} ${fmt(m.won)} ball bilan yakunladi!</div>`;
 
   x += `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">`;
   if (m.active && !m.revealed){
@@ -630,207 +741,127 @@ function renderMillionaire(){
     x += `<button class="green" onclick="act({action:'mil_next'})">Keyingi savol (${m.step + 2}-pog‘ona) ➔</button>`;
     x += `<button class="red" onclick="walkMil()">Yutuqni olish (${fmt(m.won)})</button>`;
   }
-  if (!m.active && m.won > 0 && m.team !== null && !m.credited){
-    x += `<button class="green" onclick="act({action:'mil_credit'})">+${fmt(m.won)} ballni jamoaga qo‘shish</button>`;
-  }
-  x += `</div>`;
-  mp.innerHTML = x;
+  if (!m.active && m.won > 0 && m.team !== null && !m.credited) x += `<button class="green" onclick="act({action:'mil_credit'})">+${fmt(m.won)} ballni jamoaga qo‘shish</button>`;
+  x += `</div>`; mp.innerHTML = x;
 }
 
 function renderAuctionAdmin(){
-  const p = document.getElementById('aucpanel');
-  const a = S.auc;
-  if (!a){
-    p.innerHTML = `<button class="gold" onclick="act({action:'auc_start'})">Auksion o‘yinini boshlash</button>`;
-    return;
-  }
+  const p = document.getElementById('aucpanel'), a = S.auc;
+  if (!a){ p.innerHTML = `<button class="gold" onclick="act({action:'auc_start'})">Auksion o‘yinini boshlash</button>`; return; }
   let x = `<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
     <h2 style="color:#FBBF24;margin:0">AUKSION VA STAVKA — ${a.round}/${a.total_rounds}-RAUND</h2>
     <div><b>Bo‘lim:</b> <span style="color:#7CFC9A">${esc(a.cat)}</span></div>
-  </div>`;
-
-  x += `<table><tr><td><b>Jamoa</b></td><td style="text-align:right"><b>Kapital</b></td><td style="text-align:right"><b>Stavka</b></td><td style="text-align:right"><b>Javob</b></td></tr>`;
+  </div>
+  <table><tr><td><b>Jamoa</b></td><td style="text-align:right"><b>Kapital</b></td><td style="text-align:right"><b>Stavka</b></td><td style="text-align:right"><b>Javob</b></td></tr>`;
   S.teams.forEach((t, i) => {
-    const bet = a.bets[String(i)];
-    const ans = a.answers ? a.answers[String(i)] : undefined;
-    const d = (a.deltas || [])[i] || 0;
+    const bet = a.bets[String(i)], ans = a.answers ? a.answers[String(i)] : undefined, d = (a.deltas || [])[i] || 0;
     const dTxt = a.phase === 'revealed' ? (d > 0 ? ` <b style="color:#7CFC9A">(+${d})</b>` : ` <b style="color:#FF8A80">(${d})</b>`) : '';
-    const ansStatus = a.phase === 'revealed'
-      ? (ans !== undefined ? L[ans] : '—')
-      : ((a.answered_teams || []).includes(i) ? '✔ Yubordi' : 'Kutilmoqda');
+    const ansStatus = a.phase === 'revealed' ? (ans !== undefined ? L[ans] : '—') : ((a.answered_teams || []).includes(i) ? '✔ Yubordi' : 'Kutilmoqda');
     x += `<tr><td>${esc(t)}</td><td style="text-align:right;color:#FFC72C;font-weight:bold">${fmt(a.bank[i])}${dTxt}</td>
       <td style="text-align:right">${bet !== undefined ? fmt(bet) : '—'}</td><td style="text-align:right">${ansStatus}</td></tr>`;
   });
   x += `</table>`;
-
   if (a.question){
     const q = a.question;
     x += `<div class="aibox"><div class="q">${esc(q.q)}</div>`;
-    q.opts.forEach((o, i) => {
-      x += `<div class="opt ${i===q.c?'c':''}">0${i+1}) ${esc(o)}${i===q.c?' ✓':''}</div>`;
-    });
+    q.opts.forEach((o, i) => { x += `<div class="opt ${i===q.c?'c':''}">0${i+1}) ${esc(o)}${i===q.c?' ✓':''}</div>`; });
     if (a.phase === 'revealed' && q.exp) x += `<div class="ans">${esc(q.exp)}</div>`;
     x += `</div>`;
   }
-
   x += `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">`;
-  if (a.phase === 'betting'){
-    x += `<button class="gold" onclick="act({action:'auc_open_q'})">Stavkalarni yopish va Savolni ochish ➔</button>`;
-  } else if (a.phase === 'question'){
-    x += `<button class="green" onclick="act({action:'auc_reveal'})">Natijani hisoblash (2× to‘lov)</button>`;
-  } else {
-    x += `<button class="gold" onclick="act({action:'auc_next'})">Keyingi raund (yangi stavka) ➔</button>`;
-  }
-  x += `<button onclick="act({action:'auc_sync_scores'})">Kapitalni asosiy ballga qo‘shish</button>`;
-  x += `<button class="red" onclick="act({action:'auc_start'})">Qaytadan boshlash</button></div>`;
+  if (a.phase === 'betting') x += `<button class="gold" onclick="act({action:'auc_open_q'})">Stavkalarni yopish va Savolni ochish ➔</button>`;
+  else if (a.phase === 'question') x += `<button class="green" onclick="act({action:'auc_reveal'})">Natijani hisoblash (2× to‘lov)</button>`;
+  else x += `<button class="gold" onclick="act({action:'auc_next'})">Keyingi raund ➔</button>`;
+  x += `<button onclick="act({action:'auc_sync_scores'})">Kapitalni asosiy ballga qo‘shish</button><button class="red" onclick="act({action:'auc_start'})">Qaytadan boshlash</button></div>`;
   p.innerHTML = x;
 }
 
 function renderTerritoryAdmin(){
-  const mapEl = document.getElementById('termap');
-  const p = document.getElementById('terpanel');
-  const ter = S.ter;
-  if (!ter){
-    mapEl.innerHTML = '';
-    p.innerHTML = `<button class="gold" onclick="act({action:'ter_start'})">Hududlar jangini boshlash</button>`;
-    return;
-  }
+  const mapEl = document.getElementById('termap'), p = document.getElementById('terpanel'), ter = S.ter;
+  if (!ter){ mapEl.innerHTML = ''; p.innerHTML = `<button class="gold" onclick="act({action:'ter_start'})">Hududlar jangini boshlash</button>`; return; }
   let mh = CATS.map(c=>`<div class="cat">${esc(c)}</div>`).join('');
   for (let r=0;r<5;r++){
     for (let c=0;c<5;c++){
-      const idx = c*5 + r;
-      const ow = ter.owners[idx];
-      const cls = 'tcell' + (ow!==null ? ` t${ow}` : '') + (ter.cur_cell===idx ? ' cur' : '');
-      const lbl = ow !== null ? `${TICONS[ow]} ${idx+1}` : `${idx+1}`;
-      mh += `<div class="${cls}" onclick="act({action:'ter_pick',idx:${idx}})">${lbl}</div>`;
+      const idx = c*5 + r, ow = ter.owners[idx];
+      mh += `<div class="tcell ${ow!==null?'t'+ow:''} ${ter.cur_cell===idx?'cur':''}" onclick="act({action:'ter_pick',idx:${idx}})">${ow !== null ? `${TICONS[ow]} ${idx+1}` : `${idx+1}`}</div>`;
     }
   }
   mapEl.innerHTML = mh;
-
   let x = `<h2 style="color:#6EE7B7">HUDUDLAR HISOBI</h2>`;
-  S.teams.forEach((t, i) => {
-    x += `<div style="margin:4px 0">${TICONS[i]} <b>${esc(t)}:</b> <span style="color:#FFC72C;font-weight:bold">${ter.counts[i]} ta sektor</span></div>`;
-  });
+  S.teams.forEach((t, i) => { x += `<div style="margin:4px 0">${TICONS[i]} <b>${esc(t)}:</b> <span style="color:#FFC72C;font-weight:bold">${ter.counts[i]} ta sektor</span></div>`; });
   x += `<div class="aibox">${esc(ter.last_msg)}</div>`;
   if (ter.question){
     const q = ter.question;
     x += `<div class="aibox"><div style="font-size:13px;color:#93C5FD">${esc(q.cat)}</div><div class="q">${esc(q.q)}</div>`;
-    q.opts.forEach((o, i) => {
-      x += `<div class="opt ${i===q.c?'c':''}">[${['I','II','III','IV'][i]}] ${esc(o)}${i===q.c?' ✓':''}</div>`;
-    });
+    q.opts.forEach((o, i) => { x += `<div class="opt ${i===q.c?'c':''}">[${['I','II','III','IV'][i]}] ${esc(o)}${i===q.c?' ✓':''}</div>`; });
     if (ter.phase === 'revealed' && q.exp) x += `<div class="ans">${esc(q.exp)}</div>`;
     x += `</div>`;
   }
   x += `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">`;
   if (ter.phase === 'battle') x += `<button class="gold" onclick="act({action:'ter_reveal'})">Javobni ochish</button>`;
-  x += `<button class="green" onclick="act({action:'ter_sync_scores'})">Hududlarni ballga o‘tkazish (×100)</button>`;
-  x += `<button class="red" onclick="act({action:'ter_start'})">Xaritani tozalash</button></div>`;
+  x += `<button class="green" onclick="act({action:'ter_sync_scores'})">Hududlarni ballga o‘tkazish (×100)</button><button class="red" onclick="act({action:'ter_start'})">Xaritani tozalash</button></div>`;
   p.innerHTML = x;
 }
 
 function renderBombAdmin(){
-  const p = document.getElementById('bombpanel');
-  const b = S.bomb;
-  if (!b){
-    p.innerHTML = `<button class="gold" onclick="act({action:'bomb_start',sec:20})">Zanjirli Bomba o‘yinini boshlash</button>`;
-    return;
-  }
+  const p = document.getElementById('bombpanel'), b = S.bomb;
+  if (!b){ p.innerHTML = `<button class="gold" onclick="act({action:'bomb_start',sec:20})">Zanjirli Bomba o‘yinini boshlash</button>`; return; }
   const holderName = S.teams[b.holder] || '1-jamoa';
   let x = `<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
     <h2 style="color:#F87171;margin:0">ZANJIRLI BOMBA — NAVBAT: <span style="color:#FFC72C">${esc(holderName)}</span></h2>
     <div style="font-size:22px;font-weight:bold;color:${b.time_left<=5?'#FF8A80':'#7CFC9A'}">⏱ ${b.time_left} s</div>
-  </div>`;
-
-  x += `<div class="row" style="margin-bottom:10px">`;
+  </div><div class="row" style="margin-bottom:10px">`;
   S.teams.forEach((t, i) => {
-    const lv = b.lives[i];
-    const hearts = lv > 0 ? '❤️'.repeat(lv) : '💀';
-    const actBorder = (i === b.holder && b.status === 'playing') ? 'border:2px solid #FFC72C;' : '';
+    const lv = b.lives[i], actBorder = (i === b.holder && b.status === 'playing') ? 'border:2px solid #FFC72C;' : '';
     x += `<div style="flex:1;min-width:130px;background:#0c1842;padding:8px;border-radius:8px;${actBorder}">
-      <div style="font-size:13px">${esc(t)}</div><div style="font-size:18px;margin-top:4px">${hearts}</div></div>`;
+      <div style="font-size:13px">${esc(t)}</div><div style="font-size:18px;margin-top:4px">${lv > 0 ? '❤️'.repeat(lv) : '💀'}</div></div>`;
   });
-  x += `</div>`;
-
-  x += `<div class="aibox" style="font-weight:bold;color:#FFC72C">${esc(b.last_msg)}</div>`;
+  x += `</div><div class="aibox" style="font-weight:bold;color:#FFC72C">${esc(b.last_msg)}</div>`;
   if (b.question){
-    const q = b.question;
-    const tags = ['ALPHA','BETA','GAMMA','DELTA'];
+    const q = b.question, tags = ['ALPHA','BETA','GAMMA','DELTA'];
     x += `<div class="aibox"><div class="q">${esc(q.q)}</div>`;
-    q.opts.forEach((o, i) => {
-      x += `<div class="opt ${i===q.c?'c':''}">${tags[i]}: ${esc(o)}${i===q.c?' ✓':''}</div>`;
-    });
+    q.opts.forEach((o, i) => { x += `<div class="opt ${i===q.c?'c':''}">${tags[i]}: ${esc(o)}${i===q.c?' ✓':''}</div>`; });
     x += `</div>`;
   }
-
   x += `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">`;
-  if (b.status === 'boom'){
-    x += `<button class="green" onclick="act({action:'bomb_resume'})">Keyingi jamoaga bombani uzatish ➔</button>`;
-  }
-  x += `<button class="gold" onclick="act({action:'bomb_start',sec:20})">Yangi Bomba o‘yini (20s)</button>`;
-  x += `<button class="red" onclick="act({action:'bomb_start',sec:12})">Tezkor rejim (12s)</button></div>`;
+  if (b.status === 'boom') x += `<button class="green" onclick="act({action:'bomb_resume'})">Keyingi jamoaga bombani uzatish ➔</button>`;
+  x += `<button class="gold" onclick="act({action:'bomb_start',sec:20})">Yangi Bomba o‘yini (20s)</button><button class="red" onclick="act({action:'bomb_start',sec:12})">Tezkor rejim (12s)</button></div>`;
   p.innerHTML = x;
 }
 
 function startMil(){
-  const player = document.getElementById('milplayer').value.trim();
-  const team = document.getElementById('milteam').value;
-  act({action:'mil_start', player, team});
+  act({action:'mil_start', player: document.getElementById('milplayer').value.trim(), team: document.getElementById('milteam').value});
 }
-function walkMil(){
-  if (confirm('Ishtirokchi joriy yutuqni olib o‘yinni to‘xtatsinmi?')) act({action:'mil_walk'});
-}
-async function askMilAI(){
-  busyAI = true; render();
-  await act({action:'mil_ai'});
-  busyAI = false; render();
-}
+function walkMil(){ if (confirm('Yutuqni olib o‘yinni to‘xtatasizmi?')) act({action:'mil_walk'}); }
+async function askMilAI(){ busyAI = true; render(); await act({action:'mil_ai'}); busyAI = false; render(); }
 
 async function genBoard(){
-  const topic = document.getElementById('aitopic').value.trim();
-  const level = document.getElementById('ailevel').value;
+  const topic = document.getElementById('aitopic').value.trim(), level = document.getElementById('ailevel').value;
   if (!topic){ alert('Avval mavzu nomini yozing'); return; }
   if (!confirm(`"${topic}" mavzusida 25 ta yangi savol yaratilsinmi?`)) return;
   await act({action:'ai_generate_board', topic, level});
 }
 
 function genFromFile(){
-  const inp = document.getElementById('aifile');
-  const file = inp.files && inp.files[0];
-  if (!file){ alert('Avval PDF, Word (.docx), TXT yoki rasm faylini tanlang'); return; }
+  const inp = document.getElementById('aifile'), file = inp.files && inp.files[0];
+  if (!file){ alert('Avval fayl tanlang'); return; }
   if (file.size > 10 * 1024 * 1024){ alert('Fayl hajmi 10 MB dan kichik bo‘lishi kerak'); return; }
-  const level = document.getElementById('ailevel').value;
-  const hint = document.getElementById('aifilehint').value.trim();
-  if (!confirm(`"${file.name}" faylidan 25 ta savol-javob tuzilsinmi?`)) return;
-
-  const genMsg = document.getElementById('aigenmsg');
-  genMsg.style.color = '#FFC72C';
-  genMsg.textContent = `"${file.name}" fayli tayyorlanmoqda...`;
-
+  const level = document.getElementById('ailevel').value, hint = document.getElementById('aifilehint').value.trim();
+  if (!confirm(`"${file.name}" faylidan 25 ta savol tuzilsinmi?`)) return;
   const reader = new FileReader();
   reader.onload = async function(){
-    const res = String(reader.result || '');
-    const comma = res.indexOf(',');
-    const b64 = comma !== -1 ? res.slice(comma + 1) : '';
-    await act({
-      action: 'ai_generate_from_file',
-      filename: file.name,
-      mime: file.type || '',
-      data_b64: b64,
-      hint: hint,
-      level: level
-    });
+    const res = String(reader.result || ''), comma = res.indexOf(',');
+    await act({action:'ai_generate_from_file', filename: file.name, mime: file.type || '', data_b64: comma !== -1 ? res.slice(comma + 1) : '', hint, level});
   };
   reader.readAsDataURL(file);
 }
 
 async function genSingleSlot(){
-  const i = Number(document.getElementById('slot').value);
-  const btn = document.getElementById('aislotbtn');
-  const msg = document.getElementById('fmsg');
+  const i = Number(document.getElementById('slot').value), btn = document.getElementById('aislotbtn'), msg = document.getElementById('fmsg');
   btn.disabled = true; btn.textContent = 'Tuzilmoqda...';
   const r = await fetch('/api/admin', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({pin: PIN, action: 'ai_generate_slot', idx: i, hint: document.getElementById('fq').value})
+    body: JSON.stringify({room: curRoom, pin: PIN, action: 'ai_generate_slot', idx: i, hint: document.getElementById('fq').value})
   });
   const j = await r.json();
   btn.disabled = false; btn.textContent = 'AI bitta savol tuzsin';
@@ -840,39 +871,31 @@ async function genSingleSlot(){
   document.getElementById('fq').value = q.q;
   document.getElementById('fexp').value = q.exp;
   const radios = document.querySelectorAll('input[name=fc]');
-  for (let k=0; k<4; k++){
-    document.getElementById('fo'+k).value = q.opts[k] || '';
-    radios[k].checked = (q.c === k);
-  }
-  msg.textContent = 'AI savol tuzdi — tekshirib SAQLASH tugmasini bosing';
+  for (let k=0; k<4; k++){ document.getElementById('fo'+k).value = q.opts[k] || ''; radios[k].checked = (q.c === k); }
+  msg.textContent = 'AI savol tuzdi — SAQLASH tugmasini bosing';
 }
 
 async function askAIExplain(){ busyAI = true; render(); await act({action:'ai_explain'}); busyAI = false; render(); }
 async function askAIGrade(){ busyAI = true; render(); await act({action:'ai_grade'}); busyAI = false; render(); }
 
 function manual(i){
-  const v = prompt('Ball qo‘shish (musbat) yoki ayirish (manfiy) sonini kiriting:', '0');
+  const v = prompt('Ball qo‘shish yoki ayirish sonini kiriting:', '0');
   if (v === null) return;
   const d = parseInt(v, 10);
-  if (isNaN(d)) return;
-  act({action:'score', team:i, delta:d});
+  if (!isNaN(d)) act({action:'score', team:i, delta:d});
 }
 function saveNames(){
-  const names = [0,1,2,3].map(i=>document.getElementById('n'+i).value.trim());
   milTeamsDrawn = false;
-  act({action:'rename', teams:names});
+  act({action:'rename', teams: [0,1,2,3].map(i=>document.getElementById('n'+i).value.trim())});
 }
-function resetAll(){
-  if (confirm('Barcha ballar va belgilar o‘chadi. Davom etasizmi?')) act({action:'reset'});
-}
+function resetAll(){ if (confirm('Barcha ballar va belgilar o‘chadi. Davom etasizmi?')) act({action:'reset'}); }
 
 async function loadQs(){
-  const r = await fetch('/api/questions?pin=' + encodeURIComponent(PIN), {cache:'no-store'});
+  const r = await fetch(`/api/questions?room=${encodeURIComponent(curRoom)}&pin=${encodeURIComponent(PIN)}`, {cache:'no-store'});
   if (!r.ok) return false;
   QL = await r.json();
   return true;
 }
-let formBuilt = false;
 function buildForm(){
   if (formBuilt) return;
   formBuilt = true;
@@ -886,8 +909,8 @@ function toggleShort(){
   document.getElementById('fopts').style.display = s ? 'none' : 'block';
 }
 function loadSlot(){
-  const i = Number(document.getElementById('slot').value);
-  const q = QL[i]; if (!q) return;
+  const i = Number(document.getElementById('slot').value), q = QL[i];
+  if (!q) return;
   const short = !q.opts || q.opts.length === 0;
   document.getElementById('fq').value = q.q;
   document.getElementById('fexp').value = q.exp || '';
@@ -908,20 +931,15 @@ function editSlot(idx){
   openTab('edit');
 }
 async function saveSlot(){
-  const i = Number(document.getElementById('slot').value);
-  const short = document.getElementById('fshort').checked;
-  const opts = [0,1,2,3].map(k => document.getElementById('fo' + k).value);
-  const cc = document.querySelector('input[name=fc]:checked');
-  const q = {q: document.getElementById('fq').value, exp: document.getElementById('fexp').value,
-             short: short, ans: document.getElementById('fans').value,
-             opts: short ? [] : opts, c: cc ? Number(cc.value) : null};
+  const i = Number(document.getElementById('slot').value), short = document.getElementById('fshort').checked;
+  const opts = [0,1,2,3].map(k => document.getElementById('fo' + k).value), cc = document.querySelector('input[name=fc]:checked');
+  const q = {q: document.getElementById('fq').value, exp: document.getElementById('fexp').value, short, ans: document.getElementById('fans').value, opts: short ? [] : opts, c: cc ? Number(cc.value) : null};
   const msg = document.getElementById('fmsg');
-  const r = await fetch('/api/admin', {method:'POST', headers:{'Content-Type':'application/json'},
-                        body: JSON.stringify({pin: PIN, action: 'save', idx: i, q: q})});
+  const r = await fetch('/api/admin', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({room: curRoom, pin: PIN, action: 'save', idx: i, q})});
   const j = await r.json();
   if (!r.ok){ msg.textContent = j.error; return; }
   await loadQs(); loadSlot();
-  document.getElementById('fmsg').textContent = 'Saqlandi ✔';
+  msg.textContent = 'Saqlandi ✔';
 }
 
 load(); setInterval(load, 800);
