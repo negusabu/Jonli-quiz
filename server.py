@@ -1,4 +1,4 @@
-"""JEO QUIZ + TEST X + MILLIONER + AUKSION + HUDUDLAR JANGI + ZANJIRLI BOMBA."""
+"""JEO QUIZ + TEST + MILLIONER + AUKSION + HUDUDLAR JANGI + ZANJIRLI BOMBA."""
 import base64, collections, glob, io, json, os, random, re, socket, sys, threading, time, zipfile
 import urllib.request, urllib.error
 import xml.etree.ElementTree as ET
