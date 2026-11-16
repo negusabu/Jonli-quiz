@@ -23,8 +23,9 @@ h1{color:#FFC72C;text-align:center;margin:6px 0 12px;font-size:24px}
 .optbtn.bad{background:#B3261E;border-color:#FF8A80;color:#fff;font-weight:bold}
 .optbtn.hid{opacity:.22;text-decoration:line-through;pointer-events:none}
 .aibox{background:#0c1842;border-left:4px solid #8B5CF6;padding:10px;border-radius:8px;margin-top:10px;font-size:15px;line-height:1.45}
-.pill{display:inline-block;padding:4px 10px;border-radius:20px;font-size:13px;font-weight:bold;background:#1E63D6;margin-right:6px}
-.pill.used{background:#2d3448;color:#7b8190;text-decoration:line-through}
+.pill{display:inline-block;padding:6px 12px;border-radius:20px;font-size:13px;font-weight:bold;background:#1E63D6;color:#fff;border:none;margin-right:6px;cursor:pointer}
+.pill.ai{background:linear-gradient(135deg,#2563EB,#7C3AED)}
+.pill.used,.pill:disabled{background:#2d3448;color:#7b8190;text-decoration:line-through;cursor:default}
 .ladder{display:flex;flex-direction:column-reverse;gap:3px;margin-top:10px}
 .lstep{display:flex;justify-content:space-between;padding:4px 8px;border-radius:5px;font-size:13px;background:#0c1842;color:#B8C4E0}
 .lstep.safe{color:#FFC72C;font-weight:bold}
@@ -35,6 +36,9 @@ h1{color:#FFC72C;text-align:center;margin:6px 0 12px;font-size:24px}
 .bartxt{position:absolute;left:8px;top:2px;font-size:13px;font-weight:bold}
 input,select,button{font:inherit;padding:10px;border-radius:8px;border:none;box-sizing:border-box}
 button.gold{background:#FFC72C;color:#000;font-weight:bold;cursor:pointer}
+button.green{background:#1E8E4E;color:#fff;font-weight:bold;cursor:pointer}
+button.red{background:#B3261E;color:#fff;font-weight:bold;cursor:pointer}
+button:disabled{opacity:.4;cursor:default}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 </style></head>
 <body><div class="w">
@@ -54,7 +58,7 @@ button.gold{background:#FFC72C;color:#000;font-weight:bold;cursor:pointer}
 </div>
 <script>
 const L = ['A','B','C','D'];
-let S = null, teamsBuilt = false, myChoice = null, lastCur = null, myVote = null, lastMilStep = null;
+let S = null, teamsBuilt = false, myChoice = null, lastCur = null, myVote = null, lastMilStep = null, busyAI = false;
 let myName = sessionStorage.getItem('pname') || '';
 let myTeam = sessionStorage.getItem('pteam');
 myTeam = (myTeam !== null && myTeam !== '') ? Number(myTeam) : null;
@@ -104,6 +108,19 @@ async function sendTextAnswer(){
   if (r.ok) myChoice = txt;
 }
 
+async function sendMilPlay(action, extra){
+  const body = Object.assign({action}, extra || {});
+  if (action === 'ai'){ busyAI = true; render(); }
+  const r = await fetch('/api/mil_play', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  const j = await r.json();
+  if (action === 'ai') busyAI = false;
+  if (!r.ok){ alert(j.error || 'Xatolik'); return; }
+  await load();
+}
+
 async function sendMilVote(choice){
   const voter = myName || ('mehmon_' + (sessionStorage.getItem('vid') || (() => {
     const id = Math.random().toString(36).slice(2,8);
@@ -114,7 +131,15 @@ async function sendMilVote(choice){
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({voter, choice})
   });
-  if (r.ok) myVote = choice;
+  if (r.ok){ myVote = choice; await load(); }
+}
+
+function handleMilOptionClick(i, isPlayer){
+  if (isPlayer){
+    sendMilPlay('select', {choice: i});
+  } else {
+    sendMilVote(i);
+  }
 }
 
 function render(){
@@ -197,15 +222,21 @@ function renderMilPlayer(main){
   const prizes = m.prizes || [];
   const safes = m.safe_steps || [];
 
+  const isPlayer = (
+    m.player === 'Ishtirokchi' ||
+    (myName && myName.trim().toLowerCase() === m.player.trim().toLowerCase()) ||
+    (m.team !== null && myTeam === m.team)
+  );
+
   let h = `<div class="card" style="border:2px solid #FFC72C">
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px">
       <div>Ishtirokchi: <b style="color:#FFC72C">${esc(m.player)}</b></div>
       <div>Pog‘ona: <b>${m.step + 1}/${m.total_steps}</b> • Yutuq: <b style="color:#7CFC9A">${fmt(m.won)} ball</b></div>
     </div>
     <div style="margin-bottom:10px">
-      <span class="pill ${ll.fifty?'':'used'}">50:50</span>
-      <span class="pill ${ll.audience?'':'used'}">Guruh yordami</span>
-      <span class="pill ${ll.ai?'':'used'}">Gemini AI</span>
+      <button class="pill ${ll.fifty?'':'used'}" ${(!isPlayer || !m.active || m.revealed || !ll.fifty)?'disabled':''} onclick="sendMilPlay('5050')">50:50</button>
+      <button class="pill ${ll.audience?'':'used'}" ${(!isPlayer || !m.active || m.revealed || !ll.audience)?'disabled':''} onclick="sendMilPlay('audience')">Guruh yordami</button>
+      <button class="pill ai ${ll.ai?'':'used'}" ${(!isPlayer || !m.active || m.revealed || !ll.ai || busyAI)?'disabled':''} onclick="sendMilPlay('ai')">${busyAI ? 'AI o‘ylamoqda...' : 'Gemini AI'}</button>
     </div>
     <div style="font-size:13px;color:#93C5FD">${esc(q.cat)} • ${fmt(prizes[m.step] || 0)} balllik savol</div>
     <div class="q">${esc(q.q)}</div>`;
@@ -220,14 +251,27 @@ function renderMilPlayer(main){
     } else if (i === m.selected){
       cls += ' sel';
     }
-    const canVote = m.audience_open && !m.revealed && !isHid;
-    const voteTag = (canVote && myVote === i) ? ' (Sizning ovozingiz)' : '';
-    h += `<button class="${cls}" ${canVote?'':'disabled'} onclick="sendMilVote(${i})">${L[i]}) ${esc(opt)}${voteTag}</button>`;
+    const canClick = !m.revealed && !isHid && ((isPlayer && m.active) || (!isPlayer && m.audience_open));
+    const voteTag = (!isPlayer && m.audience_open && myVote === i) ? ' (Sizning ovozingiz)' : '';
+    h += `<button class="${cls}" ${canClick?'':'disabled'} onclick="handleMilOptionClick(${i}, ${isPlayer})">${L[i]}) ${esc(opt)}${voteTag}</button>`;
   });
 
-  if (m.audience_open){
+  if (isPlayer){
+    h += `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">`;
+    if (m.active && !m.revealed){
+      h += `<button class="gold" ${m.selected===null?'disabled':''} onclick="sendMilPlay('reveal')">Javobni tekshirish</button>`;
+      if (m.won > 0){
+        h += `<button class="red" onclick="if(confirm('Joriy yutuqni olib o‘yinni to‘xtatasizmi?')) sendMilPlay('walk')">Yutuqni olish (${fmt(m.won)})</button>`;
+      }
+    } else if (m.active && m.revealed && m.status === 'playing'){
+      h += `<button class="green" onclick="sendMilPlay('next')">Keyingi savol (${m.step + 2}-pog‘ona) ➔</button>`;
+      h += `<button class="red" onclick="if(confirm('Joriy yutuqni olib o‘yinni to‘xtatasizmi?')) sendMilPlay('walk')">Yutuqni olish (${fmt(m.won)})</button>`;
+    }
+    h += `</div>`;
+  } else if (m.audience_open && !m.revealed){
     h += `<div style="color:#FFC72C;font-weight:bold;margin-top:6px">Guruh yordami faol! Yuqoridan to‘g‘ri variantga ovoz bering.</div>`;
   }
+
   if (m.audience_open || m.vote_total > 0){
     const tot = m.vote_total || 0;
     h += `<div class="aibox"><b>Guruh ovozi (${tot} ta ovoz):</b>`;
