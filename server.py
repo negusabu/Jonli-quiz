@@ -1,4 +1,4 @@
-"""JEO QUIZ — jonli server va Gemini AI integratsiyasi (1-so‘rovli tezkor + zaxira modellar)."""
+"""JEO QUIZ — jonli server va Gemini AI integratsiyasi (katta kvotali modellar bilan)."""
 import json, os, random, socket, sys, threading, collections, glob, time
 import urllib.request, urllib.error
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -76,6 +76,13 @@ state = {
     'shown_opts': [], 'shown_c': None,
 }
 
+def extract_json_obj(text):
+    start = text.find('{')
+    end = text.rfind('}')
+    if start != -1 and end != -1 and end > start:
+        return json.loads(text[start:end + 1])
+    return json.loads(text)
+
 def call_gemini(prompt, json_mode=False, temperature=0.7):
     api_key = os.environ.get('GEMINI_API_KEY', '').strip() or GEMINI_API_KEY
     primary = os.environ.get('GEMINI_MODEL', '').strip() or GEMINI_MODEL
@@ -83,73 +90,71 @@ def call_gemini(prompt, json_mode=False, temperature=0.7):
         raise RuntimeError('GEMINI_API_KEY topilmadi. Render yoki .env fayliga kalitni kiriting.')
 
     candidates = []
-    for m in [primary, 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-3.8-flash']:
+    for m in ['gemini-2.5-flash-lite', 'gemma-3-27b-it', primary, 'gemini-2.0-flash', 'gemini-flash-latest']:
         if m and m not in candidates:
             candidates.append(m)
-
-    gen_cfg = {'temperature': temperature}
-    if json_mode:
-        gen_cfg['responseMimeType'] = 'application/json'
-    payload = {
-        'contents': [{'parts': [{'text': prompt}]}],
-        'generationConfig': gen_cfg
-    }
-    body_bytes = json.dumps(payload).encode('utf8')
 
     raw = None
     last_err = 'Gemini javob bermadi'
     for model in candidates:
         url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
+        is_gemma = model.startswith('gemma')
+        use_no_think = not is_gemma
+
         for attempt in range(2):
+            gen_cfg = {'temperature': temperature, 'maxOutputTokens': 4096}
+            if json_mode and not is_gemma:
+                gen_cfg['responseMimeType'] = 'application/json'
+            if use_no_think:
+                gen_cfg['thinkingConfig'] = {'thinkingBudget': 0}
+
+            payload = {
+                'contents': [{'parts': [{'text': prompt}]}],
+                'generationConfig': gen_cfg
+            }
             req = urllib.request.Request(
                 url,
-                data=body_bytes,
+                data=json.dumps(payload).encode('utf8'),
                 headers={'Content-Type': 'application/json'},
                 method='POST'
             )
             try:
-                with urllib.request.urlopen(req, timeout=75) as resp:
+                with urllib.request.urlopen(req, timeout=85) as resp:
                     raw = json.loads(resp.read().decode('utf8'))
                     break
             except urllib.error.HTTPError as e:
                 err_body = e.read().decode('utf8', errors='ignore')
-                last_err = f'Gemini API xatosi ({e.code}, {model}): {err_body[:160]}'
-                if e.code in (404, 429):
-                    break  # keyingi zaxira modelga o'tish
+                last_err = f'API xatosi ({e.code}, {model}): {err_body[:150]}'
+                if e.code == 400 and 'thinking' in err_body.lower() and use_no_think:
+                    use_no_think = False
+                    continue
+                if e.code in (400, 404, 429):
+                    break
                 if e.code in (500, 502, 503, 504) and attempt == 0:
                     time.sleep(2.0)
                     continue
                 break
             except Exception as e:
                 last_err = f'Ulanish xatosi ({model}): {e}'
-                if attempt == 0:
-                    time.sleep(1.5)
-                    continue
                 break
         if raw is not None:
             break
 
     if raw is None:
-        if '429' in last_err:
-            raise RuntimeError('Bepul API limiti (kvota) vaqtincha tugadi. 1 daqiqa kutib qayta bosing yoki Google AI Studio’da yangi API key yarating.')
         raise RuntimeError(last_err)
 
     try:
         text = raw['candidates'][0]['content']['parts'][0]['text'].strip()
     except Exception:
-        raise RuntimeError('Gemini kutilmagan javob qaytardi')
+        raise RuntimeError('AI kutilmagan javob qaytardi')
 
     if json_mode:
-        if text.startswith('```'):
-            text = text.strip('`')
-            if text.startswith('json'):
-                text = text[4:].strip()
-        return json.loads(text)
+        return extract_json_obj(text)
     return text
 
 def ai_generate_board(topic, level='universitet talabalari'):
     prompt = f"""O‘zbek tilida "Jeo Quiz" o‘yini uchun "{topic}" mavzusida ({level}) 5 ta kategoriya va har birida 5 tadan jami 25 ta test savoli tuz.
-Faqat quyidagi ixcham JSON formatida qaytar:
+Hech qanday qo‘shimcha matn yozmasdan, FAQAT quyidagi JSON formatida qaytar:
 {{
   "b": [
     {{
@@ -195,7 +200,7 @@ def ai_generate_single(cat, pts, hint=''):
     prompt = f"""O‘zbek tilidagi "Jeo Quiz" o‘yini uchun BITTA test savoli tuz.
 Kategoriya: "{cat}", qiyinlik darajasi: {pts} ball (100 - eng oson, 500 - eng qiyin).
 Qo‘shimcha ko‘rsatma: "{hint or 'mavzuga mos qiziqarli savol'}".
-Faqat quyidagi JSON obyektini qaytar:
+FAQAT quyidagi JSON obyektini qaytar:
 {{
   "q": "Savol matni",
   "opts": ["1-variant", "2-variant", "3-variant", "4-variant"],
@@ -235,7 +240,7 @@ Etalon to‘g‘ri javob: {q.get('ans', '')}
 Izoh: {q.get('exp', '')}
 Jamoalar javoblari (indeks: javob): {json.dumps(submitted, ensure_ascii=False)}
 
-Har bir jamoa indeksi uchun quyidagi JSON formatida natija qaytar:
+FAQAT quyidagi JSON formatida natija qaytar:
 {{
   "0": {{"percent": 90, "verdict": "To‘g‘ri", "comment": "Qisqa izoh (1 gap)"}},
   "1": {{"percent": 40, "verdict": "Qisman", "comment": "Qisqa izoh (1 gap)"}}
