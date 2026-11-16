@@ -1,18 +1,37 @@
 <!DOCTYPE html>
 <html lang="uz"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Boshqaruv — 5 xil Jonli O‘yin</title>
+<title>Boshqaruv — Jeo Quiz Menyu</title>
 <style>
 body{margin:0;background:#08102B;color:#fff;font-family:Arial,Helvetica,sans-serif}
 .w{max-width:1100px;margin:0 auto;padding:12px}
-h1{color:#FFC72C;margin:6px 0 12px;font-size:22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
-.badge{font-size:13px;padding:4px 10px;border-radius:20px;background:#13245C;color:#7CFC9A;border:1px solid #1E8E4E}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#101D4A;padding:10px 14px;border-radius:12px;border:1px solid #1E63D6;margin-bottom:10px;flex-wrap:wrap}
+.brand{font-size:20px;font-weight:bold;color:#FFC72C;display:flex;align-items:center;gap:8px}
+.badge{font-size:12px;padding:3px 9px;border-radius:20px;background:#13245C;color:#7CFC9A;border:1px solid #1E8E4E}
 .badge.off{color:#FF8A80;border-color:#B3261E}
+.menutoggle{background:#FFC72C;color:#000;font-weight:bold;padding:8px 14px;border-radius:8px;border:none;cursor:pointer;font-size:15px}
+.navdrawer{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;background:#0E1A42;padding:10px;border-radius:12px;border:1px solid #2F8BFF;margin-bottom:12px}
+.navdrawer.hidden{display:none}
+.navitem{padding:11px 10px;border-radius:9px;border:1px solid #2F8BFF;background:#13245C;color:#fff;font-weight:bold;font-size:14px;cursor:pointer;text-align:center}
+.navitem.active{background:#FFC72C;color:#000;border-color:#FFC72C}
+
+.scorestrip{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px}
+.scmini{background:#13245C;border:1px solid #1E63D6;border-radius:9px;padding:7px 4px;text-align:center}
+.scmini .t{font-size:12px;color:#B8C4E0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scmini .v{font-size:19px;font-weight:bold;color:#FFC72C}
+
+.menugrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.gamecard{background:#13245C;border:2px solid #2F8BFF;border-radius:14px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;cursor:pointer;transition:transform .12s}
+.gamecard:hover{transform:translateY(-2px)}
+.gamecard.live{border-color:#FFC72C;background:linear-gradient(160deg,#182D73,#0E1A42)}
+.gamecard .ghead{display:flex;justify-content:space-between;align-items:center}
+.gamecard .gicon{font-size:30px}
+.gamecard .glive{font-size:12px;font-weight:bold;padding:3px 9px;border-radius:20px;background:#1E8E4E;color:#fff}
+.gamecard .gtitle{font-size:18px;font-weight:bold;color:#FFC72C}
+.gamecard .gdesc{font-size:14px;color:#CBD5E1;line-height:1.4}
+
 .row{display:flex;gap:12px;flex-wrap:wrap}
 .card{background:#13245C;border-radius:12px;padding:14px;flex:1;min-width:300px;margin-bottom:12px}
 .card h2{font-size:16px;color:#2F8BFF;margin:0 0 8px}
-.modebar{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:8px;margin-bottom:12px}
-.modebtn{padding:11px 10px;border-radius:10px;border:2px solid #2F8BFF;background:#0c1842;color:#fff;font-weight:bold;cursor:pointer;font-size:14px;text-align:center}
-.modebtn.active{background:linear-gradient(135deg,#FFC72C,#F59E0B);color:#000;border-color:#FFC72C}
 .board{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .cat{background:#1E63D6;text-align:center;font-size:12px;font-weight:bold;padding:8px 4px;border-radius:6px;min-height:34px;display:flex;align-items:center;justify-content:center}
 .cell{background:#13245C;color:#FFC72C;font-weight:bold;font-size:20px;border:2px solid #1E63D6;border-radius:6px;padding:12px 0;cursor:pointer;text-align:center}
@@ -54,102 +73,141 @@ button:disabled{opacity:.38;cursor:default}
 table{width:100%;border-collapse:collapse}
 td{padding:6px 2px;border-bottom:1px solid #1B3180;font-size:15px}
 input{font:inherit;padding:8px;border-radius:6px;border:none;width:100%;margin:4px 0;box-sizing:border-box}
-.msg{color:#FF8A80;min-height:18px;margin-bottom:6px;font-weight:bold}
+.msg{color:#FF8A80;min-height:0;margin-bottom:6px;font-weight:bold}
 textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:none;margin:4px 0;color:#000}
 #fopts input[type=text],#fopts input{width:100%}
 </style></head>
 <body><div class="w">
-<h1><span>Boshqaruv paneli — Jeo Quiz</span> <span id="aibadge" class="badge off">Gemini AI: tekshirilmoqda...</span></h1>
+
+<div class="topbar">
+  <div class="brand">
+    <span>Jeo Quiz</span>
+    <span id="aibadge" class="badge off">AI...</span>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button onclick="openTab('games')" style="background:#1B3180;font-size:14px">🎮 O‘yinlar</button>
+    <button class="menutoggle" onclick="toggleMenu()">☰ Menyu</button>
+  </div>
+</div>
+
+<div id="navdrawer" class="navdrawer">
+  <button id="tab_games" class="navitem active" onclick="openTab('games')">🎮 O‘yinlar menyusi</button>
+  <button id="tab_play" class="navitem" onclick="openTab('play')">▶️ Joriy o‘yin</button>
+  <button id="tab_ai" class="navitem" onclick="openTab('ai')">🤖 AI Savol tuzish</button>
+  <button id="tab_edit" class="navitem" onclick="openTab('edit')">✏️ Savollar (25)</button>
+  <button id="tab_teams" class="navitem" onclick="openTab('teams')">👥 Jamoalar</button>
+</div>
+
 <div class="msg" id="msg"></div>
 
-<div class="modebar">
-  <button id="mjeo" class="modebtn active" onclick="switchMode('jeopardy')">1. Jeo Quiz (5×5)</button>
-  <button id="mmil" class="modebtn" onclick="switchMode('millionaire')">2. Millioner</button>
-  <button id="mauc" class="modebtn" onclick="switchMode('auction')">3. Auksion va Stavka</button>
-  <button id="mter" class="modebtn" onclick="switchMode('territory')">4. Hududlar jangi</button>
-  <button id="mbomb" class="modebtn" onclick="switchMode('bomb')">5. Zanjirli Bomba</button>
+<!-- TAB 1: O'YINLAR MENYUSI -->
+<div id="view_games">
+  <div class="card" style="background:#0E1A42;border:1px solid #2F8BFF">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:18px;font-weight:bold;color:#FFC72C">O‘yin turini tanlang</div>
+        <div style="font-size:13px;color:#B8C4E0">Barcha 5 ta o‘yin tayyor 25 ta savol asosida ishlaydi</div>
+      </div>
+      <button class="ai" onclick="openTab('ai')">+ Yangi mavzu / Fayl yuklash</button>
+    </div>
+  </div>
+  <div id="gamemenugrid" class="menugrid"></div>
 </div>
 
-<div class="card" style="border:1px solid #7C3AED">
-  <h2 style="color:#C4B5FD">GEMINI AI — MAVZU YOKI FAYLDAN 25 TA SAVOL YARATISH</h2>
-  <div class="row" style="align-items:center">
-    <div style="flex:2;min-width:210px"><input id="aitopic" placeholder="Mavzu nomini yozing (masalan: Yashil iqtisodiyot)"></div>
-    <div style="flex:1;min-width:160px">
-      <select id="ailevel">
-        <option value="universitet talabalari">Talabalar darajasi</option>
-        <option value="maktab o‘quvchilari">O‘quvchilar darajasi</option>
-        <option value="chuqurlashtirilgan mutaxassislar">Murakkab / Olimpiada</option>
-      </select>
+<!-- TAB 2: JORIY O'YIN -->
+<div id="view_play" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+    <button onclick="openTab('games')" style="background:#1B3180;font-size:14px">← O‘yinlar menyusiga qaytish</button>
+    <span id="curmodelabel" style="color:#FFC72C;font-weight:bold;font-size:15px"></span>
+  </div>
+  <div class="scorestrip" id="scorestrip"></div>
+
+  <!-- 1. JEOPARDY -->
+  <div id="jeosection" class="row">
+    <div class="card" style="flex:2">
+      <h2>ASOSIY JADVAL (bosing — savol ochiladi)</h2>
+      <div class="board" id="board"></div>
     </div>
-    <div><button class="ai" id="aigenbtn" onclick="genBoard()">Mavzudan 25 savol</button></div>
+    <div class="card">
+      <h2>SAVOL</h2>
+      <div id="qpanel" class="muted">Savol tanlanmagan</div>
+    </div>
   </div>
 
-  <div class="divider">
-    <div style="font-size:13px;color:#C4B5FD;font-weight:bold;margin-bottom:4px">YOKI TAYYOR FAYL YUKLANG (PDF, Word .docx, TXT, Rasm):</div>
+  <!-- 2. MILLIONAIRE -->
+  <div id="milsection" style="display:none">
+    <div class="card" style="border:1px solid #FFC72C">
+      <h2 style="color:#FFC72C">KIM MILLIONER BO‘LISHNI XOHLAYDI? — YANGI O‘YIN</h2>
+      <div class="row" style="align-items:center">
+        <div style="flex:2;min-width:180px"><input id="milplayer" placeholder="Ishtirokchi ismi (ixtiyoriy)"></div>
+        <div style="flex:1;min-width:160px"><select id="milteam"></select></div>
+        <div><button class="gold" onclick="startMil()">Yangi Millioner o‘yini</button></div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="card" style="flex:2" id="milpanel">O‘yin boshlanmagan</div>
+      <div class="card" style="flex:1;min-width:240px">
+        <h2 style="color:#FFC72C">YUTUQ ZINAPOYASI (15 POG‘ONA)</h2>
+        <div id="milladder" class="ladder"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. AUCTION -->
+  <div id="aucsection" style="display:none">
+    <div class="card" style="border:1px solid #F59E0B" id="aucpanel">Yuklanmoqda...</div>
+  </div>
+
+  <!-- 4. TERRITORY -->
+  <div id="tersection" style="display:none">
+    <div class="row">
+      <div class="card" style="flex:2;border:1px solid #10B981">
+        <h2 style="color:#6EE7B7">HUDUDLAR JANGI (5×5 XARITA — KATAKCHANI BOSING)</h2>
+        <div class="board" id="termap"></div>
+      </div>
+      <div class="card" style="flex:1" id="terpanel">Yuklanmoqda...</div>
+    </div>
+  </div>
+
+  <!-- 5. BOMB -->
+  <div id="bombsection" style="display:none">
+    <div class="card" style="border:1px solid #EF4444" id="bombpanel">Yuklanmoqda...</div>
+  </div>
+</div>
+
+<!-- TAB 3: AI SAVOL YARATISH -->
+<div id="view_ai" style="display:none">
+  <div class="card" style="border:1px solid #7C3AED">
+    <h2 style="color:#C4B5FD">GEMINI AI — MAVZU YOKI FAYLDAN 25 TA SAVOL YARATISH</h2>
     <div class="row" style="align-items:center">
-      <div style="flex:2;min-width:220px"><input class="filebox" type="file" id="aifile" accept=".pdf,.docx,.txt,.md,.csv,.jpg,.jpeg,.png,.webp"></div>
-      <div style="flex:2;min-width:200px"><input id="aifilehint" placeholder="Ixtiyoriy izoh (masalan: faqat 1-bobdan yoki tayyor testlar)"></div>
-      <div><button class="green" id="aifilebtn" onclick="genFromFile()">Fayldan 25 savol</button></div>
+      <div style="flex:2;min-width:210px"><input id="aitopic" placeholder="Mavzu nomini yozing (masalan: Yashil iqtisodiyot)"></div>
+      <div style="flex:1;min-width:160px">
+        <select id="ailevel">
+          <option value="universitet talabalari">Talabalar darajasi</option>
+          <option value="maktab o‘quvchilari">O‘quvchilar darajasi</option>
+          <option value="chuqurlashtirilgan mutaxassislar">Murakkab / Olimpiada</option>
+        </select>
+      </div>
+      <div><button class="ai" id="aigenbtn" onclick="genBoard()">Mavzudan 25 savol</button></div>
     </div>
-  </div>
 
-  <div class="ans" id="aigenmsg" style="color:#7CFC9A;font-weight:bold">Mavzu yozing yoki fayl yuklang — tuzilgan 25 ta savol barcha 5 o‘yinda ishlaydi.</div>
+    <div class="divider">
+      <div style="font-size:13px;color:#C4B5FD;font-weight:bold;margin-bottom:4px">YOKI TAYYOR FAYL YUKLANG (PDF, Word .docx, TXT, Rasm):</div>
+      <div class="row" style="align-items:center">
+        <div style="flex:2;min-width:220px"><input class="filebox" type="file" id="aifile" accept=".pdf,.docx,.txt,.md,.csv,.jpg,.jpeg,.png,.webp"></div>
+        <div style="flex:2;min-width:200px"><input id="aifilehint" placeholder="Ixtiyoriy izoh (masalan: faqat 1-bobdan yoki tayyor testlar)"></div>
+        <div><button class="green" id="aifilebtn" onclick="genFromFile()">Fayldan 25 savol</button></div>
+      </div>
+    </div>
+
+    <div class="ans" id="aigenmsg" style="color:#7CFC9A;font-weight:bold">Mavzu yozing yoki fayl yuklang — tuzilgan 25 ta savol barcha 5 o‘yinda ishlaydi.</div>
+  </div>
 </div>
 
-<!-- 1. JEOPARDY -->
-<div id="jeosection" class="row">
-  <div class="card" style="flex:2">
-    <h2>ASOSIY JADVAL (bosing — savol ochiladi)</h2>
-    <div class="board" id="board"></div>
-  </div>
+<!-- TAB 4: SAVOLLARNI TAHRIRLASH -->
+<div id="view_edit" style="display:none">
   <div class="card">
-    <h2>SAVOL</h2>
-    <div id="qpanel" class="muted">Savol tanlanmagan</div>
-  </div>
-</div>
-
-<!-- 2. MILLIONAIRE -->
-<div id="milsection" style="display:none">
-  <div class="card" style="border:1px solid #FFC72C">
-    <h2 style="color:#FFC72C">KIM MILLIONER BO‘LISHNI XOHLAYDI? — YANGI O‘YIN</h2>
-    <div class="row" style="align-items:center">
-      <div style="flex:2;min-width:180px"><input id="milplayer" placeholder="Ishtirokchi ismi (ixtiyoriy)"></div>
-      <div style="flex:1;min-width:160px"><select id="milteam"></select></div>
-      <div><button class="gold" onclick="startMil()">Yangi Millioner o‘yini</button></div>
-    </div>
-  </div>
-  <div class="row">
-    <div class="card" style="flex:2" id="milpanel">O‘yin boshlanmagan</div>
-    <div class="card" style="flex:1;min-width:240px">
-      <h2 style="color:#FFC72C">YUTUQ ZINAPOYASI (15 POG‘ONA)</h2>
-      <div id="milladder" class="ladder"></div>
-    </div>
-  </div>
-</div>
-
-<!-- 3. AUCTION -->
-<div id="aucsection" style="display:none">
-  <div class="card" style="border:1px solid #F59E0B" id="aucpanel">Yuklanmoqda...</div>
-</div>
-
-<!-- 4. TERRITORY -->
-<div id="tersection" style="display:none">
-  <div class="row">
-    <div class="card" style="flex:2;border:1px solid #10B981">
-      <h2 style="color:#6EE7B7">HUDUDLAR JANGI (5×5 XARITA — KATAKCHANI BOSING)</h2>
-      <div class="board" id="termap"></div>
-    </div>
-    <div class="card" style="flex:1" id="terpanel">Yuklanmoqda...</div>
-  </div>
-</div>
-
-<!-- 5. BOMB -->
-<div id="bombsection" style="display:none">
-  <div class="card" style="border:1px solid #EF4444" id="bombpanel">Yuklanmoqda...</div>
-</div>
-
-<div class="row">
-  <div class="card"><h2>SAVOLNI TAHRIRLASH (katakcha tanlang)</h2>
+    <h2>SAVOLNI TAHRIRLASH (katakcha tanlang)</h2>
     <div class="row" style="align-items:center">
       <div style="flex:2"><select id="slot" onchange="loadSlot()"></select></div>
       <div><button class="ai" id="aislotbtn" onclick="genSingleSlot()">AI bitta savol tuzsin</button></div>
@@ -163,24 +221,55 @@ textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border
   </div>
 </div>
 
-<div class="row">
-  <div class="card"><h2>JAMOALAR VA BALLAR</h2><div id="teams"></div>
-    <h2 style="margin-top:14px">KIRGANLAR (<span id="pc">0</span>)</h2><div class="ans" id="players"></div></div>
-  <div class="card"><h2>JAMOA NOMLARI</h2>
-    <div id="names"></div>
-    <button class="gold" style="width:100%;margin-top:8px" onclick="saveNames()">Nomlarni saqlash</button>
-    <h2 style="margin-top:16px">BOSHQARUV</h2>
-    <button class="red" style="width:100%" onclick="resetAll()">Hammasini tozalash (yangi o‘yin)</button>
+<!-- TAB 5: JAMOALAR VA SOZLAMALAR -->
+<div id="view_teams" style="display:none">
+  <div class="row">
+    <div class="card"><h2>JAMOALAR VA BALLAR</h2><div id="teams"></div>
+      <h2 style="margin-top:14px">KIRGANLAR (<span id="pc">0</span>)</h2><div class="ans" id="players"></div></div>
+    <div class="card"><h2>JAMOA NOMLARI</h2>
+      <div id="names"></div>
+      <button class="gold" style="width:100%;margin-top:8px" onclick="saveNames()">Nomlarni saqlash</button>
+      <h2 style="margin-top:16px">BOSHQARUV</h2>
+      <button class="red" style="width:100%" onclick="resetAll()">Hammasini tozalash (yangi o‘yin)</button>
+    </div>
   </div>
 </div>
+
 </div>
 <script>
 let CATS = [], lastCatsKey = '';
 const L = ['A','B','C','D'];
 const TICONS = ['🛡️','⚔️','🏰','👑'];
+const GAMES = [
+  {id:'jeopardy', icon:'🟦', title:'1. Jeo Quiz (5×5 Jadval)', desc:'5 ta bo‘lim va 100–500 ballik katakchalar. Jamoalar navbat bilan katakcha tanlab ball yig‘adi.'},
+  {id:'millionaire', icon:'💎', title:'2. Kim millioner bo‘lishni xohlaydi?', desc:'15 pog‘onali yutuq zinapoyasi. 50:50, Guruh yordami va Gemini AI maslahati mavjud.'},
+  {id:'auction', icon:'💰', title:'3. Auksion va Stavka', desc:'Savoldan oldin kapitaldan 10%–ALL-IN stavka tikiladi. To‘g‘ri javob stavkani 2 barobar oshiradi.'},
+  {id:'territory', icon:'🗺️', title:'4. Hududlar jangi (5×5)', desc:'25 ta sektorli xaritada 4 jamoa hudud talashadi. Birinchi to‘g‘ri javob bergan jamoa katakni egallaydi.'},
+  {id:'bomb', icon:'💣', title:'5. Zanjirli Bomba', desc:'Har jamoada 3 ta jon bor. Taymer tugamasidan to‘g‘ri javob berib bombani keyingi jamoaga uzating!'},
+];
+
 let S = null, PIN = sessionStorage.getItem('pin') || '', namesDrawn = false, QL = [], busyAI = false, milTeamsDrawn = false;
+let activeTab = 'games';
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = n => Number(n || 0).toLocaleString('ru-RU');
+
+function toggleMenu(){
+  document.getElementById('navdrawer').classList.toggle('hidden');
+}
+
+function openTab(tab){
+  activeTab = tab;
+  ['games','play','ai','edit','teams'].forEach(t => {
+    document.getElementById('view_' + t).style.display = (t === tab) ? 'block' : 'none';
+    const btn = document.getElementById('tab_' + t);
+    if (btn) btn.className = 'navitem' + (t === tab ? ' active' : '');
+  });
+}
+
+async function selectGameFromMenu(mode){
+  const res = await act({action:'set_mode', mode: mode});
+  if (res) openTab('play');
+}
 
 async function load(){
   if (!PIN){ PIN = prompt('Admin PIN (serverda ko‘rsatilgan):') || ''; sessionStorage.setItem('pin', PIN); }
@@ -205,20 +294,33 @@ async function act(obj){
   return j;
 }
 
-function switchMode(m){ act({action:'set_mode', mode:m}); }
-
 function render(){
   if (!S) return;
   const badge = document.getElementById('aibadge');
-  if (S.ai_ready){ badge.textContent = 'Gemini AI: Faol'; badge.className = 'badge'; }
-  else { badge.textContent = 'Gemini AI: Kalit kiritilmagan'; badge.className = 'badge off'; }
+  if (S.ai_ready){ badge.textContent = 'AI: Faol'; badge.className = 'badge'; }
+  else { badge.textContent = 'AI: Yo‘q'; badge.className = 'badge off'; }
 
   const m = S.mode || 'jeopardy';
-  document.getElementById('mjeo').className = 'modebtn' + (m==='jeopardy'?' active':'');
-  document.getElementById('mmil').className = 'modebtn' + (m==='millionaire'?' active':'');
-  document.getElementById('mauc').className = 'modebtn' + (m==='auction'?' active':'');
-  document.getElementById('mter').className = 'modebtn' + (m==='territory'?' active':'');
-  document.getElementById('mbomb').className = 'modebtn' + (m==='bomb'?' active':'');
+  const gObj = GAMES.find(x => x.id === m) || GAMES[0];
+  document.getElementById('curmodelabel').textContent = gObj.icon + ' ' + gObj.title;
+
+  // Game menu grid
+  document.getElementById('gamemenugrid').innerHTML = GAMES.map(g => {
+    const isLive = g.id === m;
+    return `<div class="gamecard ${isLive?'live':''}" onclick="selectGameFromMenu('${g.id}')">
+      <div>
+        <div class="ghead"><span class="gicon">${g.icon}</span>${isLive?'<span class="glive">● FAOL O‘YIN</span>':''}</div>
+        <div class="gtitle" style="margin-top:8px">${esc(g.title)}</div>
+        <div class="gdesc" style="margin-top:6px">${esc(g.desc)}</div>
+      </div>
+      <button class="${isLive?'gold':''}" style="width:100%">${isLive?'Davom ettirish ➔':'O‘yinni ochish ➔'}</button>
+    </div>`;
+  }).join('');
+
+  // Compact score strip in Play tab
+  document.getElementById('scorestrip').innerHTML = S.teams.map((t,i)=>
+    `<div class="scmini"><div class="t">${esc(t)}</div><div class="v">${S.scores[i]}</div></div>`
+  ).join('');
 
   document.getElementById('jeosection').style.display = m==='jeopardy' ? 'flex' : 'none';
   document.getElementById('milsection').style.display = m==='millionaire' ? 'block' : 'none';
@@ -410,7 +512,7 @@ function renderAuctionAdmin(){
     return;
   }
   let x = `<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-    <h2 style="color:#FBBF24;margin:0">3. AUKSION VA STAVKA — ${a.round}/${a.total_rounds}-RAUND</h2>
+    <h2 style="color:#FBBF24;margin:0">AUKSION VA STAVKA — ${a.round}/${a.total_rounds}-RAUND</h2>
     <div><b>Bo‘lim:</b> <span style="color:#7CFC9A">${esc(a.cat)}</span></div>
   </div>`;
 
@@ -502,7 +604,7 @@ function renderBombAdmin(){
   }
   const holderName = S.teams[b.holder] || '1-jamoa';
   let x = `<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-    <h2 style="color:#F87171;margin:0">5. ZANJIRLI BOMBA — NAVBAT: <span style="color:#FFC72C">${esc(holderName)}</span></h2>
+    <h2 style="color:#F87171;margin:0">ZANJIRLI BOMBA — NAVBAT: <span style="color:#FFC72C">${esc(holderName)}</span></h2>
     <div style="font-size:22px;font-weight:bold;color:${b.time_left<=5?'#FF8A80':'#7CFC9A'}">⏱ ${b.time_left} s</div>
   </div>`;
 
@@ -670,7 +772,7 @@ function editSlot(idx){
   if (idx === null || idx === undefined) return;
   document.getElementById('slot').value = idx;
   loadSlot();
-  document.getElementById('fq').scrollIntoView({behavior:'smooth', block:'center'});
+  openTab('edit');
 }
 async function saveSlot(){
   const i = Number(document.getElementById('slot').value);
