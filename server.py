@@ -1,4 +1,4 @@
-"""JEO QUIZ — jonli server va Gemini AI integratsiyasi (katta kvotali modellar bilan)."""
+"""JEO QUIZ — jonli server va tezkor orqa fon Gemini AI."""
 import json, os, random, socket, sys, threading, collections, glob, time
 import urllib.request, urllib.error
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -20,7 +20,7 @@ load_dotenv()
 
 PORT = int(os.environ.get('PORT', 8000))
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '').strip()
-GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash-lite').strip()
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-3.8-flash').strip()
 
 def resolve_qs_path():
     if len(sys.argv) > 1:
@@ -35,7 +35,6 @@ QS_PATH = resolve_qs_path()
 QS = json.load(open(QS_PATH, encoding='utf8'))
 
 def check_quiz(qs):
-    """25 ta savol, 5 kategoriya, har kategoriyada 100..500. Qaytaradi: (xatolar, cats, c_taqsimoti)"""
     errors = []
     if len(qs) != 25:
         errors.append(f'Savollar soni 25 bo‘lishi kerak, hozir {len(qs)} ta')
@@ -50,7 +49,7 @@ def check_quiz(qs):
         want_cat = cats[i // 5] if len(cats) == 5 else None
         want_pts = (i % 5 + 1) * 100
         if q['cat'] != want_cat or q['pts'] != want_pts:
-            errors.append(f'{i+1}-savol: kategoriya yoki ball tartibi noto‘g‘ri ({q["cat"]}, {q["pts"]})')
+            errors.append(f'{i+1}-savol: kategoriya yoki ball tartibi noto‘g‘ri')
     dist = collections.Counter(q['c'] for q in qs if q.get('opts'))
     return errors, cats, dist
 
@@ -72,6 +71,9 @@ state = {
     'text_answers': {},
     'ai_grades': {},
     'ai_note': '',
+    'ai_busy': False,
+    'ai_status': '',
+    'ai_error': '',
     'players': {},
     'shown_opts': [], 'shown_c': None,
 }
@@ -87,25 +89,25 @@ def call_gemini(prompt, json_mode=False, temperature=0.7):
     api_key = os.environ.get('GEMINI_API_KEY', '').strip() or GEMINI_API_KEY
     primary = os.environ.get('GEMINI_MODEL', '').strip() or GEMINI_MODEL
     if not api_key:
-        raise RuntimeError('GEMINI_API_KEY topilmadi. Render yoki .env fayliga kalitni kiriting.')
+        raise RuntimeError('GEMINI_API_KEY topilmadi.')
 
     candidates = []
-    for m in ['gemini-2.5-flash-lite', 'gemma-3-27b-it', primary, 'gemini-2.0-flash', 'gemini-flash-latest']:
+    for m in [primary, 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite']:
         if m and m not in candidates:
             candidates.append(m)
 
     raw = None
-    last_err = 'Gemini javob bermadi'
+    last_err = 'AI javob bermadi'
     for model in candidates:
         url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
-        is_gemma = model.startswith('gemma')
-        use_no_think = not is_gemma
-
-        for attempt in range(2):
-            gen_cfg = {'temperature': temperature, 'maxOutputTokens': 4096}
-            if json_mode and not is_gemma:
+        think_mode = 'minimal'
+        for attempt in range(3):
+            gen_cfg = {'temperature': temperature, 'maxOutputTokens': 1400}
+            if json_mode:
                 gen_cfg['responseMimeType'] = 'application/json'
-            if use_no_think:
+            if think_mode == 'minimal':
+                gen_cfg['thinkingConfig'] = {'thinkingLevel': 'minimal'}
+            elif think_mode == 'zero':
                 gen_cfg['thinkingConfig'] = {'thinkingBudget': 0}
 
             payload = {
@@ -119,28 +121,37 @@ def call_gemini(prompt, json_mode=False, temperature=0.7):
                 method='POST'
             )
             try:
-                with urllib.request.urlopen(req, timeout=85) as resp:
+                with urllib.request.urlopen(req, timeout=35) as resp:
                     raw = json.loads(resp.read().decode('utf8'))
                     break
             except urllib.error.HTTPError as e:
                 err_body = e.read().decode('utf8', errors='ignore')
-                last_err = f'API xatosi ({e.code}, {model}): {err_body[:150]}'
-                if e.code == 400 and 'thinking' in err_body.lower() and use_no_think:
-                    use_no_think = False
-                    continue
-                if e.code in (400, 404, 429):
+                last_err = f'API xatosi ({e.code}, {model}): {err_body[:140]}'
+                if e.code == 400 and 'thinking' in err_body.lower():
+                    if think_mode == 'minimal':
+                        think_mode = 'zero'
+                        continue
+                    elif think_mode == 'zero':
+                        think_mode = 'none'
+                        continue
+                if e.code in (404, 429):
                     break
-                if e.code in (500, 502, 503, 504) and attempt == 0:
-                    time.sleep(2.0)
+                if e.code in (500, 502, 503, 504) and attempt < 2:
+                    time.sleep(1.5 * (attempt + 1))
                     continue
                 break
             except Exception as e:
                 last_err = f'Ulanish xatosi ({model}): {e}'
+                if attempt < 1:
+                    time.sleep(1.0)
+                    continue
                 break
         if raw is not None:
             break
 
     if raw is None:
+        if '429' in last_err:
+            raise RuntimeError('Bepul API limiti to‘ldi. 1 daqiqa kutib qayta bosing.')
         raise RuntimeError(last_err)
 
     try:
@@ -152,99 +163,114 @@ def call_gemini(prompt, json_mode=False, temperature=0.7):
         return extract_json_obj(text)
     return text
 
-def ai_generate_board(topic, level='universitet talabalari'):
-    prompt = f"""O‘zbek tilida "Jeo Quiz" o‘yini uchun "{topic}" mavzusida ({level}) 5 ta kategoriya va har birida 5 tadan jami 25 ta test savoli tuz.
-Hech qanday qo‘shimcha matn yozmasdan, FAQAT quyidagi JSON formatida qaytar:
-{{
-  "b": [
-    {{
-      "n": "Kategoriya (2 so‘z)",
-      "s": [
-        {{"q": "Qisqa savol", "o": ["A", "B", "C", "D"], "c": 0, "e": "1 gaplik qisqa izoh"}}
-      ]
-    }}
-  ]
-}}
-Qoidalar: "b" da aynan 5 ta kategoriya, har bir "s" da 100 dan 500 ballgacha qiyinlashuvchi 5 ta savol, 4 ta qisqa variant ("o"), to‘g‘ri indeks "c" (0..3) turlicha bo‘lsin."""
-    data = call_gemini(prompt, json_mode=True, temperature=0.7)
-    cats = data.get('b') or data.get('categories') or []
-    if len(cats) != 5:
-        raise RuntimeError('AI 5 ta kategoriya qaytarmadi, qayta urinib ko‘ring')
-    result = []
-    for cat_obj in cats:
-        cname = str(cat_obj.get('n') or cat_obj.get('name') or 'Kategoriya').strip()[:35]
-        qs_list = cat_obj.get('s') or cat_obj.get('questions') or []
-        if len(qs_list) != 5:
-            raise RuntimeError(f'"{cname}" kategoriyasida 5 ta savol chiqmadi')
-        for idx, item in enumerate(qs_list):
-            opts = [str(x).strip() for x in (item.get('o') or item.get('opts') or [])][:4]
-            if len(opts) < 4:
-                raise RuntimeError('Variantlar to‘liq shakllanmadi')
-            c = int(item.get('c', 0))
-            if not (0 <= c < 4):
-                c = 0
-            result.append({
-                'cat': cname,
-                'pts': (idx + 1) * 100,
-                'q': str(item.get('q', '')).strip(),
-                'opts': opts,
-                'c': c,
-                'exp': str(item.get('e') or item.get('exp') or 'Izoh').strip()
-            })
-    errs, new_cats, _ = check_quiz(result)
-    if errs:
-        raise RuntimeError('AI generatsiya tekshiruvidan o‘tmadi: ' + errs[0])
-    return result, new_cats
+def ai_generate_category(topic, cname, level):
+    prompt = f"""O‘zbek tilida "{topic}" mavzusining "{cname}" bo‘limi uchun ({level}) 5 ta qisqa test savoli tuz (100, 200, 300, 400, 500 ball).
+FAQAT shu JSON formatida qaytar:
+{{"s":[{{"q":"Savol","o":["A","B","C","D"],"c":0,"e":"1 gap izoh"}}]}}
+Qoidalar: "s" da 5 ta savol (100..500 ball), 4 ta qisqa variant, "c" (0..3) turlicha bo‘lsin."""
+    for _ in range(2):
+        data = call_gemini(prompt, json_mode=True, temperature=0.7)
+        qs_list = data.get('s') or data.get('questions') or []
+        if len(qs_list) == 5:
+            cat_qs = []
+            ok = True
+            for idx, item in enumerate(qs_list):
+                opts = [str(x).strip() for x in (item.get('o') or item.get('opts') or [])][:4]
+                if len(opts) < 4:
+                    ok = False
+                    break
+                c = int(item.get('c', 0))
+                if not (0 <= c < 4):
+                    c = 0
+                cat_qs.append({
+                    'cat': cname,
+                    'pts': (idx + 1) * 100,
+                    'q': str(item.get('q', '')).strip(),
+                    'opts': opts,
+                    'c': c,
+                    'exp': str(item.get('e') or item.get('exp') or 'Izoh').strip()
+                })
+            if ok:
+                return cat_qs
+    raise RuntimeError(f'"{cname}" bo‘limida 5 ta savol shakllanmadi')
+
+def bg_generate_board(topic, level):
+    global QS, _cats
+    try:
+        with lock:
+            state['ai_status'] = '5 ta kategoriya nomi tuzilmoqda...'
+        cat_prompt = f"""O‘zbek tilida "{topic}" mavzusi ({level}) uchun 5 ta alohida bo‘lim nomini tuz.
+FAQAT shu JSONni qaytar: {{"categories":["1-nom","2-nom","3-nom","4-nom","5-nom"]}}"""
+        cat_data = call_gemini(cat_prompt, json_mode=True, temperature=0.7)
+        raw_cats = [str(x).strip()[:35] for x in (cat_data.get('categories') or []) if str(x).strip()]
+        cats = []
+        for c in raw_cats:
+            if c not in cats:
+                cats.append(c)
+        if len(cats) < 5:
+            raise RuntimeError('AI 5 ta kategoriya tuza olmadi, qayta urinib ko‘ring')
+        cats = cats[:5]
+
+        result = []
+        for i, cname in enumerate(cats):
+            with lock:
+                state['ai_status'] = f'{i+1}/5-bo‘lim tuzilmoqda: {cname}...'
+            cat_qs = ai_generate_category(topic, cname, level)
+            result.extend(cat_qs)
+            if i < 4:
+                time.sleep(0.8)
+
+        errs, new_cats, _ = check_quiz(result)
+        if errs:
+            raise RuntimeError(errs[0])
+
+        with lock:
+            QS = result
+            _cats = new_cats
+            try:
+                save_questions()
+            except Exception:
+                pass
+            state.update(
+                cur=None, revealed=False, used=[False] * len(QS),
+                answers={}, text_answers={}, ai_grades={}, ai_note='',
+                ai_busy=False, ai_error='',
+                ai_status=f'Tayyor! "{topic}" bo‘yicha 25 ta savol jadvalga yuklandi ✔'
+            )
+    except Exception as e:
+        with lock:
+            state['ai_busy'] = False
+            state['ai_status'] = ''
+            state['ai_error'] = str(e)
 
 def ai_generate_single(cat, pts, hint=''):
-    prompt = f"""O‘zbek tilidagi "Jeo Quiz" o‘yini uchun BITTA test savoli tuz.
-Kategoriya: "{cat}", qiyinlik darajasi: {pts} ball (100 - eng oson, 500 - eng qiyin).
-Qo‘shimcha ko‘rsatma: "{hint or 'mavzuga mos qiziqarli savol'}".
-FAQAT quyidagi JSON obyektini qaytar:
-{{
-  "q": "Savol matni",
-  "opts": ["1-variant", "2-variant", "3-variant", "4-variant"],
-  "c": 1,
-  "exp": "Qisqa izoh"
-}}"""
+    prompt = f"""O‘zbek tilida "{cat}" kategoriyasi uchun {pts} ballik BITTA test savoli tuz ({hint or 'qiziqarli savol'}).
+FAQAT shu JSONni qaytar: {{"q":"Savol","opts":["A","B","C","D"],"c":1,"exp":"Qisqa izoh"}}"""
     item = call_gemini(prompt, json_mode=True, temperature=0.8)
     opts = [str(x).strip() for x in (item.get('opts') or [])][:4]
     c = int(item.get('c', 0))
     if len(opts) < 2 or not (0 <= c < len(opts)):
-        raise RuntimeError('AI to‘g‘ri formatda savol tuza olmadi')
+        raise RuntimeError('AI to‘g‘ri savol tuza olmadi')
     return {
-        'cat': cat,
-        'pts': pts,
+        'cat': cat, 'pts': pts,
         'q': str(item.get('q', '')).strip(),
-        'opts': opts,
-        'c': c,
+        'opts': opts, 'c': c,
         'exp': str(item.get('exp', '')).strip()
     }
 
 def ai_explain_question(q):
     ans = q['opts'][q['c']] if q.get('opts') else q.get('ans', '')
-    prompt = f"""Talabalar uchun o‘zbek tilida qisqa va esda qolarli tushuntirish yoz (maksimum 2-3 gap).
-Savol: {q['q']}
-To‘g‘ri javob: {ans}
-Asosiy izoh: {q.get('exp', '')}
-Vazifa: Bu tushunchani real hayotiy misol yoki oson mantiq bilan tushuntirib ber."""
+    prompt = f"""Talabalar uchun o‘zbek tilida 2 gaplik hayotiy misol bilan tushuntir:
+Savol: {q['q']} | Javob: {ans} | Izoh: {q.get('exp', '')}"""
     return call_gemini(prompt, json_mode=False, temperature=0.6)
 
-def ai_grade_short_answers(q, teams, text_answers):
+def ai_grade_short_answers(q, text_answers):
     submitted = {str(t): text_answers[t] for t in text_answers if str(text_answers[t]).strip()}
     if not submitted:
         return {}
-    prompt = f"""Sen o‘qituvchi yordamchisisisan. Jamoalarning qisqa yozma javoblarini etalon javob bilan solishtirib bahola.
-Savol: {q['q']}
-Etalon to‘g‘ri javob: {q.get('ans', '')}
-Izoh: {q.get('exp', '')}
-Jamoalar javoblari (indeks: javob): {json.dumps(submitted, ensure_ascii=False)}
-
-FAQAT quyidagi JSON formatida natija qaytar:
-{{
-  "0": {{"percent": 90, "verdict": "To‘g‘ri", "comment": "Qisqa izoh (1 gap)"}},
-  "1": {{"percent": 40, "verdict": "Qisman", "comment": "Qisqa izoh (1 gap)"}}
-}}"""
+    prompt = f"""Javoblarni etalon bilan solishtir. Savol: {q['q']} | Etalon: {q.get('ans', '')}
+Javoblar: {json.dumps(submitted, ensure_ascii=False)}
+FAQAT shu JSONni qaytar: {{"0":{{"percent":90,"verdict":"To‘g‘ri","comment":"1 gap izoh"}}}}"""
     res = call_gemini(prompt, json_mode=True, temperature=0.2)
     return res if isinstance(res, dict) else {}
 
@@ -299,6 +325,9 @@ def public_state(admin=False):
         s['text_answers'] = {str(k): v for k, v in state['text_answers'].items()}
         s['ai_grades'] = state['ai_grades']
         s['ai_ready'] = bool(os.environ.get('GEMINI_API_KEY', '').strip() or GEMINI_API_KEY)
+        s['ai_busy'] = state['ai_busy']
+        s['ai_status'] = state['ai_status']
+        s['ai_error'] = state['ai_error']
         s['players'] = [{'name': n, 'team': t} for n, t in state['players'].items()]
     return s
 
@@ -414,21 +443,14 @@ class H(BaseHTTPRequestHandler):
                 level = str(data.get('level', 'universitet talabalari')).strip()
                 if len(topic) < 3:
                     return self._json({'error': 'Mavzu nomini kamida 3 harf bilan yozing'}, 400)
-                try:
-                    new_qs, new_cats = ai_generate_board(topic, level)
-                except Exception as e:
-                    return self._json({'error': str(e)}, 500)
                 with lock:
-                    QS = new_qs
-                    _cats = new_cats
-                    try:
-                        save_questions()
-                    except Exception:
-                        pass
-                    state.update(
-                        cur=None, revealed=False, used=[False] * len(QS),
-                        answers={}, text_answers={}, ai_grades={}, ai_note=''
-                    )
+                    if state['ai_busy']:
+                        return self._json({'error': 'AI hozir savol tuzmoqda, biroz kuting'}, 400)
+                    state['ai_busy'] = True
+                    state['ai_error'] = ''
+                    state['ai_status'] = 'AI ishga tushdi...'
+                threading.Thread(target=bg_generate_board, args=(topic, level), daemon=True).start()
+                with lock:
                     return self._json(public_state(admin=True))
 
             if act == 'ai_generate_slot':
@@ -462,12 +484,11 @@ class H(BaseHTTPRequestHandler):
                     if state['cur'] is None:
                         return self._json({'error': 'Avval savolni oching'}, 400)
                     q_copy = dict(QS[state['cur']])
-                    teams_copy = list(state['teams'])
                     txt_copy = dict(state['text_answers'])
                 if not txt_copy:
                     return self._json({'error': 'Hali hech bir jamoa yozma javob yubormagan'}, 400)
                 try:
-                    grades = ai_grade_short_answers(q_copy, teams_copy, txt_copy)
+                    grades = ai_grade_short_answers(q_copy, txt_copy)
                 except Exception as e:
                     return self._json({'error': str(e)}, 500)
                 with lock:
@@ -537,22 +558,12 @@ class H(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     ip = local_ip()
-    ai_status = f'ULANGAN ({GEMINI_MODEL})' if GEMINI_API_KEY else 'ULANMAGAN (GEMINI_API_KEY yo‘q)'
-    print('=' * 56)
-    print(f'  Quiz fayli: {os.path.basename(QS_PATH)}  ({len(QS)} savol)')
-    letters = ['A', 'B', 'C', 'D']
-    print('  To‘g‘ri javoblar: ' + '  '.join(f'{letters[k]}={_dist.get(k, 0)}' for k in range(4)))
-    print(f'  Gemini AI:  {ai_status}')
-    print('  JEO QUIZ server ishga tushdi')
-    print(f'  O‘quvchilar uchun:  http://{ip}:{PORT}')
-    print(f'  O‘qituvchi paneli:  http://{ip}:{PORT}/admin')
-    print(f'  Admin PIN:          {PIN}')
-    print('  To‘xtatish: Ctrl+C')
-    print('=' * 56)
+    print('=' * 52)
+    print(f'  JEO QUIZ server: http://{ip}:{PORT}/admin  (PIN: {PIN})')
+    print('=' * 52)
     try:
         srv = QuietServer(('0.0.0.0', PORT), H)
     except OSError:
-        print(f'\nXATO: {PORT}-port band. Avval eski serverni to‘xtating (Ctrl+C).')
         sys.exit(1)
     try:
         srv.serve_forever()
