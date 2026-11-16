@@ -12,7 +12,7 @@ h1{color:#FFC72C;margin:6px 0 12px;font-size:24px;display:flex;justify-content:s
 .card h2{font-size:16px;color:#2F8BFF;margin:0 0 8px}
 .board{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .cat{background:#1E63D6;text-align:center;font-size:12px;font-weight:bold;padding:8px 4px;border-radius:6px;min-height:34px;display:flex;align-items:center;justify-content:center}
-.cell{background:#13245C;color:#FFC72C;font-weight:bold;font-size:20px;border:2px solid #1E63D6;border-radius:6px;padding:12px 0;cursor:pointer;text-align:center}
+.cell{background:#13245C;color:#FFC72C;font-weight:bold;font-size:20px;border:2px solid #1E63D6;border-radius:6px;padding:12px 0;cursor:pointer}
 .cell.used{background:#3a3f4e;color:#7b8190;border-color:#3a3f4e;text-decoration:line-through}
 .cell.cur{background:#FFC72C;color:#000;border-color:#FFC72C}
 button{font:inherit;color:#fff;background:#1B3180;border:none;border-radius:8px;padding:10px 12px;cursor:pointer;font-size:15px}
@@ -22,7 +22,6 @@ button.green{background:#1E8E4E}
 button.red{background:#B3261E}
 button:disabled{opacity:.4;cursor:default}
 .q{font-size:20px;font-weight:bold;line-height:1.35;margin:6px 0}
-.muted{color:#B8C4E0}
 .opt{font-size:16px;margin:4px 0}
 .opt.c{color:#7CFC9A;font-weight:bold}
 .ans{font-size:14px;color:#B8C4E0;margin-top:8px;line-height:1.6}
@@ -30,7 +29,7 @@ button:disabled{opacity:.4;cursor:default}
 table{width:100%;border-collapse:collapse}
 td{padding:6px 2px;border-bottom:1px solid #1B3180;font-size:15px}
 input{font:inherit;padding:8px;border-radius:6px;border:none;width:100%;margin:4px 0;box-sizing:border-box}
-.msg{color:#FF8A80;min-height:18px;margin-bottom:6px}
+.msg{color:#FF8A80;min-height:18px;margin-bottom:6px;font-weight:bold}
 textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border-radius:6px;border:none;margin:4px 0;color:#000}
 #fopts input[type=text],#fopts input{width:100%}
 </style></head>
@@ -41,7 +40,7 @@ textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border
 <div class="card" style="border:1px solid #7C3AED">
   <h2 style="color:#C4B5FD">GEMINI AI — YANGI O‘YIN JADVALI YARATISH</h2>
   <div class="row" style="align-items:center">
-    <div style="flex:2;min-width:220px"><input id="aitopic" placeholder="Mavzuni yozing (masalan: Inflyatsiya va pul-kredit siyosati)"></div>
+    <div style="flex:2;min-width:220px"><input id="aitopic" placeholder="Mavzuni yozing (masalan: YaIM)"></div>
     <div style="flex:1;min-width:160px">
       <select id="ailevel">
         <option value="universitet talabalari">Talabalar darajasi</option>
@@ -51,7 +50,7 @@ textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border
     </div>
     <div><button class="ai" id="aigenbtn" onclick="genBoard()">25 ta savol yaratish</button></div>
   </div>
-  <div class="ans" id="aigenmsg">Mavzu kiriting — Gemini 5 ta kategoriya va 25 ta savolni avtomatik tuzib jadvalga joylaydi.</div>
+  <div class="ans" id="aigenmsg" style="color:#7CFC9A;font-weight:bold">Mavzu kiriting — Gemini 5 ta bo‘lim va 25 ta savolni avtomatik tuzadi.</div>
 </div>
 
 <div class="row">
@@ -77,7 +76,6 @@ textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border
     <div id="fopts"></div>
     <input id="fans" placeholder="To‘g‘ri javob (qisqa)" style="display:none;color:#000">
     <textarea id="fexp" rows="2" placeholder="Qisqa izoh"></textarea>
-    <div class="ans">Variantlar o‘quvchilarga har safar aralashtirilib chiqadi. To‘g‘ri variantni radio tugma bilan belgilang.</div>
     <div style="margin-top:8px"><button class="gold" onclick="saveSlot()">SAQLASH</button> <span id="fmsg" class="msg"></span></div>
   </div>
 </div>
@@ -94,7 +92,7 @@ textarea,select{font:inherit;width:100%;box-sizing:border-box;padding:8px;border
 </div>
 </div>
 <script>
-let CATS = [];
+let CATS = [], lastCatsKey = '';
 const L = ['A','B','C','D'];
 let S = null, PIN = sessionStorage.getItem('pin') || '', namesDrawn = false, QL = [], busyAI = false;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -105,7 +103,11 @@ async function load(){
   const j = await r.json();
   if (!r.ok){ sessionStorage.removeItem('pin'); PIN=''; document.getElementById('msg').textContent = j.error; return; }
   S = j; render();
-  if (!QL.length && await loadQs()){ buildForm(); loadSlot(); }
+  const ck = (S.cats || []).join('|');
+  if (!QL.length || ck !== lastCatsKey){
+    lastCatsKey = ck;
+    if (await loadQs()){ formBuilt = false; buildForm(); loadSlot(); }
+  }
 }
 
 async function act(obj){
@@ -121,13 +123,28 @@ async function act(obj){
 function render(){
   if (!S) return;
   const badge = document.getElementById('aibadge');
-  if (S.ai_ready){
-    badge.textContent = 'Gemini AI: Faol';
-    badge.className = 'badge';
+  if (S.ai_ready){ badge.textContent = 'Gemini AI: Faol'; badge.className = 'badge'; }
+  else { badge.textContent = 'Gemini AI: Kalit kiritilmagan'; badge.className = 'badge off'; }
+
+  const genBtn = document.getElementById('aigenbtn');
+  const genMsg = document.getElementById('aigenmsg');
+  if (S.ai_busy){
+    genBtn.disabled = true;
+    genBtn.textContent = 'Tuzilmoqda...';
+    genMsg.style.color = '#FFC72C';
+    genMsg.textContent = S.ai_status || 'AI savollarni tuzmoqda...';
   } else {
-    badge.textContent = 'Gemini AI: Kalit kiritilmagan';
-    badge.className = 'badge off';
+    genBtn.disabled = false;
+    genBtn.textContent = '25 ta savol yaratish';
+    if (S.ai_error){
+      genMsg.style.color = '#FF8A80';
+      genMsg.textContent = 'Xato: ' + S.ai_error;
+    } else if (S.ai_status){
+      genMsg.style.color = '#7CFC9A';
+      genMsg.textContent = S.ai_status;
+    }
   }
+
   if (S.cats) CATS = S.cats;
   const b = document.getElementById('board');
   let h = CATS.map(c=>`<div class="cat">${esc(c)}</div>`).join('');
@@ -147,7 +164,6 @@ function render(){
     if (q.opts.length) q.opts.forEach((o,i)=>{ x += `<div class="opt ${i===q.c?'c':''}">${L[i]}) ${esc(o)}</div>`; });
     else x += `<div class="opt c">Etalon javob: ${esc(q.ans)}</div>`;
     x += `<div class="ans">${esc(q.exp)}</div>`;
-
     if (q.opts.length){
       const a = S.answers || {};
       x += '<div class="ans"><b>Jamoalar javobi:</b><br>' + S.teams.map((t,i)=>`${esc(t)}: ${a[i]!==undefined ? L[a[i]] : '—'}`).join('<br>') + '</div>';
@@ -161,11 +177,9 @@ function render(){
         return `${esc(t)}: ${ansTxt}${gTxt}`;
       }).join('<br>') + '</div>';
     }
-
     if (S.ai_note){
       x += `<div class="aibox"><b>Gemini AI misoli:</b><br>${esc(S.ai_note)}</div>`;
     }
-
     x += `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
       <button class="gold" ${S.revealed?'disabled':''} onclick="act({action:'reveal'})">Javobni ko‘rsatish</button>
       <button class="ai" ${busyAI?'disabled':''} onclick="askAIExplain()">AI tushuntirish</button>
@@ -200,20 +214,8 @@ async function genBoard(){
   const topic = document.getElementById('aitopic').value.trim();
   const level = document.getElementById('ailevel').value;
   if (!topic){ alert('Avval mavzu nomini yozing'); return; }
-  if (!confirm(`"${topic}" mavzusida 25 ta yangi savol yaratilib, hozirgi jadval almashtiriladi. Davom etasizmi?`)) return;
-  const btn = document.getElementById('aigenbtn');
-  const info = document.getElementById('aigenmsg');
-  btn.disabled = true; btn.textContent = 'Gemini tuzmoqda... (10-15 soniya)';
-  info.textContent = 'Iltimos kuting, 5 ta kategoriya va 25 ta savol generatsiya qilinmoqda...';
-  const res = await act({action:'ai_generate_board', topic, level});
-  btn.disabled = false; btn.textContent = '25 ta savol yaratish';
-  if (res){
-    await loadQs();
-    formBuilt = false; buildForm(); loadSlot();
-    info.textContent = `Tayyor! "${topic}" bo‘yicha 25 ta savol jadvalga yuklandi.`;
-  } else {
-    info.textContent = 'Xatolik yuz berdi. Yuqoridagi xabarni tekshiring.';
-  }
+  if (!confirm(`"${topic}" mavzusida 25 ta yangi savol yaratilsinmi?`)) return;
+  await act({action:'ai_generate_board', topic, level});
 }
 
 async function genSingleSlot(){
@@ -240,17 +242,8 @@ async function genSingleSlot(){
   msg.textContent = 'AI savol tuzdi — tekshirib SAQLASH tugmasini bosing';
 }
 
-async function askAIExplain(){
-  busyAI = true; render();
-  await act({action:'ai_explain'});
-  busyAI = false; render();
-}
-
-async function askAIGrade(){
-  busyAI = true; render();
-  await act({action:'ai_grade'});
-  busyAI = false; render();
-}
+async function askAIExplain(){ busyAI = true; render(); await act({action:'ai_explain'}); busyAI = false; render(); }
+async function askAIGrade(){ busyAI = true; render(); await act({action:'ai_grade'}); busyAI = false; render(); }
 
 function manual(i){
   const v = prompt('Ball qo‘shish (musbat) yoki ayirish (manfiy) sonini kiriting:', '0');
