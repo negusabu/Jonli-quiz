@@ -1,4 +1,4 @@
-"""JEO QUIZ — jonli server va tezkor orqa fon Gemini AI."""
+"""JEO QUIZ — jonli server va avtomatik model aniqlovchi Gemini AI."""
 import json, os, random, socket, sys, threading, collections, glob, time
 import urllib.request, urllib.error
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -20,7 +20,7 @@ load_dotenv()
 
 PORT = int(os.environ.get('PORT', 8000))
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '').strip()
-GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-3.8-flash').strip()
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', '').strip()
 
 def resolve_qs_path():
     if len(sys.argv) > 1:
@@ -85,74 +85,106 @@ def extract_json_obj(text):
         return json.loads(text[start:end + 1])
     return json.loads(text)
 
+def discover_models(api_key):
+    url = f'https://generativelanguage.googleapis.com/v1beta/models?key={api_key}'
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            data = json.loads(resp.read().decode('utf8'))
+        found = []
+        for m in data.get('models', []):
+            methods = m.get('supportedGenerationMethods', [])
+            name = m.get('name', '').replace('models/', '')
+            if 'generateContent' in methods and any(k in name for k in ('flash', 'gemma')):
+                if not any(bad in name for bad in ('tts', 'image', 'audio', 'vision', 'embedding', '2.5-flash-lite')):
+                    found.append(name)
+        return found
+    except Exception:
+        return []
+
 def call_gemini(prompt, json_mode=False, temperature=0.7):
     api_key = os.environ.get('GEMINI_API_KEY', '').strip() or GEMINI_API_KEY
     primary = os.environ.get('GEMINI_MODEL', '').strip() or GEMINI_MODEL
     if not api_key:
         raise RuntimeError('GEMINI_API_KEY topilmadi.')
 
+    base_list = [
+        'gemini-flash-lite-latest',
+        'gemini-3.1-flash-lite-preview',
+        'gemini-flash-latest',
+        'gemini-2.5-flash',
+        'gemini-3-flash-preview',
+        primary,
+        'gemma-3-27b-it',
+    ]
     candidates = []
-    for m in [primary, 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite']:
-        if m and m not in candidates:
+    for m in base_list:
+        if m and m != 'gemini-2.5-flash-lite' and m not in candidates:
             candidates.append(m)
 
     raw = None
-    last_err = 'AI javob bermadi'
-    for model in candidates:
-        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
-        think_mode = 'minimal'
-        for attempt in range(3):
-            gen_cfg = {'temperature': temperature, 'maxOutputTokens': 1400}
-            if json_mode:
-                gen_cfg['responseMimeType'] = 'application/json'
-            if think_mode == 'minimal':
-                gen_cfg['thinkingConfig'] = {'thinkingLevel': 'minimal'}
-            elif think_mode == 'zero':
-                gen_cfg['thinkingConfig'] = {'thinkingBudget': 0}
+    real_err = None
+    fallback_err = 'AI javob bermadi'
 
-            payload = {
-                'contents': [{'parts': [{'text': prompt}]}],
-                'generationConfig': gen_cfg
-            }
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode('utf8'),
-                headers={'Content-Type': 'application/json'},
-                method='POST'
-            )
-            try:
-                with urllib.request.urlopen(req, timeout=35) as resp:
-                    raw = json.loads(resp.read().decode('utf8'))
-                    break
-            except urllib.error.HTTPError as e:
-                err_body = e.read().decode('utf8', errors='ignore')
-                last_err = f'API xatosi ({e.code}, {model}): {err_body[:140]}'
-                if e.code == 400 and 'thinking' in err_body.lower():
-                    if think_mode == 'minimal':
-                        think_mode = 'zero'
-                        continue
-                    elif think_mode == 'zero':
+    def try_models(model_list):
+        nonlocal raw, real_err, fallback_err
+        for model in model_list:
+            url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
+            is_gemma = model.startswith('gemma')
+            think_mode = 'none' if is_gemma else ('minimal' if 'gemini-3' in model else 'zero')
+
+            for attempt in range(2):
+                gen_cfg = {'temperature': temperature, 'maxOutputTokens': 1500}
+                if json_mode and not is_gemma:
+                    gen_cfg['responseMimeType'] = 'application/json'
+                if think_mode == 'minimal':
+                    gen_cfg['thinkingConfig'] = {'thinkingLevel': 'minimal'}
+                elif think_mode == 'zero':
+                    gen_cfg['thinkingConfig'] = {'thinkingBudget': 0}
+
+                payload = {
+                    'contents': [{'parts': [{'text': prompt}]}],
+                    'generationConfig': gen_cfg
+                }
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode('utf8'),
+                    headers={'Content-Type': 'application/json'},
+                    method='POST'
+                )
+                try:
+                    with urllib.request.urlopen(req, timeout=55) as resp:
+                        raw = json.loads(resp.read().decode('utf8'))
+                        return
+                except urllib.error.HTTPError as e:
+                    err_body = e.read().decode('utf8', errors='ignore')
+                    msg = f'API xatosi ({e.code}, {model}): {err_body[:130]}'
+                    if e.code == 400 and think_mode != 'none':
                         think_mode = 'none'
                         continue
-                if e.code in (404, 429):
+                    if e.code == 404:
+                        fallback_err = msg
+                        break
+                    real_err = msg
+                    if e.code in (500, 502, 503, 504) and attempt == 0:
+                        time.sleep(1.5)
+                        continue
                     break
-                if e.code in (500, 502, 503, 504) and attempt < 2:
-                    time.sleep(1.5 * (attempt + 1))
-                    continue
-                break
-            except Exception as e:
-                last_err = f'Ulanish xatosi ({model}): {e}'
-                if attempt < 1:
-                    time.sleep(1.0)
-                    continue
-                break
-        if raw is not None:
-            break
+                except Exception as e:
+                    real_err = f'Ulanish xatosi ({model}): {e}'
+                    break
+
+    try_models(candidates)
 
     if raw is None:
-        if '429' in last_err:
+        extra = [m for m in discover_models(api_key) if m not in candidates]
+        if extra:
+            try_models(extra[:4])
+
+    if raw is None:
+        final_err = real_err or fallback_err
+        if '429' in final_err:
             raise RuntimeError('Bepul API limiti to‘ldi. 1 daqiqa kutib qayta bosing.')
-        raise RuntimeError(last_err)
+        raise RuntimeError(final_err)
 
     try:
         text = raw['candidates'][0]['content']['parts'][0]['text'].strip()
@@ -218,7 +250,7 @@ FAQAT shu JSONni qaytar: {{"categories":["1-nom","2-nom","3-nom","4-nom","5-nom"
             cat_qs = ai_generate_category(topic, cname, level)
             result.extend(cat_qs)
             if i < 4:
-                time.sleep(0.8)
+                time.sleep(0.5)
 
         errs, new_cats, _ = check_quiz(result)
         if errs:
