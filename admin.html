@@ -25,6 +25,9 @@ body{margin:0;background:radial-gradient(circle at top,#12235c,#08102B);color:#f
 .gamecard{background:rgba(19,36,92,.8);backdrop-filter:blur(12px);border:2px solid rgba(47,139,255,.4);border-radius:16px;padding:18px;display:flex;flex-direction:column;justify-content:space-between;gap:12px;cursor:pointer;box-shadow:0 8px 32px rgba(0,0,0,.2);transition:.2s}
 .gamecard:hover{border-color:#FFC72C;transform:translateY(-2px)}
 .gamecard.live{border-color:#FFC72C;background:linear-gradient(160deg,rgba(24,45,115,.9),rgba(14,26,66,.9))}
+.gamecard.soon{opacity:.62;cursor:not-allowed;border-color:rgba(148,163,184,.35);filter:grayscale(35%);position:relative}
+.gamecard.soon:hover{border-color:rgba(148,163,184,.35);transform:none}
+.gamecard .gsoon{font-size:12px;font-weight:bold;padding:3px 10px;border-radius:20px;background:#F59E0B;color:#000;box-shadow:0 2px 6px rgba(0,0,0,.25)}
 .gamecard .ghead{display:flex;justify-content:space-between;align-items:center}
 .gamecard .gicon{font-size:30px}
 .gamecard .glive{font-size:12px;font-weight:bold;padding:3px 9px;border-radius:20px;background:#1E8E4E;color:#fff}
@@ -159,7 +162,7 @@ input,textarea,select{font:inherit;padding:10px;border-radius:8px;border:1px sol
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
         <div>
           <div style="font-size:17px;font-weight:bold;color:#FFC72C">Mavzu: <span id="curtopictitle" style="color:#fff">...</span></div>
-          <div style="font-size:13px;color:#B8C4E0">Xona kodi: <b id="inlinecode" style="color:#7CFC9A">0000</b> • Barcha 9 ta o‘yin tayyor 25 ta savolda ishlaydi</div>
+          <div style="font-size:13px;color:#B8C4E0">Xona kodi: <b id="inlinecode" style="color:#7CFC9A">0000</b> • 6 ta faol o‘yin tayyor 25 ta savolda ishlaydi (3 tasi tez kunda)</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button onclick="openTab('library')">📚 Mavzuni almashtirish</button>
@@ -341,9 +344,9 @@ const GAMES = [
   {id:'territory', icon:'🗺️', title:'4. Hududlar jangi (5×5)', desc:'25 ta sektorli xaritada 4 jamoa hudud talashadi. Birinchi to‘g‘ri javob bergan jamoa katakni egallaydi.'},
   {id:'bomb', icon:'💣', title:'5. Zanjirli Bomba', desc:'Har jamoada 3 ta jon bor. Taymer tugamasidan to‘g‘ri javob berib bombani keyingi jamoaga uzating!'},
   {id:'kahoot', icon:'⚡', title:'6. TEST', desc:'Barcha talabalar bir vaqtda ▲ ◆ ● moim tugmalarini bosadi. Tezlik uchun 1000+ ball va shohsupa!'},
-  {id:'wheel', icon:'🎡', title:'7. Omad G‘ildiragi', desc:'Baraban aylanganda tushgan bo‘limdagi savolga tezkor javob berib ball oling.'},
-  {id:'match', icon:'🃏', title:'8. Moslashtirish', desc:'Savollar va javoblarni bir-biriga to‘g‘ri moslashtirib ball yig‘ing.'},
-  {id:'boxes', icon:'📦', title:'9. Qutini Och', desc:'12 ta sirli qutidan birini tanlang: ichida savol yoki bonus ball yashiringan.'},
+  {id:'wheel', soon:true, icon:'🎡', title:'7. Omad G‘ildiragi', desc:'Baraban aylanganda tushgan bo‘limdagi savolga tezkor javob berib ball oling.'},
+  {id:'match', soon:true, icon:'🃏', title:'8. Moslashtirish', desc:'Savollar va javoblarni bir-biriga to‘g‘ri moslashtirib ball yig‘ing.'},
+  {id:'boxes', soon:true, icon:'📦', title:'9. Qutini Och', desc:'12 ta sirli qutidan birini tanlang: ichida savol yoki bonus ball yashiringan.'},
 ];
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -432,7 +435,13 @@ function openTab(tab){
   });
 }
 
+const FROZEN_MODES = ['wheel', 'match', 'boxes'];
+
 async function selectGameFromMenu(mode){
+  if (FROZEN_MODES.includes(mode)){
+    alert('Bu o‘yin rejimi hozircha muzlatilgan (Tez kunda ishga tushadi).');
+    return;
+  }
   const res = await act({action:'set_mode', mode});
   if (res) openTab('play');
 }
@@ -470,6 +479,11 @@ async function load(){
 }
 
 async function act(obj){
+  if ((obj.action === 'set_mode' && FROZEN_MODES.includes(obj.mode)) ||
+      (typeof obj.action === 'string' && /^(wheel|match|boxes)_/.test(obj.action))){
+    document.getElementById('msg').textContent = 'Bu o‘yin vaqtincha muzlatilgan (Tez kunda).';
+    return null;
+  }
   obj.room = curRoom;
   obj.pin = PIN;
   const r = await fetch('/api/admin', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(obj)});
@@ -492,6 +506,16 @@ function render(){
   document.getElementById('curmodelabel').textContent = gObj.icon + ' ' + gObj.title;
 
   document.getElementById('gamemenugrid').innerHTML = GAMES.map(g => {
+    if (g.soon){
+      return `<div class="gamecard soon">
+        <div>
+          <div class="ghead"><span class="gicon">${g.icon}</span><span class="gsoon">⏳ Tez kunda</span></div>
+          <div class="gtitle" style="margin-top:8px;color:#CBD5E1">${esc(g.title)}</div>
+          <div class="gdesc" style="margin-top:6px">${esc(g.desc)}</div>
+        </div>
+        <button disabled style="width:100%;background:#1e293b;color:#94A3B8">Tez kunda (Coming soon)</button>
+      </div>`;
+    }
     const isLive = g.id === m;
     return `<div class="gamecard ${isLive?'live':''}" onclick="selectGameFromMenu('${g.id}')">
       <div>
@@ -619,6 +643,8 @@ function render(){
 }
 
 function renderWheelAdmin(){
+  document.getElementById('wheelpanel').innerHTML = `<div style="text-align:center;padding:16px"><div style="font-size:28px">⏳</div><div style="font-size:18px;font-weight:bold;color:#FFC72C;margin:6px 0">Bu o‘yin vaqtincha muzlatilgan (Tez kunda)</div><button class="gold" style="margin-top:8px" onclick="openTab('games')">← O‘yinlar menyusiga o‘tish</button></div>`;
+  return;
   const p = document.getElementById('wheelpanel'), w = S.wheel;
   if (!w){ p.innerHTML = `<button class="gold" onclick="act({action:'wheel_start'})">🎡 Omad G‘ildiragi o‘yinini boshlash</button>`; return; }
   let x = `<h2 style="color:#FFC72C">🎡 OMAD G‘ILDARAGI</h2>
@@ -640,6 +666,8 @@ function renderWheelAdmin(){
 }
 
 function renderMatchAdmin(){
+  document.getElementById('matchpanel').innerHTML = `<div style="text-align:center;padding:16px"><div style="font-size:28px">⏳</div><div style="font-size:18px;font-weight:bold;color:#FFC72C;margin:6px 0">Bu o‘yin vaqtincha muzlatilgan (Tez kunda)</div><button class="gold" style="margin-top:8px" onclick="openTab('games')">← O‘yinlar menyusiga o‘tish</button></div>`;
+  return;
   const p = document.getElementById('matchpanel'), mt = S.match;
   if (!mt){ p.innerHTML = `<button class="gold" onclick="act({action:'match_start'})">🃏 Moslashtirish o‘yinini boshlash</button>`; return; }
   const lb = mt.leaderboard || [];
@@ -655,6 +683,8 @@ function renderMatchAdmin(){
 }
 
 function renderBoxesAdmin(){
+  document.getElementById('boxespanel').innerHTML = `<div style="text-align:center;padding:16px"><div style="font-size:28px">⏳</div><div style="font-size:18px;font-weight:bold;color:#FFC72C;margin:6px 0">Bu o‘yin vaqtincha muzlatilgan (Tez kunda)</div><button class="gold" style="margin-top:8px" onclick="openTab('games')">← O‘yinlar menyusiga o‘tish</button></div>`;
+  return;
   const p = document.getElementById('boxespanel'), bx = S.boxes;
   if (!bx){ p.innerHTML = `<button class="gold" onclick="act({action:'boxes_start'})">📦 Qutini Och o‘yinini boshlash</button>`; return; }
   let x = `<h2 style="color:#FBBF24">📦 QUTINI OCH (OPEN THE BOX)</h2>
