@@ -228,7 +228,7 @@ def call_gemini(prompt_text, file_part=None):
     payload = json.dumps({"contents": [{"parts": parts}]}).encode("utf-8")
     req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=70) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         err_body = e.read().decode("utf-8", errors="ignore")
@@ -243,7 +243,14 @@ def call_gemini(prompt_text, file_part=None):
 def extract_json_block(raw):
     m = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
     txt = m.group(1).strip() if m else raw.strip()
-    return json.loads(txt)
+    try:
+        return json.loads(txt)
+    except Exception:
+        start = txt.find("{")
+        end = txt.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(txt[start:end + 1])
+        raise
 
 
 def extract_docx_text(b64_data):
@@ -253,6 +260,31 @@ def extract_docx_text(b64_data):
     root = ET.fromstring(xml_bytes)
     texts = [el.text for el in root.iter() if el.tag.endswith("}t") and el.text]
     return " ".join(texts)[:28000]
+
+
+def normalize_slide_item(raw_item, idx):
+    layout = str(raw_item.get("layout") or ("cover" if idx == 0 else "bullets")).strip().lower()
+    if layout not in ("cover", "bullets", "split", "stats", "quote", "summary"):
+        layout = "bullets"
+    bullets = [str(b).strip() for b in (raw_item.get("bullets") or []) if str(b).strip()][:6]
+    stats_raw = raw_item.get("stats") or []
+    stats = []
+    for st in stats_raw[:4]:
+        if isinstance(st, dict):
+            lbl = str(st.get("label") or "").strip()
+            val = str(st.get("value") or "").strip()
+            if lbl or val:
+                stats.append({"label": lbl, "value": val})
+    return {
+        "layout": layout,
+        "badge": str(raw_item.get("badge") or f"{idx + 1:02d}-SLAYD").strip(),
+        "title": str(raw_item.get("title") or f"Slayd #{idx + 1}").strip(),
+        "subtitle": str(raw_item.get("subtitle") or "").strip(),
+        "bullets": bullets,
+        "highlight": str(raw_item.get("highlight") or "").strip(),
+        "stats": stats,
+        "notes": str(raw_item.get("notes") or "").strip(),
+    }
 
 
 class Room:
@@ -279,12 +311,10 @@ class Room:
 
         self.mil = None
         self.auc = None
-        self.ter = None
         self.bomb = None
         self.kahoot = None
-        self.wheel = None
-        self.match = None
-        self.boxes = None
+        self.slides = None
+        self.classic_test = None
 
         self.topic_title = ""
         self.cats = []
@@ -297,12 +327,9 @@ class Room:
     def clear_subgames(self):
         self.mil = None
         self.auc = None
-        self.ter = None
         self.bomb = None
         self.kahoot = None
-        self.wheel = None
-        self.match = None
-        self.boxes = None
+        self.classic_test = None
 
     def load_preset(self, preset_id):
         pack = PRESET_DATA.get(preset_id) or PRESET_DATA["econ"]
@@ -317,6 +344,63 @@ class Room:
         self.ai_grades = {}
         self.ai_note = ""
         self.clear_subgames()
+
+    def build_slides_from_current_questions(self, theme="royal"):
+        items = [
+            normalize_slide_item({
+                "layout": "cover",
+                "badge": "01 / TAQDIMOT",
+                "title": self.topic_title or "Interaktiv Ma'ruza",
+                "subtitle": f"{len(self.cats)} ta asosiy yo‘nalish • {len(self.questions)} ta tahliliy savol-javob",
+                "bullets": self.cats,
+                "highlight": "Jeo Quiz Pro Slayd Studio",
+                "stats": [
+                    {"label": "Bo‘limlar", "value": str(len(self.cats))},
+                    {"label": "Savollar", "value": str(len(self.questions))},
+                    {"label": "Format", "value": "Interaktiv"},
+                ],
+                "notes": "Kirish qismi: mavzuning umumiy tuzilishi va asosiy bo‘limlar bilan tanishtiring.",
+            }, 0)
+        ]
+        for c_idx, cat in enumerate(self.cats):
+            cat_qs = [q for q in self.questions if q["cat"] == cat][:5]
+            bullets = []
+            for q in cat_qs:
+                ans_txt = q["opts"][q["c"]] if (q.get("opts") and q.get("c") is not None) else q.get("ans", "")
+                bullets.append(f"{q['q']} → {ans_txt}")
+            key_exp = cat_qs[0].get("exp", "") if cat_qs else ""
+            items.append(
+                normalize_slide_item({
+                    "layout": "split" if c_idx % 2 == 0 else "bullets",
+                    "badge": f"{c_idx + 2:02d} / BO‘LIM",
+                    "title": cat,
+                    "subtitle": f"{cat} yo‘nalishi bo‘yicha asosiy tushunchalar va qoidalar",
+                    "bullets": bullets,
+                    "highlight": key_exp or f"{cat} bo‘yicha muhim xulosalar",
+                    "notes": f"{cat} bo‘limidagi asosiy faktlar va savol-javoblarni tushuntirib bering.",
+                }, c_idx + 1)
+            )
+        items.append(
+            normalize_slide_item({
+                "layout": "summary",
+                "badge": f"{len(items) + 1:02d} / XULOSA",
+                "title": "Asosiy Xulosalar va Mustahkamlash",
+                "subtitle": f"«{self.topic_title}» mavzusi yakuni",
+                "bullets": [
+                    "Barcha 5 ta asosiy yo‘nalish ko‘rib chiqildi",
+                    "Bilimlarni tekshirish uchun Oddiy Test yoki Jonli O‘yin rejimiga o‘tish mumkin",
+                    "Savol va takliflar uchun ochiq muhokama",
+                ],
+                "highlight": "E’tiboringiz uchun rahmat!",
+                "notes": "Mavzuni yakunlang va talabalarni test yoki viktorinaga taklif qiling.",
+            }, len(items))
+        )
+        self.slides = {
+            "title": self.topic_title or "Pro Taqdimot",
+            "theme": theme,
+            "cur_idx": 0,
+            "items": items,
+        }
 
     def public_q(self, q, include_secret=False):
         if not q:
@@ -402,18 +486,6 @@ class Room:
                 "question": self.public_q(aq, include_secret=(is_admin or a["phase"] == "revealed")) if a["phase"] != "betting" else None,
             }
 
-        ter_out = None
-        if self.ter:
-            t = self.ter
-            tq = self.questions[t["cur_cell"]] if t["cur_cell"] is not None else None
-            ter_out = {
-                "owners": t["owners"],
-                "counts": [sum(1 for ow in t["owners"] if ow == i) for i in range(4)],
-                "cur_cell": t["cur_cell"], "phase": t["phase"],
-                "wrong_teams": t["wrong_teams"], "last_msg": t["last_msg"],
-                "question": self.public_q(tq, include_secret=(is_admin or t["phase"] == "revealed")),
-            }
-
         bomb_out = None
         if self.bomb:
             b = self.bomb
@@ -441,48 +513,65 @@ class Room:
                 "leaderboard": lb, "team_pts": k["team_pts"],
             }
 
-        wheel_out = None
-        if self.wheel:
-            w = self.wheel
-            wheel_out = {
-                "active_team": w["active_team"],
-                "selected_cat": w["selected_cat"],
-                "spin_angle": w["spin_angle"],
-                "spin_id": w["spin_id"],
-                "revealed": w["revealed"],
-                "answers": w["answers"],
-                "question": self.public_q(w["cur_q"], include_secret=(is_admin or w["revealed"])) if w["cur_q"] else None,
+        slides_out = None
+        if self.slides:
+            sl = self.slides
+            items_out = []
+            for it in sl["items"]:
+                d = dict(it)
+                if not is_admin:
+                    d["notes"] = ""
+                items_out.append(d)
+            slides_out = {
+                "title": sl["title"],
+                "theme": sl["theme"],
+                "cur_idx": sl["cur_idx"],
+                "total": len(items_out),
+                "items": items_out,
             }
 
-        match_out = None
-        if self.match:
-            mt = self.match
-            lb = sorted(
-                [{"name": nm, "team": rc["team"], "score": rc["score"], "done": rc["done"]} for nm, rc in mt["results"].items()],
-                key=lambda x: (-x["score"], x["name"]),
+        ctest_out = None
+        if self.classic_test:
+            ct = self.classic_test
+            pool_out = []
+            for idx, q in enumerate(ct["pool"]):
+                qd = {
+                    "idx": idx,
+                    "cat": q["cat"],
+                    "pts": q["pts"],
+                    "q": q["q"],
+                    "opts": list(q["opts"]),
+                }
+                if is_admin:
+                    qd["c"] = q["c"]
+                    qd["exp"] = q.get("exp", "")
+                pool_out.append(qd)
+
+            subs_summary = sorted(
+                [
+                    {
+                        "name": nm,
+                        "team": sb["team"],
+                        "correct": sb["correct"],
+                        "total": sb["total"],
+                        "percent": sb["percent"],
+                        "score": sb["score"],
+                        "duration_sec": sb["duration_sec"],
+                    }
+                    for nm, sb in ct["submissions"].items()
+                ],
+                key=lambda x: (-x["percent"], -x["score"], x["duration_sec"]),
             )
-            match_out = {
-                "round_id": mt["round_id"],
-                "prompts": mt["prompts"],
-                "shuffled_ans": mt["shuffled_ans"],
-                "answer_key": mt["answer_key"] if is_admin else [],
-                "leaderboard": lb,
-                "team_pts": mt["team_pts"],
-            }
-
-        boxes_out = None
-        if self.boxes:
-            bx = self.boxes
-            cur_box = bx["items"][bx["cur_idx"]] if bx["cur_idx"] is not None else None
-            boxes_out = {
-                "opened": bx["opened"],
-                "kinds": [it["kind"] if (is_admin or bx["opened"][i]) else "closed" for i, it in enumerate(bx["items"])],
-                "cur_idx": bx["cur_idx"],
-                "cur_kind": cur_box["kind"] if cur_box else None,
-                "cur_bonus": cur_box["bonus"] if cur_box else 0,
-                "revealed": bx["revealed"],
-                "answers": bx["answers"],
-                "question": self.public_q(cur_box["q"], include_secret=(is_admin or bx["revealed"])) if (cur_box and cur_box["q"]) else None,
+            ctest_out = {
+                "active": ct["active"],
+                "title": ct["title"],
+                "time_limit": ct["time_limit"],
+                "show_explanations": ct["show_explanations"],
+                "total_q": len(pool_out),
+                "pool": pool_out,
+                "submissions_list": subs_summary,
+                "submissions": ct["submissions"],
+                "team_pts": ct["team_pts"],
             }
 
         return {
@@ -494,8 +583,8 @@ class Room:
             "question": self.public_q(cur_q, include_secret=inc_sec),
             "answers": self.answers, "text_answers": self.text_answers, "ai_grades": self.ai_grades,
             "players": [{"name": n, "team": t} for n, t in self.players.items()],
-            "mil": mil_out, "auc": auc_out, "ter": ter_out, "bomb": bomb_out, "kahoot": kahoot_out,
-            "wheel": wheel_out, "match": match_out, "boxes": boxes_out,
+            "mil": mil_out, "auc": auc_out, "bomb": bomb_out, "kahoot": kahoot_out,
+            "slides": slides_out, "classic_test": ctest_out,
         }
 
 
@@ -584,6 +673,51 @@ def run_ai_board_worker(room, topic, level, file_part=None, extra_text=""):
             room.ai_busy = False
             room.ai_error = ""
             room.ai_status = f"✔ «{topic}» bo‘yicha 25 ta savol tayyor!"
+            room.touch()
+    except Exception as e:
+        with LOCK:
+            room.ai_busy = False
+            room.ai_error = str(e)
+            room.ai_status = ""
+
+
+def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None, extra_text=""):
+    try:
+        prompt = (
+            f"O‘zbek tilida '{topic}' mavzusida ({style} uslubida) aynan {slide_count} ta professional taqdimot slaydi yarat.\n"
+            f"1-slayd albatta 'cover' (muqova), oxirgi slayd 'summary' (xulosa) bo‘lsin. Oraliq slaydlarda 'bullets', 'split', 'stats', 'quote' maketlarini navbatma-navbat ishlat.\n"
+            f"Qat'iy JSON formatida javob ber:\n"
+            f'{{"title": "Taqdimot sarlavhasi", "slides": ['
+            f'{{"layout": "cover", "badge": "01 / KIRISH", "title": "Sarlavha", "subtitle": "Taglavha", '
+            f'"bullets": ["Fikr 1", "Fikr 2", "Fikr 3"], "highlight": "Muhim xulosa yoki ta’rif", '
+            f'"stats": [{{"label": "Ko‘rsatkich 1", "value": "85%"}}, {{"label": "Ko‘rsatkich 2", "value": "24/7"}}], '
+            f'"notes": "Spiker uchun 2 jumlali nutq matni"}}'
+            f"]}}\n"
+            f"Talablar: Har bir slaydda 3-5 ta aniq, mazmunli va qisqa bullet punktlar bo‘lsin, matnlar ekranda chiroyli o‘qiladigan darajada lo‘nda yozilsin."
+        )
+        if extra_text:
+            prompt += f"\n\nManba matni:\n{extra_text[:24000]}"
+
+        raw = call_gemini(prompt, file_part=file_part)
+        parsed = extract_json_block(raw)
+        raw_slides = parsed.get("slides") or []
+        if not raw_slides:
+            raise RuntimeError("AI slaydlar ro‘yxatini qaytarmadi, qayta urinib ko‘ring.")
+
+        items = [normalize_slide_item(it, i) for i, it in enumerate(raw_slides[:16])]
+        deck_title = str(parsed.get("title") or topic).strip()
+
+        with LOCK:
+            room.slides = {
+                "title": deck_title,
+                "theme": theme,
+                "cur_idx": 0,
+                "items": items,
+            }
+            room.mode = "slides"
+            room.ai_busy = False
+            room.ai_error = ""
+            room.ai_status = f"✔ «{deck_title}» bo‘yicha {len(items)} ta Pro slayd tayyor!"
             room.touch()
     except Exception as e:
         with LOCK:
@@ -738,58 +872,66 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": True})
             return
 
-        if path == "/api/wheel_play":
-            team = int(data.get("team", -1))
-            choice = int(data.get("choice", -1))
-            with LOCK:
-                room = get_room(code)
-                if not room or not room.wheel or not (0 <= team < 4):
-                    self.send_json({"error": "Omad g‘ildiragi faol emas"}, 400)
-                    return
-                if not room.wheel["revealed"] and room.wheel["cur_q"]:
-                    room.wheel["answers"][str(team)] = choice
-                    room.touch()
-            self.send_json({"ok": True})
-            return
-
-        if path == "/api/match_play":
+        if path == "/api/classic_test_submit":
             name = str(data.get("name") or "").strip()
             tv = data.get("team")
             team = int(tv) if (tv is not None and tv != "" and 0 <= int(tv) < 4) else None
-            picks = data.get("picks") or []
+            answers = data.get("answers") or []
+            dur_sec = max(1, int(data.get("duration_sec") or 0))
             with LOCK:
                 room = get_room(code)
-                if not room or not room.match:
-                    self.send_json({"error": "Moslashtirish o‘yini faol emas"}, 400)
+                if not room or not room.classic_test:
+                    self.send_json({"error": "Oddiy test faol emas"}, 400)
+                    return
+                ct = room.classic_test
+                if not ct["active"]:
+                    self.send_json({"error": "Test yakunlangan, javob qabul qilinmaydi"}, 400)
                     return
                 if not name:
                     self.send_json({"error": "Ismingizni kiriting"}, 400)
                     return
-                mt = room.match
-                key = mt["answer_key"]
-                correct_cnt = sum(1 for i in range(min(len(key), len(picks))) if int(picks[i]) == key[i])
-                score = correct_cnt * 200
-                prev = mt["results"].get(name)
-                if not prev:
-                    mt["results"][name] = {"team": team, "score": score, "done": True}
-                    if team is not None:
-                        mt["team_pts"][team] += score
-                room.touch()
-            self.send_json({"ok": True, "score": score, "correct": correct_cnt})
-            return
 
-        if path == "/api/boxes_play":
-            team = int(data.get("team", -1))
-            choice = int(data.get("choice", -1))
-            with LOCK:
-                room = get_room(code)
-                if not room or not room.boxes or not (0 <= team < 4):
-                    self.send_json({"error": "Qutini och o‘yini faol emas"}, 400)
-                    return
-                if not room.boxes["revealed"] and room.boxes["cur_idx"] is not None:
-                    room.boxes["answers"][str(team)] = choice
-                    room.touch()
-            self.send_json({"ok": True})
+                pool = ct["pool"]
+                correct_cnt = 0
+                total_score = 0
+                review = []
+                for idx, q in enumerate(pool):
+                    uch = answers[idx] if idx < len(answers) and answers[idx] is not None else -1
+                    uch = int(uch)
+                    is_ok = (uch == q["c"])
+                    if is_ok:
+                        correct_cnt += 1
+                        total_score += int(q.get("pts") or 100)
+                    review.append({
+                        "idx": idx,
+                        "cat": q["cat"],
+                        "q": q["q"],
+                        "opts": list(q["opts"]),
+                        "user_choice": uch,
+                        "correct_choice": q["c"],
+                        "is_correct": is_ok,
+                        "exp": q.get("exp", "") if ct["show_explanations"] else "",
+                    })
+
+                total_q = max(1, len(pool))
+                pct = int(round(correct_cnt * 100 / total_q))
+                prev = ct["submissions"].get(name)
+                sub_obj = {
+                    "name": name,
+                    "team": team,
+                    "correct": correct_cnt,
+                    "total": len(pool),
+                    "percent": pct,
+                    "score": total_score,
+                    "duration_sec": dur_sec,
+                    "submitted_at": time.time(),
+                    "review": review,
+                }
+                ct["submissions"][name] = sub_obj
+                if not prev and team is not None and 0 <= team < 4:
+                    ct["team_pts"][team] += total_score
+                room.touch()
+            self.send_json({"ok": True, "result": sub_obj})
             return
 
         if path == "/api/kahoot_play":
@@ -800,7 +942,7 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 room = get_room(code)
                 if not room or not room.kahoot:
-                    self.send_json({"error": "TEST o‘yini faol emas"}, 400)
+                    self.send_json({"error": "Jonli TEST o‘yini faol emas"}, 400)
                     return
                 room.tick_timers()
                 k = room.kahoot
@@ -933,30 +1075,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": True})
             return
 
-        if path == "/api/ter_play":
-            team = int(data.get("team", -1))
-            choice = int(data.get("choice", -1))
-            with LOCK:
-                room = get_room(code)
-                if not room or not room.ter or not (0 <= team < 4):
-                    self.send_json({"error": "Hududlar jangi faol emas"}, 400)
-                    return
-                t = room.ter
-                if t["phase"] != "battle" or t["cur_cell"] is None or team in t["wrong_teams"]:
-                    self.send_json({"ok": True})
-                    return
-                q = room.questions[t["cur_cell"]]
-                if choice == q["c"]:
-                    t["owners"][t["cur_cell"]] = team
-                    t["phase"] = "revealed"
-                    t["last_msg"] = f"🏆 {room.teams[team]} {t['cur_cell'] + 1}-sektorni egalladi!"
-                else:
-                    t["wrong_teams"].append(team)
-                    t["last_msg"] = f"❌ {room.teams[team]} xato javob berdi! Qolganlar urinmoqda..."
-                room.touch()
-            self.send_json({"ok": True})
-            return
-
         if path == "/api/bomb_play":
             team = int(data.get("team", -1))
             choice = int(data.get("choice", -1))
@@ -1013,7 +1131,22 @@ class Handler(BaseHTTPRequestHandler):
                     room.load_preset(str(data.get("preset") or "econ"))
 
                 elif action == "set_mode":
-                    room.mode = str(data.get("mode") or "jeopardy")
+                    mode = str(data.get("mode") or "jeopardy")
+                    if mode in ("jeopardy", "millionaire", "auction", "bomb", "kahoot", "slides", "classic_test"):
+                        room.mode = mode
+                        if mode == "slides" and not room.slides:
+                            room.build_slides_from_current_questions()
+                        elif mode == "classic_test" and not room.classic_test:
+                            pool = room.get_mc_pool()
+                            room.classic_test = {
+                                "active": True,
+                                "title": room.topic_title or "Oddiy Test",
+                                "time_limit": 0,
+                                "show_explanations": True,
+                                "pool": pool,
+                                "submissions": {},
+                                "team_pts": [0, 0, 0, 0],
+                            }
 
                 elif action == "open":
                     idx = int(data.get("idx", 0))
@@ -1150,114 +1283,115 @@ class Handler(BaseHTTPRequestHandler):
                             )
                             room.ai_grades = extract_json_block(raw)
 
-                # --- WHEEL (OMAD G'ILDIRAGI) ---
-                elif action == "wheel_start":
-                    pool = room.get_mc_pool()
-                    room.wheel = {
-                        "active_team": 0,
-                        "selected_cat": None,
-                        "spin_angle": 0,
-                        "spin_id": 0,
+                # --- PRO SLAYD STUDIO ---
+                elif action == "ai_generate_slides":
+                    if room.ai_busy:
+                        self.send_json({"error": "AI hozir band, biroz kuting"}, 400)
+                        return
+                    topic = str(data.get("topic") or room.topic_title or "Taqdimot").strip()
+                    slide_count = max(4, min(16, int(data.get("slide_count") or 8)))
+                    style = str(data.get("style") or "Akademik ma’ruza").strip()
+                    theme = str(data.get("theme") or "royal").strip()
+                    fname = str(data.get("filename") or "").strip()
+                    mime = str(data.get("mime") or "").strip()
+                    b64 = str(data.get("data_b64") or "").strip()
+
+                    file_part = None
+                    extra_txt = ""
+                    if b64 and fname:
+                        if fname.lower().endswith(".docx"):
+                            extra_txt = extract_docx_text(b64)
+                        elif fname.lower().endswith((".txt", ".md", ".csv")):
+                            extra_txt = base64.b64decode(b64).decode("utf-8", errors="ignore")[:28000]
+                        else:
+                            if not mime:
+                                mime = "application/pdf" if fname.lower().endswith(".pdf") else "image/jpeg"
+                            file_part = {"mime": mime, "b64": b64}
+
+                    room.ai_busy = True
+                    room.ai_error = ""
+                    room.ai_status = f"«{topic}» bo‘yicha {slide_count} ta Pro slayd tayyorlanmoqda..."
+                    threading.Thread(
+                        target=run_ai_slides_worker,
+                        args=(room, topic, slide_count, style, theme, file_part, extra_txt),
+                        daemon=True,
+                    ).start()
+
+                elif action == "slides_from_questions":
+                    theme = str(data.get("theme") or (room.slides["theme"] if room.slides else "royal"))
+                    room.build_slides_from_current_questions(theme=theme)
+                    room.mode = "slides"
+
+                elif action == "slides_nav" and room.slides:
+                    idx = int(data.get("idx", 0))
+                    total = len(room.slides["items"])
+                    if total > 0:
+                        room.slides["cur_idx"] = max(0, min(total - 1, idx))
+
+                elif action == "slides_theme" and room.slides:
+                    theme = str(data.get("theme") or "royal")
+                    room.slides["theme"] = theme
+
+                elif action == "slides_save_item" and room.slides:
+                    idx = int(data.get("idx", 0))
+                    s_in = data.get("slide") or {}
+                    if 0 <= idx < len(room.slides["items"]):
+                        room.slides["items"][idx] = normalize_slide_item(s_in, idx)
+
+                elif action == "slides_add_item" and room.slides:
+                    new_idx = len(room.slides["items"])
+                    room.slides["items"].append(
+                        normalize_slide_item({
+                            "layout": "bullets",
+                            "badge": f"{new_idx + 1:02d} / YANGI",
+                            "title": "Yangi slayd sarlavhasi",
+                            "subtitle": "Qo‘shimcha ma’lumot",
+                            "bullets": ["Birinchi muhim fikr", "Ikkinchi muhim fikr"],
+                            "highlight": "Asosiy xulosa",
+                            "notes": "",
+                        }, new_idx)
+                    )
+                    room.slides["cur_idx"] = new_idx
+
+                elif action == "slides_delete_item" and room.slides:
+                    idx = int(data.get("idx", 0))
+                    if len(room.slides["items"]) > 1 and 0 <= idx < len(room.slides["items"]):
+                        room.slides["items"].pop(idx)
+                        room.slides["cur_idx"] = min(room.slides["cur_idx"], len(room.slides["items"]) - 1)
+
+                # --- ODDIY TEST (CLASSIC SELF-PACED TEST) ---
+                elif action == "ctest_start":
+                    q_count = max(1, min(25, int(data.get("q_count") or 25)))
+                    time_limit = max(0, min(180, int(data.get("time_limit") or 0)))
+                    shuffle_q = bool(data.get("shuffle", False))
+                    show_exp = bool(data.get("show_explanations", True))
+                    title = str(data.get("title") or room.topic_title or "Oddiy Test").strip()
+
+                    pool = [copy.deepcopy(q) for q in room.questions if len(q.get("opts") or []) == 4 and q.get("c") is not None]
+                    if not pool:
+                        pool = copy.deepcopy(PRESET_DATA["econ"]["questions"])
+                    if shuffle_q:
+                        random.shuffle(pool)
+                    pool = pool[:q_count]
+
+                    room.classic_test = {
+                        "active": True,
+                        "title": title,
+                        "time_limit": time_limit,
+                        "show_explanations": show_exp,
                         "pool": pool,
-                        "pool_idx": 0,
-                        "cur_q": None,
-                        "revealed": False,
-                        "answers": {},
-                    }
-
-                elif action == "wheel_spin" and room.wheel:
-                    w = room.wheel
-                    cat_idx = random.randint(0, 4)
-                    cat_name = room.cats[cat_idx]
-                    extra_turns = random.randint(4, 6) * 360
-                    sector_center = cat_idx * 72 + 36
-                    w["spin_angle"] = w["spin_angle"] + extra_turns + (360 - sector_center - (w["spin_angle"] % 360))
-                    w["spin_id"] += 1
-                    w["selected_cat"] = cat_name
-                    cands = [q for q in w["pool"] if q["cat"] == cat_name] or w["pool"]
-                    w["cur_q"] = cands[w["pool_idx"] % len(cands)]
-                    w["pool_idx"] += 1
-                    w["revealed"] = False
-                    w["answers"] = {}
-
-                elif action == "wheel_reveal" and room.wheel and room.wheel["cur_q"]:
-                    w = room.wheel
-                    w["revealed"] = True
-                    q = w["cur_q"]
-                    for k_tm, ch in w["answers"].items():
-                        tm = int(k_tm)
-                        if 0 <= tm < 4 and int(ch) == q["c"]:
-                            room.scores[tm] += 200
-                    w["active_team"] = (w["active_team"] + 1) % 4
-
-                # --- MATCH UP (MOSLASHTIRISH) ---
-                elif action == "match_start":
-                    pool = room.get_mc_pool()[:5]
-                    prompts = [q["q"] for q in pool]
-                    correct_ans = [q["opts"][q["c"]] for q in pool]
-                    order = list(range(len(pool)))
-                    random.shuffle(order)
-                    shuffled_ans = [correct_ans[i] for i in order]
-                    answer_key = [order.index(i) for i in range(len(pool))]
-                    room.match = {
-                        "round_id": random.randint(1000, 9999),
-                        "prompts": prompts,
-                        "shuffled_ans": shuffled_ans,
-                        "answer_key": answer_key,
-                        "results": {},
+                        "submissions": {},
                         "team_pts": [0, 0, 0, 0],
                     }
+                    room.mode = "classic_test"
 
-                elif action == "match_sync_scores" and room.match:
+                elif action == "ctest_toggle" and room.classic_test:
+                    room.classic_test["active"] = not room.classic_test["active"]
+
+                elif action == "ctest_sync_scores" and room.classic_test:
                     for i in range(4):
-                        room.scores[i] += room.match["team_pts"][i]
-                    room.match["team_pts"] = [0, 0, 0, 0]
-
-                # --- OPEN THE BOX (QUTINI OCH) ---
-                elif action == "boxes_start":
-                    pool = room.get_mc_pool()[:12]
-                    items = []
-                    for i in range(12):
-                        if i in (2, 7):
-                            items.append({"kind": "bonus", "bonus": 300, "q": None})
-                        elif i == 10:
-                            items.append({"kind": "jackpot", "bonus": 500, "q": None})
-                        else:
-                            items.append({"kind": "question", "bonus": 0, "q": pool[i % len(pool)]})
-                    random.shuffle(items)
-                    room.boxes = {
-                        "items": items,
-                        "opened": [False] * 12,
-                        "cur_idx": None,
-                        "revealed": False,
-                        "answers": {},
-                    }
-
-                elif action == "boxes_open" and room.boxes:
-                    idx = int(data.get("idx", 0))
-                    bx = room.boxes
-                    if 0 <= idx < 12:
-                        bx["opened"][idx] = True
-                        bx["cur_idx"] = idx
-                        bx["revealed"] = False
-                        bx["answers"] = {}
-
-                elif action == "boxes_reveal" and room.boxes and room.boxes["cur_idx"] is not None:
-                    bx = room.boxes
-                    bx["revealed"] = True
-                    it = bx["items"][bx["cur_idx"]]
-                    if it["kind"] == "question" and it["q"]:
-                        for k_tm, ch in bx["answers"].items():
-                            tm = int(k_tm)
-                            if 0 <= tm < 4 and int(ch) == it["q"]["c"]:
-                                room.scores[tm] += 250
-
-                elif action == "boxes_award_bonus" and room.boxes and room.boxes["cur_idx"] is not None:
-                    tm = int(data.get("team", 0))
-                    it = room.boxes["items"][room.boxes["cur_idx"]]
-                    if 0 <= tm < 4 and it["bonus"] > 0:
-                        room.scores[tm] += it["bonus"]
-                        room.boxes["revealed"] = True
+                        room.scores[i] += room.classic_test["team_pts"][i]
+                    room.classic_test["team_pts"] = [0, 0, 0, 0]
 
                 # --- MILLIONAIRE ---
                 elif action == "mil_start":
@@ -1382,28 +1516,6 @@ class Handler(BaseHTTPRequestHandler):
                     for i in range(4):
                         room.scores[i] += room.auc["bank"][i]
 
-                # --- TERRITORY ---
-                elif action == "ter_start":
-                    room.ter = {
-                        "owners": [None] * 25, "cur_cell": None, "phase": "idle",
-                        "wrong_teams": [], "last_msg": "Xaritadan bo‘sh katakchani tanlang!",
-                    }
-
-                elif action == "ter_pick" and room.ter:
-                    idx = int(data.get("idx", 0))
-                    room.ter["cur_cell"] = idx
-                    room.ter["phase"] = "battle"
-                    room.ter["wrong_teams"] = []
-                    room.ter["last_msg"] = f"⚔️ {idx + 1}-sektor uchun jang boshlandi! Birinchi to‘g‘ri topgan egallaydi!"
-
-                elif action == "ter_reveal" and room.ter:
-                    room.ter["phase"] = "revealed"
-
-                elif action == "ter_sync_scores" and room.ter:
-                    for i in range(4):
-                        cnt = sum(1 for ow in room.ter["owners"] if ow == i)
-                        room.scores[i] += cnt * 100
-
                 # --- BOMB ---
                 elif action == "bomb_start":
                     sec = int(data.get("sec", 20))
@@ -1438,7 +1550,7 @@ class Handler(BaseHTTPRequestHandler):
                         b["status"] = "playing"
                         b["last_msg"] = f"💣 Bomba {room.teams[nxt]} ga uzatildi!"
 
-                # --- TEST (KAHOOT) ---
+                # --- JONLI TEST (KAHOOT) ---
                 elif action == "kahoot_start":
                     dur = int(data.get("duration", 20))
                     pool = room.get_mc_pool()[:15]
