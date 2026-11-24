@@ -36,6 +36,8 @@ body{margin:0;background:radial-gradient(circle at top,#12235c,#08102B);color:#f
 .gameitem{background:rgba(19,36,92,.8);border:2px solid rgba(47,139,255,.4);border-radius:14px;padding:16px;margin-bottom:12px;cursor:pointer;transition:.2s}
 .gameitem:hover{border-color:#FFC72C;transform:translateY(-2px)}
 .gameitem.live{border-color:#FFC72C;background:linear-gradient(165deg,rgba(24,45,115,.9),rgba(14,26,66,.9))}
+.gameitem.soon{opacity:.6;cursor:not-allowed;border-color:rgba(148,163,184,.35);filter:grayscale(35%)}
+.gameitem.soon:hover{border-color:rgba(148,163,184,.35);transform:none}
 
 .optbtn{display:block;width:100%;text-align:left;padding:13px 16px;margin:8px 0;border-radius:12px;border:2px solid rgba(47,139,255,.4);background:rgba(12,24,66,.9);color:#fff;font-size:16px;cursor:pointer;transition:.2s}
 .optbtn:hover{border-color:#FFC72C;background:rgba(22,41,105,.9)}
@@ -213,9 +215,9 @@ const SGAMES = [
   {id:'territory', icon:'🗺️', title:'4. Hududlar jangi (5×5)', desc:'I–IV taktik tugmalarni birinchi bo‘lib to‘g‘ri bosing va xaritadagi sektorni egallang.'},
   {id:'bomb', icon:'💣', title:'5. Zanjirli Bomba', desc:'Bomba sizning jamoangizga kelganda taymer tugamasidan ALPHA–DELTA tugmasini bosing!'},
   {id:'kahoot', icon:'⚡', title:'6. TEST', desc:'▲ ◆ ● ■ rangli tugmalarni eng tez bosing, 🔥 seriya yig‘ing va shohsupaga chiqing!'},
-  {id:'wheel', icon:'🎡', title:'7. Omad G‘ildiragi (Random Wheel)', desc:'Baraban aylanganda tushgan bo‘limdagi savolga tezkor javob bering va ball oling!'},
-  {id:'match', icon:'🃏', title:'8. Moslashtirish (Match Up)', desc:'Savollar va javoblarni bir-biriga to‘g‘ri moslashtirib eng yuqori ballni qo‘lga kiriting.'},
-  {id:'boxes', icon:'📦', title:'9. Qutini Och (Open the Box)', desc:'12 ta sirli qutidan birini tanlang: ichida savol, bonus ball yoki jackpot yashiringan!'},
+  {id:'wheel', soon:true, icon:'🎡', title:'7. Omad G‘ildiragi (Random Wheel)', desc:'Baraban aylanganda tushgan bo‘limdagi savolga tezkor javob bering va ball oling!'},
+  {id:'match', soon:true, icon:'🃏', title:'8. Moslashtirish (Match Up)', desc:'Savollar va javoblarni bir-biriga to‘g‘ri moslashtirib eng yuqori ballni qo‘lga kiriting.'},
+  {id:'boxes', soon:true, icon:'📦', title:'9. Qutini Och (Open the Box)', desc:'12 ta sirli qutidan birini tanlang: ichida savol, bonus ball yoki jackpot yashiringan!'},
 ];
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -488,6 +490,15 @@ function render(){
   updateProfileVisibility();
 
   document.getElementById('smodeslist').innerHTML = SGAMES.map(g => {
+    if (g.soon){
+      return `<div class="gameitem soon">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <b style="font-size:17px;color:#CBD5E1">${g.icon} ${esc(g.title)}</b>
+          <span style="background:#F59E0B;color:#000;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:bold;white-space:nowrap">⏳ Tez kunda</span>
+        </div>
+        <div style="font-size:14px;color:#94A3B8;margin-top:6px;line-height:1.4">${esc(g.desc)}</div>
+      </div>`;
+    }
     const isLive = g.id === S.mode;
     return `<div class="gameitem ${isLive?'live':''}" onclick="openStudentTab('play')">
       <div style="display:flex;justify-content:space-between;align-items:center">
@@ -513,9 +524,15 @@ function render(){
   if (S.mode === 'auction'){ document.getElementById('title').textContent = '💰 AUKSION'; renderAucPlayer(main); return; }
   if (S.mode === 'territory'){ document.getElementById('title').textContent = '🗺️ HUDUDLAR JANGI'; renderTerPlayer(main); return; }
   if (S.mode === 'bomb'){ document.getElementById('title').textContent = '💣 ZANJIRLI BOMBA'; renderBombPlayer(main); return; }
-  if (S.mode === 'wheel'){ document.getElementById('title').textContent = '🎡 OMAD G‘ILDARAGI'; renderWheelPlayer(main); return; }
-  if (S.mode === 'match'){ document.getElementById('title').textContent = '🃏 MOSLASHTIRISH'; renderMatchPlayer(main); return; }
-  if (S.mode === 'boxes'){ document.getElementById('title').textContent = '📦 QUTINI OCH'; renderBoxesPlayer(main); return; }
+  if (S.mode === 'wheel' || S.mode === 'match' || S.mode === 'boxes'){
+    document.getElementById('title').textContent = '⏳ TEZ KUNDA';
+    main.innerHTML = `<div class="card" style="text-align:center;border:2px solid #F59E0B">
+      <div style="font-size:32px;margin-bottom:6px">⏳</div>
+      <div style="font-size:18px;font-weight:bold;color:#FFC72C">Bu o‘yin rejimi hozircha muzlatilgan (Tez kunda)</div>
+      <div style="font-size:14px;color:#CBD5E1;margin-top:6px">Boshlovchi boshqa faol o‘yin rejimini tanlashini kuting.</div>
+    </div>`;
+    return;
+  }
 
   document.getElementById('title').textContent = '🟦 JEO QUIZ';
   if (S.cur !== lastCur){ lastCur = S.cur; myChoice = null; }
