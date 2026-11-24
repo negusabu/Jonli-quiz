@@ -1,1614 +1,948 @@
-import base64
-import copy
-import io
-import json
-import os
-import random
-import re
-import threading
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
-import zipfile
-import xml.etree.ElementTree as ET
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+<!DOCTYPE html>
+<html lang="uz"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jeo Quiz Pro — Talaba Ekrani</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(circle at top,#142868,#060c24);color:#fff;font-family:Arial,Helvetica,sans-serif;min-height:100vh}
+.w{max-width:960px;margin:0 auto;padding:14px}
 
-PORT = int(os.environ.get("PORT", 8080))
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash").strip()
-DEFAULT_ADMIN_PIN = os.environ.get("ADMIN_PIN", "1234").strip()
+/* TOPBAR & SCOREBOARD */
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:8px;background:rgba(14,26,68,.92);backdrop-filter:blur(12px);padding:10px 14px;border-radius:14px;border:1px solid rgba(59,130,246,.35);margin-bottom:12px;flex-wrap:wrap}
+.brand{font-size:18px;font-weight:bold;color:#FFC72C;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pill{font-size:12px;padding:4px 10px;border-radius:20px;background:#1E3A8A;color:#FDE047;border:1px solid #60A5FA;font-weight:bold}
+.userpill{font-size:12px;padding:4px 10px;border-radius:20px;background:#13245C;color:#7CFC9A;border:1px solid #1E8E4E;font-weight:bold}
 
-PRESETS_META = [
-    {"id": "econ", "icon": "📈", "title": "Iqtisodiyot va Moliya", "desc": "Mikro va makroiqtisodiyot, bank tizimi, bozor va moliya"},
-    {"id": "logic", "icon": "🧠", "title": "Mantiq va Zehn", "desc": "Mantiqiy masalalar, sonlar ketma-ketligi va tezkor fikrlash"},
-    {"id": "history", "icon": "🏛️", "title": "O‘zbekiston va Jahon Tarixi", "desc": "Buyuk allomalar, Temuriylar davri va jahon sivilizatsiyasi"},
-    {"id": "it", "icon": "💻", "title": "IT va Sun’iy Idrok", "desc": "Dasturlash, algoritmlar, sun’iy intellekt va kiberxavfsizlik"},
-    {"id": "general", "icon": "🌍", "title": "Umumiy Bilimlar", "desc": "Geografiya, fan, adabiyot, sport va qiziqarli faktlar"},
-]
+.scorestrip{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.scmini{background:rgba(17,33,86,.92);border:1px solid rgba(59,130,246,.45);border-radius:12px;padding:8px 6px;text-align:center}
+.scmini.mine{border:2px solid #FFC72C;background:rgba(30,58,138,.95)}
+.scmini .t{font-size:12px;color:#B8C4E0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scmini .v{font-size:20px;font-weight:bold;color:#FFC72C}
 
+/* CARDS & FORMS */
+.card{background:rgba(17,33,86,.88);backdrop-filter:blur(12px);border-radius:16px;padding:16px;margin-bottom:14px;border:1px solid rgba(59,130,246,.35);box-shadow:0 8px 28px rgba(0,0,0,.25)}
+.card h2{font-size:16px;color:#60A5FA;margin:0 0 10px}
+input,select,textarea{font:inherit;padding:11px 12px;border-radius:10px;border:1px solid rgba(59,130,246,.45);width:100%;margin:6px 0;background:#0c1842;color:#fff;font-size:15px}
+button{font:inherit;color:#fff;background:#1B3180;border:none;border-radius:10px;padding:11px 15px;cursor:pointer;font-size:15px;transition:.2s}
+button:hover{filter:brightness(1.1)}
+button.gold{background:#FFC72C;color:#000;font-weight:bold;box-shadow:0 4px 14px rgba(255,199,44,.28)}
+button.green{background:#1E8E4E;font-weight:bold}
+button.red{background:#B3261E;font-weight:bold}
+button:disabled{opacity:.45;cursor:default}
 
-def _pack(cats, items):
-    res = []
-    for c_idx, cat in enumerate(cats):
-        for r_idx in range(5):
-            q_txt, opts, c, exp = items[c_idx * 5 + r_idx]
-            res.append({
-                "cat": cat,
-                "pts": (r_idx + 1) * 100,
-                "q": q_txt,
-                "opts": list(opts),
-                "c": c,
-                "ans": opts[c] if opts else "",
-                "exp": exp,
-            })
-    return res
+.q{font-size:20px;font-weight:bold;line-height:1.4;margin:8px 0 12px}
+.ans{font-size:14px;color:#CBD5E1;line-height:1.55}
+.aibox{background:rgba(12,24,66,.92);border-left:4px solid #8B5CF6;padding:12px;border-radius:10px;margin-top:10px;font-size:14px;line-height:1.5}
+.msg{color:#FF8A80;font-weight:bold;margin-top:6px;font-size:14px}
 
+/* OPTIONS (JEOPARDY / AUCTION / MILLIONAIRE) */
+.optbtn{display:block;width:100%;text-align:left;padding:13px 16px;margin:8px 0;border-radius:12px;border:2px solid rgba(59,130,246,.45);background:rgba(12,24,66,.92);color:#fff;font-size:16px}
+.optbtn.sel{background:#D97706;border-color:#FFC72C;color:#000;font-weight:bold}
+.optbtn.ok{background:#1E8E4E;border-color:#7CFC9A;color:#fff;font-weight:bold}
+.optbtn.bad{background:#B3261E;border-color:#FF8A80;color:#fff;font-weight:bold}
+.optbtn.hid{opacity:.22;text-decoration:line-through;pointer-events:none}
 
-PRESET_DATA = {
-    "econ": {
-        "title": "Iqtisodiyot va Moliya",
-        "questions": _pack(
-            ["Mikroiqtisodiyot", "Makroiqtisodiyot", "Bank va Pul", "Xalqaro Savdo", "Biznes va Bozor"],
-            [
-                ("Tovar narxi oshganda unga bo‘lgan talab hajmining kamayishi nima deyiladi?", ["Talab qonuni", "Taklif qonuni", "Inflyatsiya", "Monopoliya"], 0, "Narx va talab hajmi o‘rtasida teskari bog‘liqlik mavjud."),
-                ("Bozorda faqat bitta sotuvchi hukmronlik qiladigan tuzilma qanday nomlanadi?", ["Oligopoliya", "Monopoliya", "Raqobat", "Kartel"], 1, "Monopoliya sharoitida yagona ishlab chiqaruvchi narxni belgilaydi."),
-                ("Qo‘shimcha 1 birlik mahsulot ishlab chiqarish uchun ketadigan xarajat nima?", ["Doimiy xarajat", "Chegaraviy xarajat (MC)", "O‘rtacha xarajat", "Sof foyda"], 1, "Marginal Cost (MC) — qo‘shimcha birlik xarajatidir."),
-                ("Bir tovar narxi oshganda boshqasiga talab oshsa, ular qanday tovarlar?", ["O‘rinbosar (substitut)", "To‘ldiruvchi", "Past sifatli", "Jamoat tovari"], 0, "Masalan, choy va qahva o‘rinbosar tovarlardir."),
-                ("Iste’molchining qo‘shimcha birlikdan oladigan qoniqishi kamayib borishi qonuni?", ["Gossenning 1-qonuni", "Sey qonuni", "Ouken qonuni", "Engel qonuni"], 0, "Chegaraviy naflilikning pasayib borish qonuni Gossen nomi bilan bog‘liq."),
-                ("Mamlakat ichida bir yilda yaratilgan barcha pirovard tovar va xizmatlar qiymati?", ["YaIM (GDP)", "YaMM (GNP)", "Sof eksport", "Davlat byudjeti"], 0, "Yalpi ichki mahsulot (YaIM) hududiy tamoyil asosida hisoblanadi."),
-                ("Narxlar umumiy darajasining uzoq muddatli o‘sishi va pul qadrsizlanishi?", ["Deflyatsiya", "Inflyatsiya", "Stagnatsiya", "Devalvatsiya"], 1, "Inflyatsiya pulning xarid qobiliyatini pasaytiradi."),
-                ("Ishsizlik va inflyatsiya o‘rtasidagi teskari bog‘liqlikni ko‘rsatuvchi egri chiziq?", ["Fillips egri chizig‘i", "Laffer egri chizig‘i", "Lorens egri chizig‘i", "IS-LM modeli"], 0, "Fillips egri chizig‘i qisqa muddatda inflyatsiya va ishsizlik aloqasini ko‘rsatadi."),
-                ("Soliq stavkasi va byudjet tushumlari bog‘liqligini ifodalovchi egri chiziq?", ["Laffer egri chizig‘i", "Engel chizig‘i", "Filips chizig‘i", "Gini koeffitsiyenti"], 0, "Haddan tashqari yuqori soliq stavkasi byudjet tushumlarini kamaytiradi."),
-                ("YaIM o‘sishining ikki chorak ketma-ket pasayishi qanday ataladi?", ["Bum", "Retsessiya", "Giperinflyatsiya", "Emissiya"], 1, "Retsessiya iqtisodiy faollikning pasayish fazasidir."),
-                ("O‘zbekiston Respublikasida pul-kredit siyosatini qaysi organ yuritadi?", ["Moliya vazirligi", "Markaziy bank", "Soliq qo‘mitasi", "Tijorat banklari"], 1, "Markaziy bank asosiy stavka va pul massasini tartibga soladi."),
-                ("Markaziy bankning tijorat banklariga beradigan kreditlari bo‘yicha foiz ko‘rsatkichi?", ["Asosiy stavka", "Diskont", "Dividend", "Keshbek"], 0, "Asosiy stavka iqtisodiyotdagi kredit va depozit foizlariga ta’sir qiladi."),
-                ("Aholi va korxonalarning bankka vaqtincha qo‘ygan pul mablag‘lari nima?", ["Kredit", "Depozit (omonat)", "Aksiya", "Veksel"], 1, "Depozit egasiga foiz daromadi keltiradi."),
-                ("Kompaniya foydasidan aksiyadorlarga to‘lanadigan ulush qanday nomlanadi?", ["Foiz", "Dividend", "Renta", "Royalti"], 1, "Dividend aksiyalar soniga mutanosib taqsimlanadi."),
-                ("Qarz majburiyatini tasdiqlovchi qimmatli qog‘oz nima deyiladi?", ["Obligatsiya", "Oddiy aksiya", "Litsenziya", "Patent"], 0, "Obligatsiya egasi belgilangan muddatda asosiy qarz va foiz oladi."),
-                ("Eksport hajmi import hajmidan katta bo‘lsa, savdo balansi qanday bo‘ladi?", ["Profitsit (ijobiy)", "Defitsit (taqchil)", "Nolga teng", "Bankrot"], 0, "Sof eksport musbat bo‘lganda savdo profisiti yuzaga keladi."),
-                ("Chet el tovarlariga qo‘yiladigan bojxona solig‘i qanday ataladi?", ["Tarif (boj)", "Kvota", "Subsidiya", "Demping"], 0, "Bojxona tarifi ichki bozorni himoya qilish va byudjetni to‘ldirish uchun qo‘llanadi."),
-                ("Tovarni jahon bozorida tannarxidan ham arzon narxda sotish siyosati?", ["Demping", "Embargo", "Kliring", "Reeksport"], 0, "Demping raqobatchilarni bozordan siqib chiqarish maqsadida qo‘llanadi."),
-                ("JST qisqartmasi nimani anglatadi?", ["Jahon Savdo Tashkiloti", "Jahon Soliq Tizimi", "Jamiyat Sanoat Tarmog‘i", "Janubiy Savdo Ittifoqi"], 0, "JST (WTO) xalqaro savdo qoidalarini tartibga soluvchi tashkilot."),
-                ("Milliy valyuta kursining xorijiy valyutaga nisbatan rasmiy pasayishi?", ["Devalvatsiya", "Revalvatsiya", "Diversifikatsiya", "Denomizatsiya"], 0, "Devalvatsiya eksportchilarni rag‘batlantirishi mumkin."),
-                ("Daromad va xarajatlar tenglashadigan ishlab chiqarish nuqtasi nima?", ["Zararsizlik nuqtasi", "Maksimal foyda", "Defolt nuqtasi", "Kapitalizatsiya"], 0, "Break-even point (zararsizlik nuqtasi)da sof foyda nolga teng."),
-                ("Yangi tashkil etilgan innovatsion va tez o‘suvchi loyiha qanday ataladi?", ["Startap", "Holding", "Trast", "Syndikat"], 0, "Startaplar ko‘pincha venchur fondlar tomonidan moliyalashtiriladi."),
-                ("Xatarlarni kamaytirish uchun mablag‘larni turli aktivlarga taqsimlash?", ["Diversifikatsiya", "Inflyatsiya", "Likvidlik", "Amortizatsiya"], 0, "«Barcha tuxumni bitta savatga solmaslik» tamoyili."),
-                ("Aktivning tez va qiymatini yo‘qotmasdan naqd pulga aylanish qobiliyati?", ["Likvidlik", "Rentabellik", "Solventsiya", "Kapital"], 0, "Naqd pul eng yuqori likvidlikka ega aktivdir."),
-                ("Mijozlarni jalb qilish va mahsulotni bozorga olib chiqish tizimi?", ["Marketing", "Logistika", "Audit", "Buxgalteriya"], 0, "Marketing 4P (Product, Price, Place, Promotion) tamoyiliga asoslanadi."),
-            ],
-        ),
-    },
-    "logic": {
-        "title": "Mantiq va Zehn",
-        "questions": _pack(
-            ["Sonlar Qatori", "Topishmoqlar", "Strategiya", "Ehtimollik", "Tezkor Zehn"],
-            [
-                ("Ketma-ketlikni davom ettiring: 2, 6, 12, 20, 30, ?", ["40", "42", "44", "36"], 1, "Farqlar +4, +6, +8, +10, +12 tarzida ortib bormoqda: 30 + 12 = 42."),
-                ("Ketma-ketlikda keyingi son qaysi: 1, 1, 2, 3, 5, 8, 13, ?", ["18", "20", "21", "24"], 2, "Fibonachchi sonlari: har bir son oldingi ikkitasining yig‘indisi (8 + 13 = 21)."),
-                ("Qatorni to‘ldiring: 3, 9, 27, 81, ?", ["162", "243", "324", "108"], 1, "Har bir had 3 ga ko‘paytirilmoqda: 81 × 3 = 243."),
-                ("Qaysi son ortiqcha: 4, 9, 16, 24, 36?", ["9", "16", "24", "36"], 2, "Boshqa barcha sonlar butun sonlarning kvadrati (2², 3², 4², 6²), 24 esa emas."),
-                ("5 ta mashina 5 detalni 5 daqiqada yasasa, 100 mashina 100 detalni necha daqiqada yasaydi?", ["100 daqiqada", "20 daqiqada", "5 daqiqada", "1 daqiqada"], 2, "Har bir mashina 1 detalni 5 daqiqada yasaydi, demak 100 mashina ham 5 daqiqada bitiradi."),
-                ("Qorong‘i xonada 1 ta gugurt, sham, kerosin lampa va o‘tin bor. Avval nimani yoqasiz?", ["Shamni", "Gugurtni", "O‘tinni", "Lampani"], 1, "Boshqa narsalarni yoqish uchun avval gugurtni yoqish kerak."),
-                ("Kechasi soat 12 da yomg‘ir yog‘ayotgan bo‘lsa, 72 soatdan keyin quyosh chiqishi mumkinmi?", ["Ha", "Yo‘q, tun bo‘ladi", "Faqat qishda", "Aniq emas"], 1, "72 soat = roppa-rosa 3 sutka, demak yana yarim tun (soat 12:00) bo‘ladi."),
-                ("Daraxtda 10 ta qush o‘tirgan edi. Ovchi 1 tasini otdi. Daraxtda nechta qush qoldi?", ["9 ta", "1 ta", "0 ta (uchib ketdi)", "10 ta"], 2, "O‘q ovozidan qolgan qushlar uchib ketadi."),
-                ("Qaysi oyda 28 kun bor?", ["Faqat fevralda", "Barcha 12 oyda", "Martda", "Dekabrda"], 1, "Har bir oyda kamida 28 kun mavjud."),
-                ("Otasi 40 yoshda, o‘g‘li 10 yoshda. Necha yildan keyin otasi o‘g‘lidan 3 barobar katta bo‘ladi?", ["5 yildan keyin", "10 yildan keyin", "15 yildan keyin", "20 yildan keyin"], 0, "5 yildan keyin ota 45, o‘g‘il 15 yoshda bo‘ladi (45 / 15 = 3)."),
-                ("3 ta mushuk 3 sichqonni 3 daqiqada tutadi. 1 mushuk 1 sichqonni necha daqiqada tutadi?", ["1 daqiqada", "3 daqiqada", "9 daqiqada", "2 daqiqada"], 1, "Har bir mushuk o‘z sichqonini 3 daqiqa davomida quvib tutadi."),
-                ("Poygada 2-o‘rindagi sportchini quvib o‘tsangiz, nechanchi o‘ringa chiqasiz?", ["1-o‘ringa", "2-o‘ringa", "3-o‘ringa", "4-o‘ringa"], 1, "2-o‘rindagi odamning o‘rnini egallaysiz — ya’ni 2-o‘rin."),
-                ("Stolda 4 ta olma bor. Siz 2 tasini oldingiz. Sizda nechta olma bor?", ["2 ta", "4 ta", "1 ta", "0 ta"], 0, "Siz olgan 2 ta olma o‘zingizda turibdi."),
-                ("Qaysi so‘z hamma tillarda bir xil eshitiladi?", ["Salom", "Exo (aks-sado)", "Suv", "Kitob"], 1, "Aks-sado aytilgan so‘zni aynan qaytaradi."),
-                ("Bir tayoqning 2 ta uchi bor. Yarimta tayoqning nechta uchi bor?", ["1 ta", "2 ta", "3 ta", "4 ta"], 1, "Kesilgan tayoqning ham baribir 2 ta uchi bo‘ladi."),
-                ("Tanga 2 marta tashlandi. Ikkala safar ham gerb tushish ehtimoli qancha?", ["50%", "25%", "75%", "10%"], 1, "1/2 × 1/2 = 1/4 = 25%."),
-                ("O‘yin kubigi (1–6) bir marta tashlandi. Juft son tushish ehtimoli qancha?", ["1/6", "1/3", "1/2", "2/3"], 2, "Juft sonlar 3 ta (2, 4, 6), jami 6 ta: 3/6 = 1/2."),
-                ("Qutida 5 oq va 5 qora shar bor. Kamida nechta shar olsangiz albatta 2 ta bir xil rangli chiqadi?", ["2 ta", "3 ta", "6 ta", "5 ta"], 1, "Dirixle tamoyili: 2 xil rang bo‘lgani uchun 3 ta shar olinsa kamida ikkitasi bir xil bo‘ladi."),
-                ("3 ta tangadan biri soxta (yengilroq). Pallali tarozida kamida necha marta tortib uni topish mumkin?", ["1 marta", "2 marta", "3 marta", "4 marta"], 0, "2 tasini pallaga qo‘yasiz: teng bo‘lsa 3-si soxta, biri ko‘tarilsa o‘shanisi soxta."),
-                ("Soat 3:15 da soat va minut millari orasidagi burchak necha gradus?", ["0°", "7.5°", "15°", "30°"], 1, "Minut mili 3 da, soat mili esa 3 dan chorak soat (30° / 4 = 7.5°) siljigan."),
-                ("Uchta 2 raqami yordamida eng katta qanday son yozish mumkin?", ["222", "2^22", "22^2", "2×2×2"], 1, "2 ning 22-darajasi (4 194 304) eng katta qiymat beradi."),
-                ("Suv qachon elakda turadi?", ["Muzlaganda", "Qaynaganda", "Hech qachon", "Kechasi"], 0, "Muz holatida suv elakdan o‘tmaydi."),
-                ("Qaysi idishdan ovqat yeb bo‘lmaydi?", ["Bo‘sh idishdan", "Katta idishdan", "Shisha idishdan", "Chuqur idishdan"], 0, "Bo‘sh idishda ovqat bo‘lmaydi."),
-                ("1 kg tosh og‘irmi yoki 1 kg paxta?", ["Tosh", "Paxta", "Ikkalasi teng", "Bilmayman"], 2, "Ikkalasining ham vazni 1 kilogrammdan."),
-                ("Yomg‘ir yog‘ayotganda qarg‘a qanday daraxtga qo‘nadi?", ["Ho‘l daraxtga", "Baland daraxtga", "Quruq daraxtga", "Past daraxtga"], 0, "Yomg‘ir yog‘ayotgani uchun daraxt ho‘l bo‘ladi."),
-            ],
-        ),
-    },
-    "history": {
-        "title": "O‘zbekiston va Jahon Tarixi",
-        "questions": _pack(
-            ["Buyuk Allomalar", "Temuriylar Davri", "Ipak Yo‘li", "Jahon Tarixi", "Yangi O‘zbekiston"],
-            [
-                ("«Al-jabr val-muqobala» asari muallifi kim?", ["Al-Xorazmiy", "Al-Farg‘oniy", "Ibn Sino", "Al-Beruniy"], 0, "Algebra atamasi Al-Xorazmiyning ushbu asari nomidan olingan."),
-                ("Yer sharining radiusini o‘rta asrlarda eng aniq o‘lchagan vatandoshimiz?", ["Al-Beruniy", "Ulug‘bek", "Al-Buxoriy", "Zamahshariy"], 0, "Abu Rayhon Beruniy Hindistonda Yer radiusini 6339.6 km etib hisoblagan."),
-                ("«Tib qonunlari» asari necha kitobdan iborat?", ["3 kitob", "5 kitob", "7 kitob", "10 kitob"], 1, "Ibn Sinoning «Tib qonunlari» 5 kitobdan iborat."),
-                ("1018 ta yulduz koordinatalarini o‘z ichiga olgan «Ziji jadidi Ko‘ragoniy» muallifi?", ["Mirzo Ulug‘bek", "Ali Qushchi", "Qozizoda Rumiy", "Alisher Navoiy"], 0, "Samarqand rasadxonasida tuzilgan yulduzlar jadvali."),
-                ("«Xamsa»ni turkiy tilda birinchi bo‘lib yaratgan buyuk mutafakkir?", ["Alisher Navoiy", "Zahiriddin Bobur", "Lutfiy", "Jomiy"], 0, "Alisher Navoiy 1483–1485-yillarda besh dostondan iborat «Xamsa»ni yozgan."),
-                ("Amir Temur qaysi yili Movarounnahr taxtini egallagan?", ["1360-yil", "1370-yil", "1380-yil", "1405-yil"], 1, "1370-yilda Samarqand poytaxt etib belgilangan."),
-                ("«Boburnoma» asari qaysi tilda yozilgan?", ["Fors tilida", "Eski o‘zbek tilida", "Arab tilida", "Hind tilida"], 1, "Bobur o‘z memuarini jonli eski o‘zbek tilida yozgan."),
-                ("Samarqanddagi Registon maydonida joylashgan eng birinchi madrasa?", ["Ulug‘bek madrasasi", "Sherdor madrasasi", "Tillakori madrasa", "Bibixonim madrasasi"], 0, "Ulug‘bek madrasasi 1417–1420-yillarda qurilgan."),
-                ("Amir Temurning mashhur shiori qaysi?", ["«Kuch — adolatdadir»", "«Bilim — boylik»", "«Tinchlik — oliy ne’mat»", "«Harakatda barakat»"], 0, "«Rosti — rusti» (Kuch — adolatdadir) Amir Temur uzugida o‘yib yozilgan."),
-                ("Temuriylar davrida «Sharq Rafaeli» nomini olgan buyuk musavvir?", ["Kamoliddin Behzod", "Sulton Ali Mashhadiy", "Xondamir", "Mirkhond"], 0, "Kamoliddin Behzod Hirot miniatyura maktabining eng yirik namoyandasi."),
-                ("Buyuk Ipak yo‘li qaysi asrda shakllangan?", ["Mil. avv. II asrda", "Milodiy V asrda", "X asrda", "XV asrda"], 0, "Xitoy elchisi Chjan Syanning G‘arbga sayohatidan so‘ng yo‘l ochilgan."),
-                ("Qog‘oz ishlab chiqarish VIII asrda Xitoydan so‘ng qaysi shaharda rivojlangan?", ["Samarqandda", "Buxoroda", "Xivada", "Toshkentda"], 0, "Samarqand qog‘ozi o‘zining silliqligi va chidamliligi bilan mashhur bo‘lgan."),
-                ("Buyuk Ipak yo‘lining asosiy tovari nima edi?", ["Ipak matolar", "Neft", "Paxta", "Kauchuk"], 0, "Xitoy ipagi G‘arb mamlakatlarida oltin bilan teng baholangan."),
-                ("Buxorodagi mashhur Minorai Kalon qaysi hukmdor davrida qurilgan?", ["Arslonxon", "Ismoil Somoniy", "Abdullaxon II", "Amir Nasrullo"], 0, "1127-yilda Qoraxoniylar hukmdori Arslonxon tomonidan bunyod etilgan."),
-                ("O‘zbekistondagi qaysi shaharlar UNESCO Umumjahon merosi ro‘yxatiga kiritilgan?", ["Samarqand, Buxoro, Xiva, Shahrisabz", "Faqat Samarqand", "Toshkent va Farg‘ona", "Nukus va Termiz"], 0, "To‘rtta tarixiy shahar markazlari UNESCO himoyasiga olingan."),
-                ("Qadimgi Misr ehromlari qaysi maqsadda qurilgan?", ["Fir’avnlar maqbarasi", "Rasadxona", "Suv ombori", "Qal’a"], 0, "Giza ehromlari fir’avnlar uchun abadiy maqbara bo‘lgan."),
-                ("Amerikani 1492-yilda kashf etgan dengizchi sayyoh kim?", ["Xristofor Kolumb", "Vasko da Gama", "Fernando Magellan", "Amerigo Vespuchchi"], 0, "Kolumb Hindistonga g‘arbiy yo‘l izlab Amerika qit’asiga yetib borgan."),
-                ("Birinchi jahon urushi qaysi yillarda bo‘lib o‘tgan?", ["1914–1918", "1939–1945", "1904–1905", "1917–1922"], 0, "1914-yil iyulda boshlanib, 1918-yil noyabrda yakunlangan."),
-                ("Birlashgan Millatlar Tashkiloti (BMT) qachon tashkil etilgan?", ["1945-yil", "1919-yil", "1950-yil", "1991-yil"], 0, "Ikkinchi jahon urushidan so‘ng tinchlikni saqlash maqsadida tuzilgan."),
-                ("Insoniyat tarixida birinchi bo‘lib kosmosga uchgan fazogir?", ["Yuriy Gagarin", "Nil Armstrong", "Valentina Tereshkova", "Solijon Sharipov"], 0, "1961-yil 12-aprelda «Vostok-1» kemasida parvoz qilgan."),
-                ("O‘zbekiston Respublikasi Davlat mustaqilligi qachon e’lon qilingan?", ["1991-yil 31-avgust", "1992-yil 8-dekabr", "1991-yil 18-noyabr", "1992-yil 2-iyul"], 0, "1991-yil 31-avgustda e’lon qilinib, 1-sentabr Mustaqillik kuni etib belgilangan."),
-                ("O‘zbekiston Respublikasi Konstitutsiyasi qachon qabul qilingan?", ["1992-yil 8-dekabr", "1991-yil 1-sentabr", "1994-yil 1-iyul", "1993-yil 2-sentabr"], 0, "1992-yil 8-dekabrda Oliy Kengash sessiyasida qabul qilingan."),
-                ("Milliy valyutamiz — «So‘m» qachon muomalaga kiritilgan?", ["1994-yil 1-iyul", "1991-yil 31-avgust", "1992-yil 10-dekabr", "1995-yil 1-yanvar"], 0, "1994-yil 1-iyuldan so‘m rasmiy to‘lov vositasi bo‘ldi."),
-                ("O‘zbekiston BMTga qachon a’zo bo‘lgan?", ["1992-yil 2-mart", "1991-yil 1-sentabr", "1995-yil 24-oktabr", "2001-yil 15-iyun"], 0, "1992-yil 2-martda BMT Bosh Assambleyasi qarori bilan a’zo bo‘lgan."),
-                ("Yangi tahrirdagi O‘zbekiston Konstitutsiyasi referendumida qachon qabul qilindi?", ["2023-yil 30-aprel", "2021-yil 24-oktabr", "2022-yil 8-dekabr", "2024-yil 1-yanvar"], 0, "2023-yil 30-apreldagi referendumda yangi tahrir qabul qilindi."),
-            ],
-        ),
-    },
-    "it": {
-        "title": "IT va Sun’iy Idrok",
-        "questions": _pack(
-            ["Dasturlash", "Sun’iy Idrok", "Internet va Tarmoq", "Kiberxavfsizlik", "Texnologiyalar"],
-            [
-                ("Python dasturlash tilining yaratuvchisi kim?", ["Gvido van Rossum", "Linus Torvalds", "Jeyms Gosling", "Bjarne Stroustrup"], 0, "Gvido van Rossum Python tilini 1991-yilda taqdim etgan."),
-                ("Veb-sahifalarning tuzilishini belgilovchi belgilash tili qaysi?", ["HTML", "Python", "SQL", "C++"], 0, "HyperText Markup Language (HTML) sahifa skeletini yaratadi."),
-                ("Ma’lumotlar bazasi bilan ishlash uchun qo‘llaniladigan so‘rov tili?", ["SQL", "CSS", "JSON", "XML"], 0, "Structured Query Language (SQL) jadvallardan ma’lumot olish uchun ishlatiladi."),
-                ("Dasturdagi xatoliklarni topish va tuzatish jarayoni nima deyiladi?", ["Debugging", "Compiling", "Hosting", "Phishing"], 0, "Debugging dastur kodidagi xatolarni bartaraf etish jarayonidir."),
-                ("O‘zgaruvchida faqat True yoki False qiymat saqlaydigan ma’lumot turi?", ["Boolean", "Integer", "String", "Float"], 0, "Mantiqiy tur (Boolean) ikkita qiymat qabul qiladi."),
-                ("ChatGPT va Gemini kabi matn yaratuvchi modellar qanday qisqartma bilan ataladi?", ["LLM", "CPU", "VPN", "BIOS"], 0, "Katta til modellari (LLM) milliardlab matnlar asosida o‘qitiladi."),
-                ("Kompyuterning inson kabi fikrlay olishini sinovdan o‘tkazuvchi mashhur test?", ["Tyuring testi", "Eynshteyn testi", "Nyuton qonuni", "Moor qonuni"], 0, "Alan Tyuring 1950-yilda mashina intellektini baholash testini taklif qilgan."),
-                ("Sun’iy neyron tarmoqlar inson miyasidagi qaysi hujayralardan ilhomlangan?", ["Neyronlardan", "Leykotsitlardan", "Eritrotsitlardan", "Trombotsitlardan"], 0, "Sun’iy neyronlar kirish signallarini vaznlar orqali qayta ishlaydi."),
-                ("Tasvirlarni tanish va tahlil qilish bilan shug‘ullanuvchi AI yo‘nalishi?", ["Computer Vision", "Blockchain", "Cloud Storage", "DevOps"], 0, "Kompyuter ko‘rishi yuzni tanish va avtopilotlarda qo‘llanadi."),
-                ("AI modeliga aniq va sifatli topshiriq yozish san’ati nima deyiladi?", ["Prompt Engineering", "Reverse Engineering", "Data Mining", "Web Scraping"], 0, "To‘g‘ri tuzilgan prompt AI javobi sifatini keskin oshiradi."),
-                ("HTTP protokolidan farqli o‘laroq, ma’lumotlarni shifrlab uzatuvchi xavfsiz protokol?", ["HTTPS", "FTP", "SMTP", "POP3"], 0, "HTTPS SSL/TLS shifrlash sertifikatidan foydalanadi."),
-                ("Domen nomlarini IP-manzillarga aylantirib beruvchi tizim nima?", ["DNS", "RAM", "SSD", "USB"], 0, "Domain Name System (DNS) internetning telefon kitobi vazifasini bajaradi."),
-                ("Foydalanuvchining brauzerida saqlanadigan kichik matnli ma’lumot fayllari?", ["Cookies", "Pixels", "Drivers", "Kernels"], 0, "Cookie fayllari sessiya va sozlamalarni eslab qolish uchun ishlatiladi."),
-                ("GitHub platformasi asosan nima uchun xizmat qiladi?", ["Kodlarni saqlash va boshqarish", "Video montaj qilish", "Musiqa tinglash", "Online o‘yin o‘ynash"], 0, "GitHub Git versiyalarni boshqarish tizimiga asoslangan."),
-                ("«Cloud computing» (Bulutli texnologiya) nimani anglatadi?", ["Masofaviy server resurslaridan foydalanish", "Ob-havoni bashorat qilish", "Wi-Fi parolini buzish", "Fleshka xotirasi"], 0, "Render, AWS va Google Cloud bulutli platformalarga misoldir."),
-                ("Soxta xat yoki sayt orqali foydalanuvchi parolini o‘g‘irlash usuli?", ["Phishing (Fishing)", "Backup", "Encryption", "Firewall"], 0, "Fishingda firibgarlar rasmiy bank yoki sayt qiyofasiga kiradi."),
-                ("Akkauntga kirishda paroldan tashqari SMS yoki ilova kodi so‘ralishi nima?", ["Ikki bosqichli autentifikatsiya (2FA)", "Keshlash", "Arxivlash", "Formatlash"], 0, "2FA akkaunt xavfsizligini bir necha barobar oshiradi."),
-                ("Tarmoqqa ruxsatsiz kirishlarni to‘suvchi himoya devori qanday ataladi?", ["Firewall", "Trojan", "Spam", "Cookie"], 0, "Firewall kiruvchi va chiquvchi trafikni filtrlaydi."),
-                ("Fayllarni shifrlab, ochish uchun pul talab qiluvchi zararli dastur?", ["Ransomware", "Antivirus", "Browser", "Compiler"], 0, "Ransomware hujumlaridan himoyalanish uchun zaxira nusxa (backup) muhim."),
-                ("Kuchli parol kamida nechta belgidan iborat bo‘lishi tavsiya etiladi?", ["12 ta va undan ko‘p", "4 ta raqam", "6 ta harf", "Faqat tug‘ilgan yil"], 0, "Katta-kichik harflar, raqam va maxsus belgilardan iborat uzun parol xavfsiz."),
-                ("1 Kilobayt necha baytga teng?", ["1024 bayt", "100 bayt", "512 bayt", "2048 bayt"], 0, "Ikkilik sanoq tizimida 2^10 = 1024 bayt."),
-                ("Kompyuterning vaqtinchalik tezkor xotirasi qaysi?", ["RAM", "HDD", "SSD", "DVD"], 0, "Kompyuter o‘chganda RAM xotiradagi ma’lumotlar tozalanadi."),
-                ("Linux operatsion tizimi yadrosini kim yaratgan?", ["Linus Torvalds", "Bill Geyts", "Stiv Jobs", "Mark Sukerberg"], 0, "Linus Torvalds 1991-yilda Linux yadrosini e’lon qilgan."),
-                ("QR-kod qisqartmasidagi «QR» nimani bildiradi?", ["Quick Response", "Quality Rate", "Quantum Radio", "Query Result"], 0, "QR-kod 1994-yilda Yaponiyada ixtiro qilingan."),
-                ("Blokcheyn texnologiya asosida yaratilgan birinchi kriptovalyuta?", ["Bitcoin", "Ethereum", "Solana", "Dogecoin"], 0, "Bitcoin 2009-yilda Satoshi Nakamoto taxallusi ostida ishga tushirilgan."),
-            ],
-        ),
-    },
-    "general": {
-        "title": "Umumiy Bilimlar",
-        "questions": _pack(
-            ["Geografiya", "Fan va Tabiat", "Adabiyot", "Sport", "Qiziqarli Faktlar"],
-            [
-                ("Dunyodagi eng katta okean qaysi?", ["Tinch okeani", "Atlantika okeani", "Hind okeani", "Shimoliy Muz okeani"], 0, "Tinch okeani Yer yuzasining qariyb uchdan bir qismini egallaydi."),
-                ("Dunyodagi eng baland cho‘qqi qaysi?", ["Everest (Jomolungma)", "K2", "Elbrus", "Kilimanjaro"], 0, "Everest cho‘qqisi dengiz sathidan 8848 metr balandlikda joylashgan."),
-                ("O‘zbekiston nechta davlat bilan chegaradosh?", ["5 ta", "4 ta", "6 ta", "7 ta"], 0, "Qozog‘iston, Qirg‘iziston, Tojikiston, Turkmaniston va Afg‘oniston."),
-                ("Dunyodagi eng uzun daryo qaysi?", ["Nil", "Amudaryo", "Dunay", "Volga"], 0, "Nil daryosining uzunligi 6650 kilometrdan oshadi."),
-                ("Qaysi qit’ada birorta ham cho‘l yo‘q?", ["Yevropa", "Afrika", "Avstraliya", "Osiyo"], 0, "Yevropa cho‘l zonasiga ega bo‘lmagan yagona qit’adir."),
-                ("Quyosh sistemasidagi eng katta sayyora qaysi?", ["Yupiter", "Saturn", "Mars", "Yer"], 0, "Yupiterning massasi qolgan barcha sayyoralar yig‘indisidan ham katta."),
-                ("Suvning kimyoviy formulasi qanday?", ["H2O", "CO2", "NaCl", "O2"], 0, "Ikki vodorod va bir kislorod atomidan tashkil topgan."),
-                ("Yorug‘lik tezligi taxminan qanchaga teng?", ["300 000 km/s", "340 m/s", "150 000 km/s", "30 000 km/s"], 0, "Vakuumda yorug‘lik soniyasiga 299 792 km tezlikda tarqaladi."),
-                ("O‘simliklarning yorug‘lik energiyasi yordamida organik modda hosil qilish jarayoni?", ["Fotosintez", "Diffuziya", "Osmos", "Bug‘lanish"], 0, "Fotosintez jarayonida kislorod ajralib chiqadi."),
-                ("Inson tanasidagi eng katta organ qaysi?", ["Teri", "Jigar", "O‘pka", "Yurak"], 0, "Teri inson tana vaznining taxminan 15 foizini tashkil qiladi."),
-                ("«O‘tkan kunlar» romanining muallifi kim?", ["Abdulla Qodiriy", "Cho‘lpon", "Oybek", "G‘afur G‘ulom"], 0, "O‘zbek romanchiligi maktabining asoschisi Abdulla Qodiriy asari."),
-                ("«Shum bola» qissasining bosh qahramoni ismi nima?", ["Qoravoy", "Otabek", "Yodgor", "Hoshimjon"], 0, "G‘afur G‘ulomning mashhur hajviy qissasi qahramoni."),
-                ("«Sariq devni minib» asarini kim yozgan?", ["Xudoyberdi To‘xtaboyev", "O‘tkir Hoshimov", "Tohir Malik", "Said Ahmad"], 0, "Hoshimjonning sehrli qalpoqchasi haqidagi mashhur asar."),
-                ("«Urush va tinchlik» romani muallifi kim?", ["Lev Tolstoy", "Fyodor Dostoyevskiy", "Anton Chexov", "Aleksandr Pushkin"], 0, "Jahon adabiyotining eng yirik epopeya romanlaridan biri."),
-                ("«Dunyoning ishlari» asari muallifi kim?", ["O‘tkir Hoshimov", "Pirimqul Qodirov", "Odil Yoqubov", "Erkin Vohidov"], 0, "Ona siymosiga bag‘ishlangan samimiy novellalar to‘plami."),
-                ("Olimpiya o‘yinlari necha yilda bir marta o‘tkaziladi?", ["4 yilda", "2 yilda", "5 yilda", "3 yilda"], 0, "Yozgi va qishki Olimpiada o‘yinlari har 4 yilda o‘tkaziladi."),
-                ("Futbol maydonida bir jamoadan nechta o‘yinchi o‘ynaydi?", ["11 ta", "9 ta", "10 ta", "12 ta"], 0, "10 ta maydon o‘yinchisi va 1 ta darvozabon."),
-                ("Shaxmat taxtasida jami nechta katak bor?", ["64 ta", "32 ta", "81 ta", "100 ta"], 0, "8×8 o‘lchamdagi 32 oq va 32 qora katakdan iborat."),
-                ("Nodirbek Abdusattorov 2021-yilda qaysi yo‘nalishda jahon chempioni bo‘ldi?", ["Rapid (tezkor shaxmat)", "Klassik shaxmat", "Blits", "Shashka"], 0, "17 yoshida Rapid bo‘yicha eng yosh jahon chempioniga aylangan."),
-                ("Basketbol savatchasining yerdan balandligi necha metr?", ["3.05 m", "2.50 m", "3.50 m", "2.80 m"], 0, "Standart balandlik 10 fut (3.05 metr)ga teng."),
-                ("Asalarilar necha ko‘zga ega?", ["5 ta", "2 ta", "4 ta", "8 ta"], 0, "2 ta katta murakkab va 3 ta kichik oddiy ko‘zi bor."),
-                ("Eyfel minorasi qaysi shaharda joylashgan?", ["Parijda", "Londonda", "Rimda", "Madridda"], 0, "1889-yilda Fransiya poytaxti Parijda qurilgan."),
-                ("Dunyodagi eng tez yuguruvchi quruqlik hayvoni?", ["Gepard", "Sher", "Ot", "Bo‘ri"], 0, "Gepard qisqa masofada soatiga 110–120 km tezlikka chiqa oladi."),
-                ("Kamalakda nechta asosiy rang bor?", ["7 ta", "5 ta", "6 ta", "9 ta"], 0, "Qizil, zarg‘aldoq, sariq, yashil, havorang, ko‘k, binafsha."),
-                ("Bir sutkada necha soniya bor?", ["86 400", "3 600", "14 400", "43 200"], 0, "24 soat × 60 daqiqa × 60 soniya = 86 400 soniya."),
-            ],
-        ),
-    },
+/* JEOPARDY MINI BOARD */
+.board{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+.cat{background:#1E63D6;text-align:center;font-size:11px;font-weight:bold;padding:7px 3px;border-radius:7px;min-height:34px;display:flex;align-items:center;justify-content:center}
+.cell{background:rgba(14,27,72,.95);color:#FFC72C;font-weight:bold;font-size:17px;border:1px solid #1E63D6;border-radius:7px;padding:10px 0;text-align:center}
+.cell.used{background:#2d3343;color:#6c7385;border-color:#2d3343;text-decoration:line-through}
+
+/* KAHOOT / JONLI TEST */
+.kgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+@media(max-width:560px){.kgrid{grid-template-columns:1fr}}
+.kbtn{padding:18px 14px;border-radius:14px;font-weight:bold;font-size:17px;display:flex;align-items:center;gap:12px;color:#fff;border:3px solid rgba(255,255,255,.25);text-align:left;min-height:74px}
+.kbtn.k0{background:#B91C1C}
+.kbtn.k1{background:#1D4ED8}
+.kbtn.k2{background:#B45309}
+.kbtn.k3{background:#15803D}
+.kbtn.picked{outline:4px solid #FFC72C;transform:scale(.99)}
+.kbtn.dim{opacity:.35}
+.kbtn.ok{outline:4px solid #7CFC9A}
+
+/* PRO SLAYD STUDIO (STUDENT VIEW) */
+.slide-stage{position:relative;border-radius:18px;padding:28px 30px;min-height:390px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 18px 45px rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.16);overflow:hidden}
+.slide-stage.theme-royal{background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 55%,#172554 100%);color:#fff}
+.slide-stage.theme-emerald{background:linear-gradient(135deg,#022c22 0%,#065f46 55%,#064e3b 100%);color:#fff}
+.slide-stage.theme-sunset{background:linear-gradient(135deg,#27102c 0%,#7c2d12 55%,#451a03 100%);color:#fff}
+.slide-stage.theme-obsidian{background:linear-gradient(135deg,#09090b 0%,#18181b 55%,#27272a 100%);color:#fafafa}
+.slide-stage.theme-minimal{background:linear-gradient(135deg,#f8fafc 0%,#e2e8f0 100%);color:#0f172a;border-color:#cbd5e1}
+.slide-stage:fullscreen{border-radius:0;padding:48px 60px;width:100vw;height:100vh}
+
+.sl-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.sl-badge{display:inline-block;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:bold;letter-spacing:1px;background:rgba(255,199,44,.2);color:#FFC72C;border:1px solid rgba(255,199,44,.45)}
+.theme-minimal .sl-badge{background:#1e3a8a;color:#fff;border-color:#1e3a8a}
+.sl-num{font-size:14px;opacity:.75;font-weight:bold}
+.sl-title{font-size:26px;font-weight:bold;line-height:1.25;margin:14px 0 8px}
+.slide-stage:fullscreen .sl-title{font-size:44px}
+.sl-sub{font-size:16px;opacity:.86;line-height:1.45;margin-bottom:14px}
+.slide-stage:fullscreen .sl-sub{font-size:22px}
+.sl-bullets{margin:8px 0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+.sl-bullets li{background:rgba(255,255,255,.08);padding:11px 14px;border-radius:12px;border-left:4px solid #FFC72C;font-size:16px;line-height:1.45}
+.theme-minimal .sl-bullets li{background:rgba(15,23,42,.06);border-left-color:#2563eb}
+.slide-stage:fullscreen .sl-bullets li{font-size:22px;padding:15px 20px}
+.sl-split{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;align-items:stretch}
+@media(max-width:680px){.sl-split{grid-template-columns:1fr}}
+.sl-callout{background:rgba(255,199,44,.14);border:1px solid rgba(255,199,44,.45);border-radius:14px;padding:16px;display:flex;flex-direction:column;justify-content:center}
+.theme-minimal .sl-callout{background:#dbeafe;border-color:#93c5fd;color:#1e3a8a}
+.sl-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:10px 0}
+.sl-statbox{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:14px;text-align:center}
+.theme-minimal .sl-statbox{background:#fff;border-color:#cbd5e1}
+.sl-statval{font-size:26px;font-weight:bold;color:#FFC72C}
+.theme-minimal .sl-statval{color:#1d4ed8}
+.sl-statlbl{font-size:13px;opacity:.85;margin-top:4px}
+.sl-quote{font-size:20px;font-style:italic;line-height:1.45;padding:18px;border-left:6px solid #FFC72C;background:rgba(255,255,255,.07);border-radius:12px;margin:10px 0}
+.sl-foot{display:flex;justify-content:space-between;align-items:center;font-size:12px;opacity:.8;border-top:1px solid rgba(255,255,255,.14);padding-top:10px;margin-top:14px}
+.theme-minimal .sl-foot{border-top-color:#cbd5e1}
+
+/* CLASSIC TEST */
+.qnav{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.qpill{min-width:36px;height:36px;padding:0 8px;border-radius:8px;font-size:13px;font-weight:bold;background:rgba(12,24,66,.95);border:1px solid rgba(59,130,246,.45);color:#CBD5E1}
+.qpill.answered{background:#1E3A8A;border-color:#60A5FA;color:#7CFC9A}
+.qpill.current{background:#FFC72C;border-color:#FFC72C;color:#000}
+
+.barwrap{background:rgba(12,24,66,.9);border-radius:8px;overflow:hidden;height:24px;margin:6px 0;position:relative}
+.barfill{background:#2563EB;height:100%;transition:width .3s}
+.bartxt{position:absolute;left:10px;top:3px;font-size:13px;font-weight:bold}
+table{width:100%;border-collapse:collapse}
+td,th{padding:8px 6px;border-bottom:1px solid rgba(27,49,128,.6);font-size:14px;text-align:left}
+</style></head>
+<body><div class="w">
+
+<!-- KIRISH OYNASI -->
+<div id="loginbox">
+  <div class="topbar">
+    <div class="brand">⚡ JEO QUIZ PRO</div>
+    <a href="/admin" style="color:#93C5FD;text-decoration:none;font-size:13px">Boshlovchi paneli →</a>
+  </div>
+  <div class="card" style="max-width:480px;margin:20px auto;border:2px solid #FFC72C">
+    <h2 style="color:#FFC72C;font-size:19px">XONAGA QO‘SHILISH</h2>
+    <div class="ans" style="margin-bottom:10px">O‘qituvchi bergan 4 xonali xona kodini va ismingizni kiriting:</div>
+    <label style="font-size:13px;color:#93C5FD">Xona kodi:</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="inroom" placeholder="0000" maxlength="6" style="font-size:20px;font-weight:bold;letter-spacing:3px;text-align:center">
+      <button onclick="checkRoomInfo()" style="white-space:nowrap">Tekshirish</button>
+    </div>
+    <div id="roomtopicinfo" style="font-size:13px;color:#7CFC9A;margin-bottom:6px"></div>
+
+    <label style="font-size:13px;color:#93C5FD">Ism-familiyangiz:</label>
+    <input id="inname" placeholder="Masalan: Jasurbek Alimov">
+
+    <label style="font-size:13px;color:#93C5FD">Jamoangiz (agar jamoaviy o‘yin bo‘lsa):</label>
+    <select id="inteam">
+      <option value="">Jamoasiz (shaxsiy ishtirok)</option>
+      <option value="0">1-jamoa</option>
+      <option value="1">2-jamoa</option>
+      <option value="2">3-jamoa</option>
+      <option value="3">4-jamoa</option>
+    </select>
+
+    <button class="gold" style="width:100%;margin-top:12px;padding:14px;font-size:16px" onclick="doLogin()">Kirish ➔</button>
+    <div id="loginmsg" class="msg"></div>
+  </div>
+</div>
+
+<!-- ASOSIY TALABA EKRANI -->
+<div id="appbox" style="display:none">
+  <div class="topbar">
+    <div class="brand">
+      <span>⚡ JEO QUIZ</span>
+      <span id="toproom" class="pill">#0000</span>
+      <span id="topuser" class="userpill">👤 Talaba</span>
+    </div>
+    <button onclick="logoutRoom()" style="padding:7px 11px;font-size:13px;background:#13245C">Chiqish</button>
+  </div>
+
+  <div id="scorestrip" class="scorestrip"></div>
+  <div id="mainstage"></div>
+</div>
+
+</div>
+<script>
+const L = ['A','B','C','D'];
+const SHAPES = ['▲','◆','●','■'];
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = n => Number(n || 0).toLocaleString('ru-RU');
+
+const urlParams = new URLSearchParams(window.location.search);
+let curRoom = urlParams.get('room') || sessionStorage.getItem('st_room') || '0000';
+let myName = sessionStorage.getItem('st_name') || '';
+let myTeam = sessionStorage.getItem('st_team');
+myTeam = (myTeam !== null && myTeam !== '' && myTeam !== 'null') ? Number(myTeam) : null;
+
+let S = null;
+let lastJeoQKey = '';
+let lastAucRoundKey = '';
+let ctState = { key: '', answers: [], curIdx: 0, startTime: 0, submittedResult: null, submitting: false };
+
+document.getElementById('inroom').value = curRoom;
+if (myName) document.getElementById('inname').value = myName;
+
+async function checkRoomInfo(){
+  const code = document.getElementById('inroom').value.trim() || '0000';
+  const info = document.getElementById('roomtopicinfo');
+  const r = await fetch(`/api/check_room?room=${encodeURIComponent(code)}`, {cache:'no-store'});
+  const j = await r.json();
+  if (!r.ok){
+    info.style.color = '#FF8A80';
+    info.textContent = j.error || 'Xona topilmadi';
+    return;
+  }
+  info.style.color = '#7CFC9A';
+  info.textContent = `✔ Xona #${j.room} topildi — Mavzu: ${j.topic_title}`;
+  const sr = await fetch(`/api/state?room=${encodeURIComponent(code)}`, {cache:'no-store'});
+  if (sr.ok){
+    const st = await sr.json();
+    const sel = document.getElementById('inteam');
+    const prev = sel.value;
+    sel.innerHTML = `<option value="">Jamoasiz (shaxsiy ishtirok)</option>` +
+      (st.teams || []).map((t, i) => `<option value="${i}">${esc(t)}</option>`).join('');
+    sel.value = prev;
+  }
 }
 
-MIL_PRIZES = [100, 200, 300, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 125000, 250000, 500000, 1000000]
-MIL_SAFES = [4, 9, 14]
+async function doLogin(){
+  const code = document.getElementById('inroom').value.trim() || '0000';
+  const name = document.getElementById('inname').value.trim();
+  const tv = document.getElementById('inteam').value;
+  const msg = document.getElementById('loginmsg');
+  if (!name){ msg.textContent = 'Iltimos, ismingizni kiriting'; return; }
 
+  const teamVal = tv === '' ? null : Number(tv);
+  const r = await fetch('/api/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({room: code, name, team: teamVal})
+  });
+  const j = await r.json();
+  if (!r.ok){ msg.textContent = j.error || 'Kirishda xatolik'; return; }
 
-def call_gemini(prompt_text, file_part=None):
-    if not GEMINI_API_KEY:
-        raise RuntimeError("Serverda GEMINI_API_KEY sozlanmagan.")
-    parts = []
-    if file_part:
-        parts.append({"inline_data": {"mime_type": file_part["mime"], "data": file_part["b64"]}})
-    parts.append({"text": prompt_text})
+  msg.textContent = '';
+  curRoom = code;
+  myName = name;
+  myTeam = teamVal;
+  sessionStorage.setItem('st_room', curRoom);
+  sessionStorage.setItem('st_name', myName);
+  sessionStorage.setItem('st_team', myTeam === null ? '' : String(myTeam));
+  if (window.history.replaceState) window.history.replaceState({}, '', '/?room=' + encodeURIComponent(curRoom));
 
-    candidates = []
-    for m in (GEMINI_MODEL, "gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash"):
-        if m and m not in candidates:
-            candidates.append(m)
+  document.getElementById('loginbox').style.display = 'none';
+  document.getElementById('appbox').style.display = 'block';
+  poll();
+}
 
-    payload = json.dumps({"contents": [{"parts": parts}]}).encode("utf-8")
-    last_err = "Gemini API xatosi"
+function logoutRoom(){
+  myName = '';
+  sessionStorage.removeItem('st_name');
+  sessionStorage.removeItem('st_team');
+  document.getElementById('appbox').style.display = 'none';
+  document.getElementById('loginbox').style.display = 'block';
+  checkRoomInfo();
+}
 
-    for model_name in candidates:
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{urllib.parse.quote(model_name)}:generateContent?key={urllib.parse.quote(GEMINI_API_KEY)}"
-        )
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-        try:
-            with urllib.request.urlopen(req, timeout=70) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            cands = data.get("candidates") or []
-            if not cands:
-                raise RuntimeError("Gemini javob qaytarmadi.")
-            out_parts = cands[0].get("content", {}).get("parts", [])
-            return "".join(p.get("text", "") for p in out_parts).strip()
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="ignore")
-            last_err = f"Gemini API xatosi ({e.code}): {err_body[:180]}"
-            if e.code == 404:
-                continue
-            raise RuntimeError(last_err)
+async function poll(){
+  if (!myName) return;
+  try {
+    const r = await fetch(`/api/state?room=${encodeURIComponent(curRoom)}`, {cache:'no-store'});
+    if (!r.ok) return;
+    S = await r.json();
+    render();
+  } catch (e) {}
+}
 
-    raise RuntimeError(last_err)
+function render(){
+  if (!S || !myName) return;
+  document.getElementById('toproom').textContent = 'Xona #' + S.room;
+  const teamLbl = (myTeam !== null && S.teams[myTeam]) ? ` • ${S.teams[myTeam]}` : '';
+  document.getElementById('topuser').textContent = `👤 ${myName}${teamLbl}`;
 
+  const strip = document.getElementById('scorestrip');
+  if (S.mode === 'slides' || S.mode === 'classic_test'){
+    strip.style.display = 'none';
+  } else {
+    strip.style.display = 'grid';
+    strip.innerHTML = S.teams.map((t, i) =>
+      `<div class="scmini ${myTeam === i ? 'mine' : ''}"><div class="t">${esc(t)}</div><div class="v">${S.scores[i]}</div></div>`
+    ).join('');
+  }
 
-def extract_json_block(raw):
-    m = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
-    txt = m.group(1).strip() if m else raw.strip()
-    try:
-        return json.loads(txt)
-    except Exception:
-        start = txt.find("{")
-        end = txt.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            return json.loads(txt[start:end + 1])
-        raise
+  const m = S.mode || 'jeopardy';
+  if (m === 'slides') renderSlidesStudent();
+  else if (m === 'classic_test') renderClassicTestStudent();
+  else if (m === 'kahoot') renderKahootStudent();
+  else if (m === 'millionaire') renderMillionaireStudent();
+  else if (m === 'auction') renderAuctionStudent();
+  else if (m === 'bomb') renderBombStudent();
+  else renderJeopardyStudent();
+}
 
+/* ================= 1. JEO QUIZ (5x5) ================= */
+function renderJeopardyStudent(){
+  const stage = document.getElementById('mainstage');
+  if (S.cur !== null && S.question){
+    const q = S.question;
+    const qKey = `${S.cur}_${q.q}`;
+    const myChoice = myTeam !== null ? (S.answers || {})[myTeam] : undefined;
 
-def extract_docx_text(b64_data):
-    raw_bytes = base64.b64decode(b64_data)
-    with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
-        xml_bytes = zf.read("word/document.xml")
-    root = ET.fromstring(xml_bytes)
-    texts = [el.text for el in root.iter() if el.tag.endswith("}t") and el.text]
-    return " ".join(texts)[:28000]
+    if (q.opts && q.opts.length){
+      lastJeoQKey = '';
+      let x = `<div class="card" style="border:2px solid #FFC72C">
+        <div style="font-size:13px;color:#93C5FD;font-weight:bold">${esc(q.cat)} • ${q.pts} ball</div>
+        <div class="q">${esc(q.q)}</div>`;
 
+      q.opts.forEach((opt, i) => {
+        let cls = 'optbtn';
+        if (S.revealed){
+          if (i === q.c) cls += ' ok';
+          else if (i === myChoice) cls += ' bad';
+        } else if (i === myChoice){
+          cls += ' sel';
+        }
+        const dis = (S.revealed || myTeam === null) ? 'disabled' : '';
+        x += `<button class="${cls}" ${dis} onclick="sendJeoChoice(${i})">${L[i]}) ${esc(opt)}</button>`;
+      });
 
-def normalize_slide_item(raw_item, idx):
-    layout = str(raw_item.get("layout") or ("cover" if idx == 0 else "bullets")).strip().lower()
-    if layout not in ("cover", "bullets", "split", "stats", "quote", "summary"):
-        layout = "bullets"
-    bullets = [str(b).strip() for b in (raw_item.get("bullets") or []) if str(b).strip()][:6]
-    stats_raw = raw_item.get("stats") or []
-    stats = []
-    for st in stats_raw[:4]:
-        if isinstance(st, dict):
-            lbl = str(st.get("label") or "").strip()
-            val = str(st.get("value") or "").strip()
-            if lbl or val:
-                stats.append({"label": lbl, "value": val})
-    return {
-        "layout": layout,
-        "badge": str(raw_item.get("badge") or f"{idx + 1:02d}-SLAYD").strip(),
-        "title": str(raw_item.get("title") or f"Slayd #{idx + 1}").strip(),
-        "subtitle": str(raw_item.get("subtitle") or "").strip(),
-        "bullets": bullets,
-        "highlight": str(raw_item.get("highlight") or "").strip(),
-        "stats": stats,
-        "notes": str(raw_item.get("notes") or "").strip(),
+      if (myTeam === null && !S.revealed){
+        x += `<div class="aibox" style="border-left-color:#FFC72C">Siz jamoa tanlamagansiz. Ekranda savolni kuzating yoki yuqoridan chiqib jamoa tanlang.</div>`;
+      } else if (!S.revealed && myChoice !== undefined){
+        x += `<div class="ans" style="color:#7CFC9A;margin-top:8px">✔ ${esc(S.teams[myTeam])} javobi tanlandi: <b>${L[myChoice]}</b></div>`;
+      }
+      if (S.revealed && q.exp) x += `<div class="aibox"><b>Izoh:</b> ${esc(q.exp)}</div>`;
+      if (S.ai_note) x += `<div class="aibox"><b>AI misoli:</b> ${esc(S.ai_note)}</div>`;
+      x += `</div>`;
+      stage.innerHTML = x;
+    } else {
+      if (lastJeoQKey !== qKey){
+        lastJeoQKey = qKey;
+        const prevTxt = myTeam !== null ? ((S.text_answers || {})[myTeam] || '') : '';
+        stage.innerHTML = `<div class="card" style="border:2px solid #FFC72C">
+          <div style="font-size:13px;color:#93C5FD;font-weight:bold">${esc(q.cat)} • ${q.pts} ball (Yozma savol)</div>
+          <div class="q">${esc(q.q)}</div>
+          ${myTeam !== null ? `
+            <textarea id="jeotxt" rows="3" placeholder="Jamoangiz javobini yozing...">${esc(prevTxt)}</textarea>
+            <button class="gold" style="width:100%" onclick="sendJeoText()">Javobni yuborish</button>
+          ` : `<div class="aibox">Yozma javob yuborish uchun jamoaga birikkan bo‘lishingiz kerak.</div>`}
+          <div id="jeotxtstatus"></div>
+        </div>`;
+      }
+      const stDiv = document.getElementById('jeotxtstatus');
+      if (stDiv){
+        let extra = '';
+        if (myTeam !== null && (S.text_answers || {})[myTeam]){
+          extra += `<div class="ans" style="color:#7CFC9A;margin-top:8px">✔ Yuborilgan javob: <b>${esc(S.text_answers[myTeam])}</b></div>`;
+        }
+        if (S.revealed){
+          extra += `<div class="aibox" style="border-left-color:#1E8E4E"><b>To‘g‘ri javob:</b> ${esc(q.ans)}<br>${esc(q.exp || '')}</div>`;
+        }
+        stDiv.innerHTML = extra;
+      }
     }
+    return;
+  }
 
+  lastJeoQKey = '';
+  const cats = S.cats || [];
+  let h = `<div class="card">
+    <h2>🟦 ${esc(S.topic_title || 'JEO QUIZ')} — Boshlovchi katakcha tanlashini kuting...</h2>
+    <div class="board">` + cats.map(c => `<div class="cat">${esc(c)}</div>`).join('');
+  for (let r = 0; r < 5; r++){
+    for (let c = 0; c < 5; c++){
+      const idx = c * 5 + r;
+      h += `<div class="cell ${S.used[idx] ? 'used' : ''}">${(r + 1) * 100}</div>`;
+    }
+  }
+  h += `</div></div>`;
+  stage.innerHTML = h;
+}
 
-class Room:
-    def __init__(self, code, pin, preset_id="econ", teams=None):
-        self.code = code
-        self.pin = pin
-        self.created_at = time.time()
-        self.updated_at = time.time()
-        self.teams = list(teams) if teams and len(teams) == 4 else ["1-jamoa", "2-jamoa", "3-jamoa", "4-jamoa"]
-        self.scores = [0, 0, 0, 0]
-        self.mode = "jeopardy"
-        self.players = {}
-        self.ai_busy = False
-        self.ai_status = ""
-        self.ai_error = ""
-        self.ai_note = ""
+async function sendJeoChoice(choice){
+  if (myTeam === null) return;
+  await fetch('/api/answer', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({room: curRoom, team: myTeam, choice})
+  });
+  poll();
+}
 
-        self.used = [False] * 25
-        self.cur = None
-        self.revealed = False
-        self.answers = {}
-        self.text_answers = {}
-        self.ai_grades = {}
+async function sendJeoText(){
+  if (myTeam === null) return;
+  const el = document.getElementById('jeotxt');
+  if (!el) return;
+  await fetch('/api/answer', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({room: curRoom, team: myTeam, text: el.value.trim()})
+  });
+  poll();
+}
 
-        self.mil = None
-        self.auc = None
-        self.bomb = None
-        self.kahoot = None
-        self.slides = None
-        self.classic_test = None
+/* ================= 2. MILLIONER ================= */
+function renderMillionaireStudent(){
+  const stage = document.getElementById('mainstage');
+  const m = S.mil;
+  if (!m){
+    stage.innerHTML = `<div class="card"><h2>💎 KIM MILLIONER BO‘LISHNI XOHLAYDI?</h2><div class="ans">O‘yin boshlanishini kuting...</div></div>`;
+    return;
+  }
+  const q = m.question;
+  const curPrize = (m.prizes || [])[m.step] || 0;
+  let x = `<div class="card" style="border:2px solid #FFC72C">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+      <span>💎 <b>${esc(m.player)}</b></span>
+      <span>${m.step + 1}/15-savol • <b style="color:#7CFC9A">${fmt(curPrize)} ball</b></span>
+    </div>
+    <div style="font-size:13px;color:#93C5FD">${esc(q.cat)}</div>
+    <div class="q">${esc(q.q)}</div>`;
 
-        self.topic_title = ""
-        self.cats = []
-        self.questions = []
-        self.load_preset(preset_id)
+  q.opts.forEach((opt, i) => {
+    const isHid = (m.hidden_opts || []).includes(i);
+    let cls = 'optbtn' + (isHid ? ' hid' : '');
+    if (m.revealed){
+      if (i === q.c) cls += ' ok';
+      else if (i === m.selected) cls += ' bad';
+    } else if (i === m.selected){
+      cls += ' sel';
+    }
+    x += `<button class="${cls}" disabled>${L[i]}) ${esc(opt)}</button>`;
+  });
 
-    def touch(self):
-        self.updated_at = time.time()
+  if (m.audience_open){
+    x += `<div class="aibox" style="border-left-color:#FFC72C">
+      <b style="color:#FFC72C">📊 GURUH YORDAMI OCHIQ! O‘z variantingizni bosing:</b>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">` +
+      [0,1,2,3].map(i => {
+        if ((m.hidden_opts || []).includes(i)) return '';
+        return `<button class="gold" onclick="voteMil(${i})">${L[i]} varianti</button>`;
+      }).join('') + `</div></div>`;
+  }
 
-    def clear_subgames(self):
-        self.mil = None
-        self.auc = None
-        self.bomb = None
-        self.kahoot = None
-        self.classic_test = None
+  if (m.vote_total > 0){
+    x += `<div class="aibox"><b>Guruh ovozi (${m.vote_total} ta):</b>`;
+    for (let i = 0; i < 4; i++){
+      if ((m.hidden_opts || []).includes(i)) continue;
+      const cnt = (m.vote_counts || [])[i] || 0;
+      const pct = Math.round(cnt * 100 / m.vote_total);
+      x += `<div class="barwrap"><div class="barfill" style="width:${pct}%"></div><div class="bartxt">${L[i]}: ${pct}%</div></div>`;
+    }
+    x += `</div>`;
+  }
 
-    def load_preset(self, preset_id):
-        pack = PRESET_DATA.get(preset_id) or PRESET_DATA["econ"]
-        self.topic_title = pack["title"]
-        self.questions = copy.deepcopy(pack["questions"])
-        self.cats = [self.questions[c * 5]["cat"] for c in range(5)]
-        self.used = [False] * 25
-        self.cur = None
-        self.revealed = False
-        self.answers = {}
-        self.text_answers = {}
-        self.ai_grades = {}
-        self.ai_note = ""
-        self.clear_subgames()
+  if (m.ai_hint) x += `<div class="aibox"><b>🤖 Gemini AI maslahati:</b><br>${esc(m.ai_hint)}</div>`;
+  if (m.revealed && q.exp) x += `<div class="ans" style="margin-top:8px"><b>Izoh:</b> ${esc(q.exp)}</div>`;
+  if (m.status === 'won') x += `<div class="aibox" style="border-color:#FFC72C;color:#FFC72C;font-weight:bold">🏆 1 000 000 BALL YUTILDI!</div>`;
+  else if (m.status === 'lost') x += `<div class="aibox" style="border-color:#B3261E;color:#FF8A80;font-weight:bold">O‘yin tugadi. Kafolatlangan yutuq: ${fmt(m.won)} ball.</div>`;
+  else if (m.status === 'walked') x += `<div class="aibox" style="border-color:#1E8E4E;color:#7CFC9A;font-weight:bold">${esc(m.player)} ${fmt(m.won)} ball bilan to‘xtadi!</div>`;
 
-    def build_slides_from_current_questions(self, theme="royal"):
-        items = [
-            normalize_slide_item({
-                "layout": "cover",
-                "badge": "01 / TAQDIMOT",
-                "title": self.topic_title or "Interaktiv Ma'ruza",
-                "subtitle": f"{len(self.cats)} ta asosiy yo‘nalish • {len(self.questions)} ta tahliliy savol-javob",
-                "bullets": self.cats,
-                "highlight": "Jeo Quiz",
-                "stats": [
-                    {"label": "Bo‘limlar", "value": str(len(self.cats))},
-                    {"label": "Savollar", "value": str(len(self.questions))},
-                    {"label": "Format", "value": "Interaktiv"},
-                ],
-                "notes": "Kirish qismi: mavzuning umumiy tuzilishi va asosiy bo‘limlar bilan tanishtiring.",
-            }, 0)
-        ]
-        for c_idx, cat in enumerate(self.cats):
-            cat_qs = [q for q in self.questions if q["cat"] == cat][:5]
-            bullets = []
-            for q in cat_qs:
-                ans_txt = q["opts"][q["c"]] if (q.get("opts") and q.get("c") is not None) else q.get("ans", "")
-                bullets.append(f"{q['q']} → {ans_txt}")
-            key_exp = cat_qs[0].get("exp", "") if cat_qs else ""
-            items.append(
-                normalize_slide_item({
-                    "layout": "split" if c_idx % 2 == 0 else "bullets",
-                    "badge": f"{c_idx + 2:02d} / BO‘LIM",
-                    "title": cat,
-                    "subtitle": f"{cat} yo‘nalishi bo‘yicha asosiy tushunchalar va qoidalar",
-                    "bullets": bullets,
-                    "highlight": key_exp or f"{cat} bo‘yicha muhim xulosalar",
-                    "notes": f"{cat} bo‘limidagi asosiy faktlar va savol-javoblarni tushuntirib bering.",
-                }, c_idx + 1)
-            )
-        items.append(
-            normalize_slide_item({
-                "layout": "summary",
-                "badge": f"{len(items) + 1:02d} / XULOSA",
-                "title": "Asosiy Xulosalar va Mustahkamlash",
-                "subtitle": f"«{self.topic_title}» mavzusi yakuni",
-                "bullets": [
-                    "Barcha 5 ta asosiy yo‘nalish ko‘rib chiqildi",
-                    "Bilimlarni tekshirish uchun Oddiy Test yoki Jonli O‘yin rejimiga o‘tish mumkin",
-                    "Savol va takliflar uchun ochiq muhokama",
-                ],
-                "highlight": "E’tiboringiz uchun rahmat!",
-                "notes": "Mavzuni yakunlang va talabalarni test yoki viktorinaga taklif qiling.",
-            }, len(items))
-        )
-        self.slides = {
-            "title": self.topic_title or "Taqdimot",
-            "theme": theme,
-            "cur_idx": 0,
-            "items": items,
+  x += `</div>`;
+  stage.innerHTML = x;
+}
+
+async function voteMil(choice){
+  await fetch('/api/mil_vote', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({room: curRoom, voter: myName, choice})
+  });
+  poll();
+}
+
+/* ================= 3. AUKSION ================= */
+function renderAuctionStudent(){
+  const stage = document.getElementById('mainstage');
+  const a = S.auc;
+  if (!a){
+    stage.innerHTML = `<div class="card"><h2>💰 AUKSION VA STAVKA</h2><div class="ans">Boshlovchi auksionni boshlashini kuting...</div></div>`;
+    return;
+  }
+
+  const rKey = `${a.round}_${a.phase}`;
+  let x = `<div class="card" style="border:2px solid #F59E0B">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+      <h2 style="color:#FBBF24;margin:0">💰 AUKSION — ${a.round}/${a.total_rounds}-RAUND</h2>
+      <span>Bo‘lim: <b style="color:#7CFC9A">${esc(a.cat)}</b></span>
+    </div>
+    <table style="margin-bottom:12px"><tr><th>Jamoa</th><th style="text-align:right">Kapital</th><th style="text-align:right">Stavka</th></tr>` +
+    S.teams.map((t, i) => {
+      const bet = a.bets[String(i)];
+      const d = (a.deltas || [])[i] || 0;
+      const dTxt = a.phase === 'revealed' ? (d > 0 ? ` <b style="color:#7CFC9A">(+${d})</b>` : ` <b style="color:#FF8A80">(${d})</b>`) : '';
+      return `<tr><td>${esc(t)} ${myTeam===i?'⭐':''}</td><td style="text-align:right;color:#FFC72C;font-weight:bold">${fmt(a.bank[i])}${dTxt}</td>
+        <td style="text-align:right">${bet !== undefined ? fmt(bet) : '—'}</td></tr>`;
+    }).join('') + `</table>`;
+
+  if (a.phase === 'betting'){
+    if (myTeam !== null){
+      const myBank = a.bank[myTeam] || 1000;
+      const curBet = a.bets[String(myTeam)];
+      if (lastAucRoundKey !== rKey){
+        lastAucRoundKey = rKey;
+        const defVal = curBet !== undefined ? curBet : Math.max(10, Math.round(myBank * 0.2));
+        x += `<div class="aibox" style="border-left-color:#F59E0B">
+          <b>${esc(S.teams[myTeam])} kapitali: <span style="color:#FFC72C">${fmt(myBank)}</span></b>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">
+            <button onclick="setAucBet(${Math.max(10, Math.round(myBank*0.1))})">10%</button>
+            <button onclick="setAucBet(${Math.max(10, Math.round(myBank*0.25))})">25%</button>
+            <button onclick="setAucBet(${Math.max(10, Math.round(myBank*0.5))})">50%</button>
+            <button class="red" onclick="setAucBet(${myBank})">ALL-IN</button>
+          </div>
+          <div style="display:flex;gap:8px">
+            <input id="aucbetinp" type="number" min="10" max="${myBank}" value="${defVal}" style="margin:0">
+            <button class="gold" onclick="submitAucBet()">Stavka tikish</button>
+          </div>
+          <div id="aucbetstatus" style="margin-top:6px;color:#7CFC9A;font-size:13px"></div>
+        </div>`;
+        x += `</div>`;
+        stage.innerHTML = x;
+      } else {
+        const tbl = stage.querySelector('table');
+        if (tbl){
+          tbl.innerHTML = `<tr><th>Jamoa</th><th style="text-align:right">Kapital</th><th style="text-align:right">Stavka</th></tr>` +
+            S.teams.map((t, i) => {
+              const bet = a.bets[String(i)];
+              return `<tr><td>${esc(t)} ${myTeam===i?'⭐':''}</td><td style="text-align:right;color:#FFC72C;font-weight:bold">${fmt(a.bank[i])}</td>
+                <td style="text-align:right">${bet !== undefined ? fmt(bet) : '—'}</td></tr>`;
+            }).join('');
         }
-
-    def public_q(self, q, include_secret=False):
-        if not q:
-            return None
-        d = {
-            "cat": q["cat"],
-            "pts": q["pts"],
-            "q": q["q"],
-            "opts": list(q.get("opts") or []),
-            "exp": q.get("exp", "") if include_secret else "",
-            "ans": q.get("ans", "") if include_secret else "",
-        }
-        if include_secret:
-            d["c"] = q.get("c")
-        return d
-
-    def get_mc_pool(self):
-        pool = [copy.deepcopy(q) for q in self.questions if len(q.get("opts") or []) == 4 and q.get("c") is not None]
-        if not pool:
-            pool = copy.deepcopy(PRESET_DATA["econ"]["questions"])
-        random.shuffle(pool)
-        return pool
-
-    def tick_timers(self):
-        now = time.time()
-        if self.bomb and self.bomb["status"] == "playing":
-            rem = max(0, int(round(self.bomb["deadline"] - now)))
-            self.bomb["time_left"] = rem
-            if rem <= 0:
-                h = self.bomb["holder"]
-                self.bomb["lives"][h] = max(0, self.bomb["lives"][h] - 1)
-                self.bomb["status"] = "boom"
-                self.bomb["last_msg"] = f"💥 VAQT TUGADI! {self.teams[h]} 1 ta jon yo‘qotdi!"
-
-        if self.kahoot and self.kahoot["phase"] == "question":
-            rem = max(0, int(round(self.kahoot["deadline"] - now)))
-            self.kahoot["time_left"] = rem
-            if rem <= 0:
-                self.kahoot_do_reveal()
-
-    def kahoot_do_reveal(self):
-        k = self.kahoot
-        if not k:
-            return
-        k["phase"] = "reveal"
-        k["time_left"] = 0
-        for name, rec in k["records"].items():
-            res = k["round_results"].get(name)
-            if not res or not res["ok"]:
-                rec["streak"] = 0
-
-    def serialize(self, is_admin=False):
-        self.tick_timers()
-        cur_q = self.questions[self.cur] if (self.cur is not None and 0 <= self.cur < len(self.questions)) else None
-        inc_sec = is_admin or self.revealed
-
-        mil_out = None
-        if self.mil:
-            m = self.mil
-            mq = m["pool"][m["step"]]
-            votes = m["votes"]
-            vc = [sum(1 for v in votes.values() if v == i) for i in range(4)]
-            mil_out = {
-                "active": m["active"], "player": m["player"], "team": m["team"],
-                "step": m["step"], "total_steps": len(MIL_PRIZES), "prizes": MIL_PRIZES,
-                "safe_steps": MIL_SAFES, "won": m["won"], "status": m["status"],
-                "revealed": m["revealed"], "selected": m["selected"],
-                "hidden_opts": m["hidden_opts"], "lifelines": m["lifelines"],
-                "audience_open": m["audience_open"], "vote_counts": vc,
-                "vote_total": len(votes), "ai_hint": m["ai_hint"], "credited": m["credited"],
-                "question": self.public_q(mq, include_secret=(is_admin or m["revealed"])),
-            }
-
-        auc_out = None
-        if self.auc:
-            a = self.auc
-            aq = a["pool"][a["round"] - 1]
-            auc_out = {
-                "round": a["round"], "total_rounds": a["total_rounds"], "cat": aq["cat"],
-                "phase": a["phase"], "bank": a["bank"], "bets": a["bets"],
-                "answers": a["answers"] if (is_admin or a["phase"] == "revealed") else {},
-                "answered_teams": [int(k) for k in a["answers"].keys()], "deltas": a["deltas"],
-                "question": self.public_q(aq, include_secret=(is_admin or a["phase"] == "revealed")) if a["phase"] != "betting" else None,
-            }
-
-        bomb_out = None
-        if self.bomb:
-            b = self.bomb
-            bomb_out = {
-                "holder": b["holder"], "lives": b["lives"], "time_left": b["time_left"],
-                "status": b["status"], "last_choice": b["last_choice"], "last_msg": b["last_msg"],
-                "question": self.public_q(b["cur_q"], include_secret=(is_admin or b["status"] != "playing")),
-            }
-
-        kahoot_out = None
-        if self.kahoot:
-            k = self.kahoot
-            lb = sorted(
-                [{"name": nm, "team": rc["team"], "pts": rc["pts"], "streak": rc["streak"], "correct": rc["correct"]} for nm, rc in k["records"].items()],
-                key=lambda x: (-x["pts"], -x["correct"], x["name"]),
-            )
-            vc = [sum(1 for r in k["round_results"].values() if r["choice"] == i) for i in range(4)]
-            kahoot_out = {
-                "phase": k["phase"], "q_num": k["q_num"], "total_q": len(k["pool"]),
-                "time_left": k["time_left"],
-                "question": self.public_q(k["cur_q"], include_secret=(is_admin or k["phase"] == "reveal")) if k["cur_q"] else None,
-                "answered_count": len(k["round_results"]),
-                "answered_names": list(k["round_results"].keys()),
-                "vote_counts": vc, "round_results": k["round_results"],
-                "leaderboard": lb, "team_pts": k["team_pts"],
-            }
-
-        slides_out = None
-        if self.slides:
-            sl = self.slides
-            items_out = []
-            for it in sl["items"]:
-                d = dict(it)
-                if not is_admin:
-                    d["notes"] = ""
-                items_out.append(d)
-            slides_out = {
-                "title": sl["title"],
-                "theme": sl["theme"],
-                "cur_idx": sl["cur_idx"],
-                "total": len(items_out),
-                "items": items_out,
-            }
-
-        ctest_out = None
-        if self.classic_test:
-            ct = self.classic_test
-            pool_out = []
-            for idx, q in enumerate(ct["pool"]):
-                qd = {
-                    "idx": idx,
-                    "cat": q["cat"],
-                    "pts": q["pts"],
-                    "q": q["q"],
-                    "opts": list(q["opts"]),
-                }
-                if is_admin:
-                    qd["c"] = q["c"]
-                    qd["exp"] = q.get("exp", "")
-                pool_out.append(qd)
-
-            subs_summary = sorted(
-                [
-                    {
-                        "name": nm,
-                        "team": sb["team"],
-                        "correct": sb["correct"],
-                        "total": sb["total"],
-                        "percent": sb["percent"],
-                        "score": sb["score"],
-                        "duration_sec": sb["duration_sec"],
-                    }
-                    for nm, sb in ct["submissions"].items()
-                ],
-                key=lambda x: (-x["percent"], -x["score"], x["duration_sec"]),
-            )
-            ctest_out = {
-                "active": ct["active"],
-                "title": ct["title"],
-                "time_limit": ct["time_limit"],
-                "show_explanations": ct["show_explanations"],
-                "total_q": len(pool_out),
-                "pool": pool_out,
-                "submissions_list": subs_summary,
-                "submissions": ct["submissions"],
-                "team_pts": ct["team_pts"],
-            }
-
-        return {
-            "room": self.code, "topic_title": self.topic_title, "presets": PRESETS_META,
-            "ai_ready": bool(GEMINI_API_KEY), "ai_busy": self.ai_busy,
-            "ai_status": self.ai_status, "ai_error": self.ai_error, "ai_note": self.ai_note,
-            "mode": self.mode, "teams": self.teams, "scores": self.scores,
-            "cats": self.cats, "used": self.used, "cur": self.cur, "revealed": self.revealed,
-            "question": self.public_q(cur_q, include_secret=inc_sec),
-            "answers": self.answers, "text_answers": self.text_answers, "ai_grades": self.ai_grades,
-            "players": [{"name": n, "team": t} for n, t in self.players.items()],
-            "mil": mil_out, "auc": auc_out, "bomb": bomb_out, "kahoot": kahoot_out,
-            "slides": slides_out, "classic_test": ctest_out,
-        }
-
-
-LOCK = threading.Lock()
-ROOMS = {}
-DEFAULT_ROOM = Room("0000", DEFAULT_ADMIN_PIN, "econ")
-ROOMS["0000"] = DEFAULT_ROOM
-
-
-def cleanup_old_rooms():
-    now = time.time()
-    stale = [k for k, r in ROOMS.items() if k != "0000" and (now - r.updated_at) > 6 * 3600]
-    for k in stale:
-        del ROOMS[k]
-
-
-def get_room(code):
-    c = str(code or "").strip()
-    if not c or c == "0000":
-        return DEFAULT_ROOM
-    return ROOMS.get(c)
-
-
-def generate_room_code():
-    for _ in range(500):
-        c = f"{random.randint(1000, 9999)}"
-        if c not in ROOMS:
-            return c
-    return f"{random.randint(10000, 99999)}"
-
-
-def run_ai_board_worker(room, topic, level, file_part=None, extra_text=""):
-    try:
-        base_prompt = (
-            f"O‘zbek tilida '{topic}' mavzusida ({level} uchun) Jeopardy va viktorina o‘yinlariga mos "
-            f"5 ta bo‘lim va har bir bo‘limda 5 tadan — jami 25 ta test savol tuz.\n"
-            f"Qat'iy JSON formatida javob ber:\n"
-            f'{{"cats": ["Bo‘lim 1", "Bo‘lim 2", "Bo‘lim 3", "Bo‘lim 4", "Bo‘lim 5"], '
-            f'"questions": [{{"cat": "Bo‘lim 1", "q": "Savol?", "opts": ["A", "B", "C", "D"], "c": 0, "exp": "Qisqa izoh"}} ...]}}\n'
-            f"Talablar: 'questions' ro‘yxatida aynan 25 ta obyekt bo‘lsin (har bo‘limga 5 tadan, 100 dan 500 ballgacha qiyinlashib borsin), "
-            f"'c' 0 dan 3 gacha to‘g‘ri variant indeksi bo‘lsin."
-        )
-        if extra_text:
-            base_prompt += f"\n\nManba matni:\n{extra_text[:24000]}"
-
-        raw = call_gemini(base_prompt, file_part=file_part)
-        parsed = extract_json_block(raw)
-        cats = parsed.get("cats") or []
-        qs = parsed.get("questions") or []
-        if len(cats) != 5 or len(qs) < 25:
-            raise RuntimeError("AI 25 ta to‘liq savol qaytarmadi, qayta urinib ko‘ring.")
-
-        formatted = []
-        for idx in range(25):
-            c_idx = idx // 5
-            r_idx = idx % 5
-            item = qs[idx]
-            opts = [str(x) for x in (item.get("opts") or [])][:4]
-            while len(opts) < 4:
-                opts.append("Variant")
-            c_val = int(item.get("c", 0))
-            if c_val < 0 or c_val > 3:
-                c_val = 0
-            formatted.append({
-                "cat": str(cats[c_idx]),
-                "pts": (r_idx + 1) * 100,
-                "q": str(item.get("q", "Savol")),
-                "opts": opts,
-                "c": c_val,
-                "ans": opts[c_val],
-                "exp": str(item.get("exp", "")),
-            })
-
-        with LOCK:
-            room.cats = [str(x) for x in cats]
-            room.questions = formatted
-            room.topic_title = topic
-            room.used = [False] * 25
-            room.cur = None
-            room.revealed = False
-            room.answers = {}
-            room.text_answers = {}
-            room.ai_grades = {}
-            room.ai_note = ""
-            room.clear_subgames()
-            room.ai_busy = False
-            room.ai_error = ""
-            room.ai_status = f"✔ «{topic}» bo‘yicha 25 ta savol tayyor!"
-            room.touch()
-    except Exception as e:
-        with LOCK:
-            room.ai_busy = False
-            room.ai_error = str(e)
-            room.ai_status = ""
-
-
-def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None, extra_text=""):
-    try:
-        prompt = (
-            f"O‘zbek tilida '{topic}' mavzusida ({style} uslubida) aynan {slide_count} ta professional taqdimot slaydi yarat.\n"
-            f"1-slayd albatta 'cover' (muqova), oxirgi slayd 'summary' (xulosa) bo‘lsin. Oraliq slaydlarda 'bullets', 'split', 'stats', 'quote' maketlarini navbatma-navbat ishlat.\n"
-            f"Qat'iy JSON formatida javob ber:\n"
-            f'{{"title": "Taqdimot sarlavhasi", "slides": ['
-            f'{{"layout": "cover", "badge": "01 / KIRISH", "title": "Sarlavha", "subtitle": "Taglavha", '
-            f'"bullets": ["Fikr 1", "Fikr 2", "Fikr 3"], "highlight": "Muhim xulosa yoki ta’rif", '
-            f'"stats": [{{"label": "Ko‘rsatkich 1", "value": "85%"}}, {{"label": "Ko‘rsatkich 2", "value": "24/7"}}], '
-            f'"notes": "Spiker uchun 2 jumlali nutq matni"}}'
-            f"]}}\n"
-            f"Talablar: Har bir slaydda 3-5 ta aniq, mazmunli va qisqa bullet punktlar bo‘lsin, matnlar ekranda chiroyli o‘qiladigan darajada lo‘nda yozilsin."
-        )
-        if extra_text:
-            prompt += f"\n\nManba matni:\n{extra_text[:24000]}"
-
-        raw = call_gemini(prompt, file_part=file_part)
-        parsed = extract_json_block(raw)
-        raw_slides = parsed.get("slides") or []
-        if not raw_slides:
-            raise RuntimeError("AI slaydlar ro‘yxatini qaytarmadi, qayta urinib ko‘ring.")
-
-        items = [normalize_slide_item(it, i) for i, it in enumerate(raw_slides[:16])]
-        deck_title = str(parsed.get("title") or topic).strip()
-
-        with LOCK:
-            room.slides = {
-                "title": deck_title,
-                "theme": theme,
-                "cur_idx": 0,
-                "items": items,
-            }
-            room.mode = "slides"
-            room.ai_busy = False
-            room.ai_error = ""
-            room.ai_status = f"✔ «{deck_title}» bo‘yicha {len(items)} ta Pro slayd tayyor!"
-            room.touch()
-    except Exception as e:
-        with LOCK:
-            room.ai_busy = False
-            room.ai_error = str(e)
-            room.ai_status = ""
-
-
-class Handler(BaseHTTPRequestHandler):
-    def log_message(self, fmt, *args):
-        pass
-
-    def send_json(self, obj, status=200):
-        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def send_file(self, filename):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        fpath = os.path.join(base_dir, filename)
-        if not os.path.exists(fpath):
-            self.send_json({"error": f"{filename} topilmadi"}, 404)
-            return
-        with open(fpath, "rb") as f:
-            data = f.read()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
-    def read_json(self):
-        ln = int(self.headers.get("Content-Length", 0))
-        if ln <= 0:
-            return {}
-        return json.loads(self.rfile.read(ln).decode("utf-8"))
-
-    def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-        qs = urllib.parse.parse_qs(parsed.query)
-
-        if path in ("/", "/index.html"):
-            self.send_file("index.html")
-            return
-        if path in ("/admin", "/admin.html"):
-            self.send_file("admin.html")
-            return
-
-        if path == "/api/check_room":
-            code = (qs.get("room") or [""])[0].strip()
-            with LOCK:
-                room = get_room(code)
-                if not room:
-                    self.send_json({"error": "Bunday xona topilmadi. Kodni tekshiring."}, 404)
-                    return
-                self.send_json({"ok": True, "room": room.code, "topic_title": room.topic_title})
-            return
-
-        if path == "/api/state":
-            code = (qs.get("room") or ["0000"])[0]
-            is_admin = (qs.get("admin") or ["0"])[0] == "1"
-            pin = (qs.get("pin") or [""])[0]
-            with LOCK:
-                room = get_room(code)
-                if not room:
-                    self.send_json({"error": "Xona topilmadi"}, 404)
-                    return
-                if is_admin and pin != room.pin:
-                    self.send_json({"error": "Noto‘g‘ri PIN kod"}, 403)
-                    return
-                self.send_json(room.serialize(is_admin=is_admin))
-            return
-
-        if path == "/api/questions":
-            code = (qs.get("room") or ["0000"])[0]
-            pin = (qs.get("pin") or [""])[0]
-            with LOCK:
-                room = get_room(code)
-                if not room:
-                    self.send_json({"error": "Xona topilmadi"}, 404)
-                    return
-                if pin != room.pin:
-                    self.send_json({"error": "Noto‘g‘ri PIN kod"}, 403)
-                    return
-                self.send_json(room.questions)
-            return
-
-        self.send_json({"error": "Topilmadi"}, 404)
-
-    def do_POST(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-        try:
-            data = self.read_json()
-        except Exception:
-            self.send_json({"error": "Noto‘g‘ri JSON"}, 400)
-            return
-
-        if path == "/api/create_room":
-            preset = str(data.get("preset") or "econ")
-            teams = data.get("teams")
-            with LOCK:
-                cleanup_old_rooms()
-                code = generate_room_code()
-                pin = f"{random.randint(1000, 9999)}"
-                room = Room(code, pin, preset_id=preset, teams=teams)
-                ROOMS[code] = room
-                st = room.serialize(is_admin=True)
-            self.send_json({"ok": True, "room": code, "pin": pin, "state": st})
-            return
-
-        code = str(data.get("room") or "0000")
-
-        if path == "/api/login":
-            name = str(data.get("name") or "").strip()
-            if not name:
-                self.send_json({"error": "Ismingizni kiriting"}, 400)
-                return
-            tv = data.get("team")
-            team = int(tv) if (tv is not None and tv != "" and 0 <= int(tv) < 4) else None
-            with LOCK:
-                room = get_room(code)
-                if not room:
-                    self.send_json({"error": "Xona topilmadi"}, 404)
-                    return
-                room.players[name] = team
-                if room.kahoot and name not in room.kahoot["records"]:
-                    room.kahoot["records"][name] = {"team": team, "pts": 0, "streak": 0, "correct": 0}
-                room.touch()
-            self.send_json({"ok": True})
-            return
-
-        if path == "/api/answer":
-            team = data.get("team")
-            with LOCK:
-                room = get_room(code)
-                if not room or team is None or not (0 <= int(team) < 4):
-                    self.send_json({"error": "Jamoa tanlanmagan"}, 400)
-                    return
-                t = int(team)
-                if "choice" in data and data["choice"] is not None:
-                    room.answers[t] = int(data["choice"])
-                if "text" in data and data["text"] is not None:
-                    room.text_answers[t] = str(data["text"]).strip()
-                room.touch()
-            self.send_json({"ok": True})
-            return
-
-        if path == "/api/classic_test_submit":
-            name = str(data.get("name") or "").strip()
-            tv = data.get("team")
-            team = int(tv) if (tv is not None and tv != "" and 0 <= int(tv) < 4) else None
-            answers = data.get("answers") or []
-            dur_sec = max(1, int(data.get("duration_sec") or 0))
-            with LOCK:
-                room = get_room(code)
-                if not room or not room.classic_test:
-                    self.send_json({"error": "Oddiy test faol emas"}, 400)
-                    return
-                ct = room.classic_test
-                if not ct["active"]:
-                    self.send_json({"error": "Test yakunlangan, javob qabul qilinmaydi"}, 400)
-                    return
-                if not name:
-                    self.send_json({"error": "Ismingizni kiriting"}, 400)
-                    return
-
-                pool = ct["pool"]
-                correct_cnt = 0
-                total_score = 0
-                review = []
-                for idx, q in enumerate(pool):
-                    uch = answers[idx] if idx < len(answers) and answers[idx] is not None else -1
-                    uch = int(uch)
-                    is_ok = (uch == q["c"])
-                    if is_ok:
-                        correct_cnt += 1
-                        total_score += int(q.get("pts") or 100)
-                    review.append({
-                        "idx": idx,
-                        "cat": q["cat"],
-                        "q": q["q"],
-                        "opts": list(q["opts"]),
-                        "user_choice": uch,
-                        "correct_choice": q["c"],
-                        "is_correct": is_ok,
-                        "exp": q.get("exp", "") if ct["show_explanations"] else "",
-                    })
-
-                total_q = max(1, len(pool))
-                pct = int(round(correct_cnt * 100 / total_q))
-                prev = ct["submissions"].get(name)
-                sub_obj = {
-                    "name": name,
-                    "team": team,
-                    "correct": correct_cnt,
-                    "total": len(pool),
-                    "percent": pct,
-                    "score": total_score,
-                    "duration_sec": dur_sec,
-                    "submitted_at": time.time(),
-                    "review": review,
-                }
-                ct["submissions"][name] = sub_obj
-                if not prev and team is not None and 0 <= team < 4:
-                    ct["team_pts"][team] += total_score
-                room.touch()
-            self.send_json({"ok": True, "result": sub_obj})
-            return
-
-        if path == "/api/kahoot_play":
-            name = str(data.get("name") or "").strip()
-            tv = data.get("team")
-            team = int(tv) if (tv is not None and tv != "" and 0 <= int(tv) < 4) else None
-            choice = int(data.get("choice", -1))
-            with LOCK:
-                room = get_room(code)
-                if not room or not room.kahoot:
-                    self.send_json({"error": "Jonli TEST o‘yini faol emas"}, 400)
-                    return
-                room.tick_timers()
-                k = room.kahoot
-                if k["phase"] != "question":
-                    self.send_json({"error": "Savol vaqti tugagan"}, 400)
-                    return
-                if not name:
-                    self.send_json({"error": "Ism kiritilmagan"}, 400)
-                    return
-                if name in k["round_results"]:
-                    self.send_json({"ok": True})
-                    return
-                if name not in k["records"]:
-                    k["records"][name] = {"team": team, "pts": 0, "streak": 0, "correct": 0}
-                rec = k["records"][name]
-                if team is not None:
-                    rec["team"] = team
-                q = k["cur_q"]
-                is_ok = (choice == q["c"])
-                gained = 0
-                if is_ok:
-                    dur = max(1, k["duration"])
-                    rem = max(0.0, k["deadline"] - time.time())
-                    speed_pts = int(round(500 + 500 * (rem / dur)))
-                    rec["streak"] += 1
-                    rec["correct"] += 1
-                    streak_bonus = min(500, (rec["streak"] - 1) * 100)
-                    gained = speed_pts + streak_bonus
-                    rec["pts"] += gained
-                    if rec["team"] is not None and 0 <= rec["team"] < 4:
-                        k["team_pts"][rec["team"]] += gained
-                else:
-                    rec["streak"] = 0
-                k["round_results"][name] = {"choice": choice, "ok": is_ok, "gained": gained}
-                total_known = max(len(room.players), len(k["records"]))
-                if total_known > 0 and len(k["round_results"]) >= total_known:
-                    room.kahoot_do_reveal()
-                room.touch()
-            self.send_json({"ok": True})
-            return
-
-        if path == "/api/mil_play":
-            action = data.get("action")
-            with LOCK:
-                room = get_room(code)
-                if not room or not room.mil:
-                    self.send_json({"error": "Millioner o‘yini faol emas"}, 400)
-                    return
-                m = room.mil
-                mq = m["pool"][m["step"]]
-                if action == "select" and m["active"] and not m["revealed"]:
-                    m["selected"] = int(data.get("choice"))
-                elif action == "5050" and m["active"] and not m["revealed"] and m["lifelines"]["fifty"]:
-                    wrong = [i for i in range(4) if i != mq["c"]]
-                    m["hidden_opts"] = random.sample(wrong, 2)
-                    m["lifelines"]["fifty"] = False
-                elif action == "audience" and m["active"] and not m["revealed"] and m["lifelines"]["audience"]:
-                    m["audience_open"] = True
-                    m["lifelines"]["audience"] = False
-                elif action == "ai" and m["active"] and not m["revealed"] and m["lifelines"]["ai"]:
-                    m["lifelines"]["ai"] = False
-                    if GEMINI_API_KEY:
-                        try:
-                            m["ai_hint"] = call_gemini(
-                                f"«Kim millioner bo‘lishni xohlaydi?» o‘yinida yordam ber. Savol: {mq['q']}. "
-                                f"Variantlar: A){mq['opts'][0]}, B){mq['opts'][1]}, C){mq['opts'][2]}, D){mq['opts'][3]}. "
-                                f"2 jumlada qisqa maslahat ber."
-                            )
-                        except Exception:
-                            m["ai_hint"] = f"Eng ishonchli javob: {['A','B','C','D'][mq['c']]} varianti."
-                    else:
-                        m["ai_hint"] = f"Eng to‘g‘ri yo‘nalish: {['A','B','C','D'][mq['c']]} varianti."
-                elif action == "reveal" and m["active"] and not m["revealed"] and m["selected"] is not None:
-                    m["revealed"] = True
-                    m["audience_open"] = False
-                    if m["selected"] == mq["c"]:
-                        m["won"] = MIL_PRIZES[m["step"]]
-                        if m["step"] >= len(MIL_PRIZES) - 1:
-                            m["active"] = False
-                            m["status"] = "won"
-                    else:
-                        safe_won = 0
-                        for s_idx in MIL_SAFES:
-                            if m["step"] > s_idx:
-                                safe_won = MIL_PRIZES[s_idx]
-                        m["won"] = safe_won
-                        m["active"] = False
-                        m["status"] = "lost"
-                elif action == "next" and m["active"] and m["revealed"] and m["status"] == "playing":
-                    m["step"] += 1
-                    m["revealed"] = False
-                    m["selected"] = None
-                    m["hidden_opts"] = []
-                    m["audience_open"] = False
-                    m["votes"] = {}
-                    m["ai_hint"] = ""
-                elif action == "walk" and m["active"] and m["won"] > 0:
-                    m["active"] = False
-                    m["status"] = "walked"
-                room.touch()
-            self.send_json({"ok": True})
-            return
-
-        if path == "/api/mil_vote":
-            voter = str(data.get("voter") or "mehmon")
-            choice = int(data.get("choice", 0))
-            with LOCK:
-                room = get_room(code)
-                if room and room.mil and room.mil["audience_open"]:
-                    room.mil["votes"][voter] = choice
-                    room.touch()
-            self.send_json({"ok": True})
-            return
-
-        if path == "/api/auc_play":
-            action = data.get("action")
-            team = int(data.get("team", -1))
-            with LOCK:
-                room = get_room(code)
-                if not room or not room.auc or not (0 <= team < 4):
-                    self.send_json({"error": "Auksion faol emas"}, 400)
-                    return
-                a = room.auc
-                if action == "bet" and a["phase"] == "betting":
-                    amt = max(10, min(a["bank"][team], int(data.get("amount", 50))))
-                    a["bets"][str(team)] = amt
-                elif action == "answer" and a["phase"] == "question":
-                    a["answers"][str(team)] = int(data.get("choice", 0))
-                room.touch()
-            self.send_json({"ok": True})
-            return
-
-        if path == "/api/bomb_play":
-            team = int(data.get("team", -1))
-            choice = int(data.get("choice", -1))
-            with LOCK:
-                room = get_room(code)
-                if not room or not room.bomb:
-                    self.send_json({"error": "Bomba o‘yini faol emas"}, 400)
-                    return
-                room.tick_timers()
-                b = room.bomb
-                if b["status"] != "playing" or team != b["holder"]:
-                    self.send_json({"ok": True})
-                    return
-                b["last_choice"] = choice
-                if choice == b["cur_q"]["c"]:
-                    alive = [i for i in range(4) if b["lives"][i] > 0]
-                    nxt = (team + 1) % 4
-                    for _ in range(4):
-                        if b["lives"][nxt] > 0:
-                            break
-                        nxt = (nxt + 1) % 4
-                    b["holder"] = nxt
-                    b["pool_idx"] = (b["pool_idx"] + 1) % len(b["pool"])
-                    b["cur_q"] = b["pool"][b["pool_idx"]]
-                    b["deadline"] = time.time() + b["sec"]
-                    b["time_left"] = b["sec"]
-                    b["last_choice"] = None
-                    if len(alive) <= 1:
-                        b["status"] = "win"
-                        b["last_msg"] = f"👑 G‘OLIB: {room.teams[alive[0]]}!"
-                    else:
-                        b["last_msg"] = f"✅ {room.teams[team]} to‘g‘ri topdi! Bomba {room.teams[nxt]} ga o‘tdi!"
-                else:
-                    b["lives"][team] = max(0, b["lives"][team] - 1)
-                    b["status"] = "boom"
-                    b["last_msg"] = f"💥 XATO! Bomba {room.teams[team]} qo‘lida portladi (−1 jon)!"
-                room.touch()
-            self.send_json({"ok": True})
-            return
-
-        if path == "/api/admin":
-            pin = str(data.get("pin") or "")
-            action = str(data.get("action") or "")
-            with LOCK:
-                room = get_room(code)
-                if not room:
-                    self.send_json({"error": "Xona topilmadi"}, 404)
-                    return
-                if pin != room.pin:
-                    self.send_json({"error": "Noto‘g‘ri PIN kod"}, 403)
-                    return
-
-                if action == "load_preset":
-                    room.load_preset(str(data.get("preset") or "econ"))
-
-                elif action == "set_mode":
-                    mode = str(data.get("mode") or "jeopardy")
-                    if mode in ("jeopardy", "millionaire", "auction", "bomb", "kahoot", "slides", "classic_test"):
-                        room.mode = mode
-                        if mode == "slides" and not room.slides:
-                            room.build_slides_from_current_questions()
-                        elif mode == "classic_test" and not room.classic_test:
-                            pool = room.get_mc_pool()
-                            room.classic_test = {
-                                "active": True,
-                                "title": room.topic_title or "Oddiy Test",
-                                "time_limit": 0,
-                                "show_explanations": True,
-                                "pool": pool,
-                                "submissions": {},
-                                "team_pts": [0, 0, 0, 0],
-                            }
-
-                elif action == "open":
-                    idx = int(data.get("idx", 0))
-                    room.cur = idx
-                    room.revealed = False
-                    room.answers = {}
-                    room.text_answers = {}
-                    room.ai_grades = {}
-                    room.ai_note = ""
-
-                elif action == "reveal":
-                    room.revealed = True
-                    if room.cur is not None:
-                        room.used[room.cur] = True
-
-                elif action == "close":
-                    if room.cur is not None:
-                        room.used[room.cur] = True
-                    room.cur = None
-                    room.revealed = False
-                    room.ai_note = ""
-
-                elif action == "award":
-                    t = int(data.get("team", 0))
-                    sign = int(data.get("sign", 1))
-                    if room.cur is not None and 0 <= t < 4:
-                        room.scores[t] += sign * room.questions[room.cur]["pts"]
-
-                elif action == "score":
-                    t = int(data.get("team", 0))
-                    delta = int(data.get("delta", 0))
-                    if 0 <= t < 4:
-                        room.scores[t] += delta
-
-                elif action == "rename":
-                    tms = data.get("teams") or []
-                    for i in range(min(4, len(tms))):
-                        if str(tms[i]).strip():
-                            room.teams[i] = str(tms[i]).strip()
-
-                elif action == "reset":
-                    room.scores = [0, 0, 0, 0]
-                    room.used = [False] * 25
-                    room.cur = None
-                    room.revealed = False
-                    room.answers = {}
-                    room.text_answers = {}
-                    room.ai_grades = {}
-                    room.ai_note = ""
-                    room.clear_subgames()
-
-                elif action == "save":
-                    idx = int(data.get("idx", 0))
-                    q_in = data.get("q") or {}
-                    if 0 <= idx < 25:
-                        old = room.questions[idx]
-                        short = bool(q_in.get("short"))
-                        opts = [] if short else [str(x) for x in (q_in.get("opts") or ["", "", "", ""])][:4]
-                        c_val = None if short else (int(q_in["c"]) if q_in.get("c") is not None else 0)
-                        room.questions[idx] = {
-                            "cat": old["cat"], "pts": old["pts"], "q": str(q_in.get("q") or ""),
-                            "opts": opts, "c": c_val,
-                            "ans": str(q_in.get("ans") or "") if short else (opts[c_val] if opts else ""),
-                            "exp": str(q_in.get("exp") or ""),
-                        }
-
-                elif action == "ai_generate_board":
-                    if room.ai_busy:
-                        self.send_json({"error": "AI hozir band, biroz kuting"}, 400)
-                        return
-                    topic = str(data.get("topic") or "").strip()
-                    level = str(data.get("level") or "universitet talabalari")
-                    room.ai_busy = True
-                    room.ai_error = ""
-                    room.ai_status = f"«{topic}» mavzusida 25 ta savol tuzilmoqda..."
-                    threading.Thread(target=run_ai_board_worker, args=(room, topic, level), daemon=True).start()
-
-                elif action == "ai_generate_from_file":
-                    if room.ai_busy:
-                        self.send_json({"error": "AI hozir band"}, 400)
-                        return
-                    fname = str(data.get("filename") or "fayl")
-                    mime = str(data.get("mime") or "")
-                    b64 = str(data.get("data_b64") or "")
-                    hint = str(data.get("hint") or "").strip()
-                    level = str(data.get("level") or "universitet talabalari")
-                    topic_lbl = hint if hint else fname
-                    room.ai_busy = True
-                    room.ai_error = ""
-                    room.ai_status = f"«{fname}» fayli tahlil qilinmoqda..."
-                    file_part = None
-                    extra_txt = ""
-                    if fname.lower().endswith(".docx"):
-                        extra_txt = extract_docx_text(b64)
-                    elif fname.lower().endswith((".txt", ".md", ".csv")):
-                        extra_txt = base64.b64decode(b64).decode("utf-8", errors="ignore")[:28000]
-                    else:
-                        if not mime:
-                            mime = "application/pdf" if fname.lower().endswith(".pdf") else "image/jpeg"
-                        file_part = {"mime": mime, "b64": b64}
-                    threading.Thread(target=run_ai_board_worker, args=(room, topic_lbl, level, file_part, extra_txt), daemon=True).start()
-
-                elif action == "ai_generate_slot":
-                    idx = int(data.get("idx", 0))
-                    hint = str(data.get("hint") or "").strip()
-                    old = room.questions[idx]
-                    raw = call_gemini(
-                        f"O‘zbek tilida '{old['cat']}' bo‘limi uchun {old['pts']} ballik 1 ta test savol tuz. "
-                        f"Qo‘shimcha ko‘rsatma: {hint}. JSON qaytar: "
-                        f'{{"q": "...", "opts": ["A", "B", "C", "D"], "c": 0, "exp": "..."}}'
-                    )
-                    parsed = extract_json_block(raw)
-                    room.touch()
-                    self.send_json({"ok": True, "question": parsed})
-                    return
-
-                elif action == "ai_explain":
-                    if room.cur is not None:
-                        q = room.questions[room.cur]
-                        ans_s = q["opts"][q["c"]] if q["opts"] else q["ans"]
-                        room.ai_note = call_gemini(
-                            f"Ushbu savol va to‘g‘ri javobga talabalar uchun 3 jumlada amaliy misol va tushuntirish ber (o‘zbek tilida):\n"
-                            f"Savol: {q['q']}\nJavob: {ans_s}"
-                        )
-
-                elif action == "ai_grade":
-                    if room.cur is not None:
-                        q = room.questions[room.cur]
-                        lines = [f"{i}: {room.text_answers.get(i, '')}" for i in range(4) if room.text_answers.get(i)]
-                        if lines:
-                            raw = call_gemini(
-                                f"Savol: {q['q']}\nEtalon javob: {q['ans']}\nJamoalar javobi:\n" + "\n".join(lines) +
-                                '\nHar bir jamoa uchun JSON qaytar: {"0": {"percent": 85, "verdict": "To‘g‘ri", "comment": "Qisqa izoh"}}'
-                            )
-                            room.ai_grades = extract_json_block(raw)
-
-                # --- PRO SLAYD STUDIO ---
-                elif action == "ai_generate_slides":
-                    if room.ai_busy:
-                        self.send_json({"error": "AI hozir band, biroz kuting"}, 400)
-                        return
-                    topic = str(data.get("topic") or room.topic_title or "Taqdimot").strip()
-                    slide_count = max(4, min(16, int(data.get("slide_count") or 8)))
-                    style = str(data.get("style") or "Akademik ma’ruza").strip()
-                    theme = str(data.get("theme") or "royal").strip()
-                    fname = str(data.get("filename") or "").strip()
-                    mime = str(data.get("mime") or "").strip()
-                    b64 = str(data.get("data_b64") or "").strip()
-
-                    file_part = None
-                    extra_txt = ""
-                    if b64 and fname:
-                        if fname.lower().endswith(".docx"):
-                            extra_txt = extract_docx_text(b64)
-                        elif fname.lower().endswith((".txt", ".md", ".csv")):
-                            extra_txt = base64.b64decode(b64).decode("utf-8", errors="ignore")[:28000]
-                        else:
-                            if not mime:
-                                mime = "application/pdf" if fname.lower().endswith(".pdf") else "image/jpeg"
-                            file_part = {"mime": mime, "b64": b64}
-
-                    room.ai_busy = True
-                    room.ai_error = ""
-                    room.ai_status = f"«{topic}» bo‘yicha {slide_count} ta Pro slayd tayyorlanmoqda..."
-                    threading.Thread(
-                        target=run_ai_slides_worker,
-                        args=(room, topic, slide_count, style, theme, file_part, extra_txt),
-                        daemon=True,
-                    ).start()
-
-                elif action == "slides_from_questions":
-                    theme = str(data.get("theme") or (room.slides["theme"] if room.slides else "royal"))
-                    room.build_slides_from_current_questions(theme=theme)
-                    room.mode = "slides"
-
-                elif action == "slides_nav" and room.slides:
-                    idx = int(data.get("idx", 0))
-                    total = len(room.slides["items"])
-                    if total > 0:
-                        room.slides["cur_idx"] = max(0, min(total - 1, idx))
-
-                elif action == "slides_theme" and room.slides:
-                    theme = str(data.get("theme") or "royal")
-                    room.slides["theme"] = theme
-
-                elif action == "slides_save_item" and room.slides:
-                    idx = int(data.get("idx", 0))
-                    s_in = data.get("slide") or {}
-                    if 0 <= idx < len(room.slides["items"]):
-                        room.slides["items"][idx] = normalize_slide_item(s_in, idx)
-
-                elif action == "slides_add_item" and room.slides:
-                    new_idx = len(room.slides["items"])
-                    room.slides["items"].append(
-                        normalize_slide_item({
-                            "layout": "bullets",
-                            "badge": f"{new_idx + 1:02d} / YANGI",
-                            "title": "Yangi slayd sarlavhasi",
-                            "subtitle": "Qo‘shimcha ma’lumot",
-                            "bullets": ["Birinchi muhim fikr", "Ikkinchi muhim fikr"],
-                            "highlight": "Asosiy xulosa",
-                            "notes": "",
-                        }, new_idx)
-                    )
-                    room.slides["cur_idx"] = new_idx
-
-                elif action == "slides_delete_item" and room.slides:
-                    idx = int(data.get("idx", 0))
-                    if len(room.slides["items"]) > 1 and 0 <= idx < len(room.slides["items"]):
-                        room.slides["items"].pop(idx)
-                        room.slides["cur_idx"] = min(room.slides["cur_idx"], len(room.slides["items"]) - 1)
-
-                # --- ODDIY TEST (CLASSIC SELF-PACED TEST) ---
-                elif action == "ctest_start":
-                    q_count = max(1, min(25, int(data.get("q_count") or 25)))
-                    time_limit = max(0, min(180, int(data.get("time_limit") or 0)))
-                    shuffle_q = bool(data.get("shuffle", False))
-                    show_exp = bool(data.get("show_explanations", True))
-                    title = str(data.get("title") or room.topic_title or "Oddiy Test").strip()
-
-                    pool = [copy.deepcopy(q) for q in room.questions if len(q.get("opts") or []) == 4 and q.get("c") is not None]
-                    if not pool:
-                        pool = copy.deepcopy(PRESET_DATA["econ"]["questions"])
-                    if shuffle_q:
-                        random.shuffle(pool)
-                    pool = pool[:q_count]
-
-                    room.classic_test = {
-                        "active": True,
-                        "title": title,
-                        "time_limit": time_limit,
-                        "show_explanations": show_exp,
-                        "pool": pool,
-                        "submissions": {},
-                        "team_pts": [0, 0, 0, 0],
-                    }
-                    room.mode = "classic_test"
-
-                elif action == "ctest_toggle" and room.classic_test:
-                    room.classic_test["active"] = not room.classic_test["active"]
-
-                elif action == "ctest_sync_scores" and room.classic_test:
-                    for i in range(4):
-                        room.scores[i] += room.classic_test["team_pts"][i]
-                    room.classic_test["team_pts"] = [0, 0, 0, 0]
-
-                # --- MILLIONAIRE ---
-                elif action == "mil_start":
-                    pname = str(data.get("player") or "").strip() or "Ishtirokchi"
-                    tv = data.get("team")
-                    t_idx = int(tv) if (tv is not None and tv != "") else None
-                    pool = room.get_mc_pool()
-                    while len(pool) < len(MIL_PRIZES):
-                        pool.extend(room.get_mc_pool())
-                    room.mil = {
-                        "active": True, "player": pname, "team": t_idx,
-                        "pool": pool[:len(MIL_PRIZES)], "step": 0, "won": 0,
-                        "status": "playing", "revealed": False, "selected": None,
-                        "hidden_opts": [], "lifelines": {"fifty": True, "audience": True, "ai": True},
-                        "audience_open": False, "votes": {}, "ai_hint": "", "credited": False,
-                    }
-
-                elif action == "mil_select" and room.mil:
-                    room.mil["selected"] = int(data.get("choice"))
-
-                elif action == "mil_5050" and room.mil and room.mil["lifelines"]["fifty"]:
-                    mq = room.mil["pool"][room.mil["step"]]
-                    wrong = [i for i in range(4) if i != mq["c"]]
-                    room.mil["hidden_opts"] = random.sample(wrong, 2)
-                    room.mil["lifelines"]["fifty"] = False
-
-                elif action == "mil_audience" and room.mil and room.mil["lifelines"]["audience"]:
-                    room.mil["audience_open"] = True
-                    room.mil["lifelines"]["audience"] = False
-
-                elif action == "mil_ai" and room.mil and room.mil["lifelines"]["ai"]:
-                    mq = room.mil["pool"][room.mil["step"]]
-                    room.mil["lifelines"]["ai"] = False
-                    if GEMINI_API_KEY:
-                        room.mil["ai_hint"] = call_gemini(
-                            f"Savol: {mq['q']}. Variantlar: {mq['opts']}. 2 jumlada qisqa maslahat ber (o‘zbek tilida)."
-                        )
-                    else:
-                        room.mil["ai_hint"] = f"Eng mantiqiy variant: {['A','B','C','D'][mq['c']]}."
-
-                elif action == "mil_reveal" and room.mil and room.mil["selected"] is not None:
-                    m = room.mil
-                    mq = m["pool"][m["step"]]
-                    m["revealed"] = True
-                    m["audience_open"] = False
-                    if m["selected"] == mq["c"]:
-                        m["won"] = MIL_PRIZES[m["step"]]
-                        if m["step"] >= len(MIL_PRIZES) - 1:
-                            m["active"] = False
-                            m["status"] = "won"
-                    else:
-                        safe_won = 0
-                        for s_idx in MIL_SAFES:
-                            if m["step"] > s_idx:
-                                safe_won = MIL_PRIZES[s_idx]
-                        m["won"] = safe_won
-                        m["active"] = False
-                        m["status"] = "lost"
-
-                elif action == "mil_next" and room.mil:
-                    m = room.mil
-                    m["step"] += 1
-                    m["revealed"] = False
-                    m["selected"] = None
-                    m["hidden_opts"] = []
-                    m["audience_open"] = False
-                    m["votes"] = {}
-                    m["ai_hint"] = ""
-
-                elif action == "mil_walk" and room.mil:
-                    room.mil["active"] = False
-                    room.mil["status"] = "walked"
-
-                elif action == "mil_credit" and room.mil and not room.mil["credited"]:
-                    t_idx = room.mil["team"]
-                    if t_idx is not None and 0 <= t_idx < 4:
-                        room.scores[t_idx] += room.mil["won"]
-                        room.mil["credited"] = True
-
-                # --- AUCTION ---
-                elif action == "auc_start":
-                    pool = room.get_mc_pool()[:8]
-                    room.auc = {
-                        "round": 1, "total_rounds": len(pool), "pool": pool,
-                        "phase": "betting", "bank": [1000, 1000, 1000, 1000],
-                        "bets": {}, "answers": {}, "deltas": [0, 0, 0, 0],
-                    }
-
-                elif action == "auc_open_q" and room.auc:
-                    a = room.auc
-                    for i in range(4):
-                        if str(i) not in a["bets"]:
-                            a["bets"][str(i)] = min(100, a["bank"][i])
-                    a["phase"] = "question"
-
-                elif action == "auc_reveal" and room.auc:
-                    a = room.auc
-                    aq = a["pool"][a["round"] - 1]
-                    deltas = [0, 0, 0, 0]
-                    for i in range(4):
-                        bet = int(a["bets"].get(str(i), 0))
-                        ans = a["answers"].get(str(i))
-                        if ans is not None and int(ans) == aq["c"]:
-                            a["bank"][i] += bet
-                            deltas[i] = bet
-                        else:
-                            a["bank"][i] = max(100, a["bank"][i] - bet)
-                            deltas[i] = -bet
-                    a["deltas"] = deltas
-                    a["phase"] = "revealed"
-
-                elif action == "auc_next" and room.auc:
-                    a = room.auc
-                    if a["round"] < a["total_rounds"]:
-                        a["round"] += 1
-                        a["phase"] = "betting"
-                        a["bets"] = {}
-                        a["answers"] = {}
-                        a["deltas"] = [0, 0, 0, 0]
-
-                elif action == "auc_sync_scores" and room.auc:
-                    for i in range(4):
-                        room.scores[i] += room.auc["bank"][i]
-
-                # --- BOMB ---
-                elif action == "bomb_start":
-                    sec = int(data.get("sec", 20))
-                    pool = room.get_mc_pool()
-                    room.bomb = {
-                        "holder": 0, "lives": [3, 3, 3, 3], "sec": sec,
-                        "deadline": time.time() + sec, "time_left": sec,
-                        "status": "playing", "last_choice": None,
-                        "last_msg": f"💣 Bomba {room.teams[0]} qo‘lida! Tez javob bering!",
-                        "pool": pool, "pool_idx": 0, "cur_q": pool[0],
-                    }
-
-                elif action == "bomb_resume" and room.bomb:
-                    b = room.bomb
-                    alive = [i for i in range(4) if b["lives"][i] > 0]
-                    if len(alive) <= 1:
-                        b["status"] = "win"
-                        winner = room.teams[alive[0]] if alive else "Hech kim"
-                        b["last_msg"] = f"👑 G‘OLIB: {winner}!"
-                    else:
-                        nxt = (b["holder"] + 1) % 4
-                        for _ in range(4):
-                            if b["lives"][nxt] > 0:
-                                break
-                            nxt = (nxt + 1) % 4
-                        b["holder"] = nxt
-                        b["pool_idx"] = (b["pool_idx"] + 1) % len(b["pool"])
-                        b["cur_q"] = b["pool"][b["pool_idx"]]
-                        b["deadline"] = time.time() + b["sec"]
-                        b["time_left"] = b["sec"]
-                        b["last_choice"] = None
-                        b["status"] = "playing"
-                        b["last_msg"] = f"💣 Bomba {room.teams[nxt]} ga uzatildi!"
-
-                # --- JONLI TEST (KAHOOT) ---
-                elif action == "kahoot_start":
-                    dur = int(data.get("duration", 20))
-                    pool = room.get_mc_pool()[:15]
-                    recs = {nm: {"team": tm, "pts": 0, "streak": 0, "correct": 0} for nm, tm in room.players.items()}
-                    room.kahoot = {
-                        "phase": "lobby", "duration": dur, "pool": pool,
-                        "q_num": -1, "cur_q": None, "deadline": 0,
-                        "time_left": dur, "round_results": {}, "records": recs,
-                        "team_pts": [0, 0, 0, 0],
-                    }
-
-                elif action == "kahoot_next" and room.kahoot:
-                    k = room.kahoot
-                    if k["q_num"] + 1 < len(k["pool"]):
-                        k["q_num"] += 1
-                        k["cur_q"] = k["pool"][k["q_num"]]
-                        k["phase"] = "question"
-                        k["deadline"] = time.time() + k["duration"]
-                        k["time_left"] = k["duration"]
-                        k["round_results"] = {}
-
-                elif action == "kahoot_reveal" and room.kahoot:
-                    room.kahoot_do_reveal()
-
-                elif action == "kahoot_podium" and room.kahoot:
-                    room.kahoot["phase"] = "podium"
-
-                elif action == "kahoot_sync_scores" and room.kahoot:
-                    for i in range(4):
-                        room.scores[i] += room.kahoot["team_pts"][i]
-                    room.kahoot["team_pts"] = [0, 0, 0, 0]
-
-                room.touch()
-                st = room.serialize(is_admin=True)
-            self.send_json(st)
-            return
-
-        self.send_json({"error": "Noma’lum so‘rov"}, 404)
-
-
-if __name__ == "__main__":
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"JEO QUIZ universal server ishga tushdi: port {PORT}", flush=True)
-    server.serve_forever()
+        const st = document.getElementById('aucbetstatus');
+        if (st && curBet !== undefined) st.textContent = `✔ Tikilgan stavka: ${fmt(curBet)}`;
+      }
+      return;
+    } else {
+      x += `<div class="aibox">Jamoalar stavka tikishini kuting...</div>`;
+    }
+  } else if (a.question){
+    lastAucRoundKey = '';
+    const q = a.question;
+    const myAns = myTeam !== null ? (a.answers || {})[String(myTeam)] : undefined;
+    x += `<div class="q">${esc(q.q)}</div>`;
+    q.opts.forEach((opt, i) => {
+      let cls = 'optbtn';
+      if (a.phase === 'revealed'){
+        if (i === q.c) cls += ' ok';
+        else if (i === myAns) cls += ' bad';
+      } else if (i === myAns){
+        cls += ' sel';
+      }
+      const dis = (a.phase !== 'question' || myTeam === null) ? 'disabled' : '';
+      x += `<button class="${cls}" ${dis} onclick="submitAucAns(${i})">${L[i]}) ${esc(opt)}</button>`;
+    });
+    if (a.phase === 'revealed' && q.exp) x += `<div class="aibox"><b>Izoh:</b> ${esc(q.exp)}</div>`;
+  }
+
+  x += `</div>`;
+  stage.innerHTML = x;
+}
+
+function setAucBet(val){
+  const inp = document.getElementById('aucbetinp');
+  if (inp) inp.value = val;
+  submitAucBet();
+}
+
+async function submitAucBet(){
+  if (myTeam === null) return;
+  const inp = document.getElementById('aucbetinp');
+  const amount = inp ? Number(inp.value || 50) : 50;
+  await fetch('/api/auc_play', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({room: curRoom, action: 'bet', team: myTeam, amount})
+  });
+  poll();
+}
+
+async function submitAucAns(choice){
+  if (myTeam === null) return;
+  await fetch('/api/auc_play', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({room: curRoom, action: 'answer', team: myTeam, choice})
+  });
+  poll();
+}
+
+/* ================= 4. ZANJIRLI BOMBA ================= */
+function renderBombStudent(){
+  const stage = document.getElementById('mainstage');
+  const b = S.bomb;
+  if (!b){
+    stage.innerHTML = `<div class="card"><h2>💣 ZANJIRLI BOMBA</h2><div class="ans">Boshlovchi o‘yinni boshlashini kuting...</div></div>`;
+    return;
+  }
+  const isMyTurn = (myTeam !== null && myTeam === b.holder && b.status === 'playing');
+  const holderName = S.teams[b.holder] || '1-jamoa';
+
+  let x = `<div class="card" style="border:2px solid ${isMyTurn ? '#EF4444' : '#3B82F6'}">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <h2 style="color:#F87171;margin:0">💣 BOMBA: <span style="color:#FFC72C">${esc(holderName)}</span></h2>
+      <div style="font-size:24px;font-weight:bold;color:${b.time_left<=5?'#FF8A80':'#7CFC9A'}">⏱ ${b.time_left} s</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px">` +
+    S.teams.map((t, i) => {
+      const lv = b.lives[i];
+      const activeBox = (i === b.holder && b.status === 'playing') ? 'border:2px solid #FFC72C;background:#1e3a8a;' : 'background:rgba(12,24,66,.9);';
+      return `<div style="padding:8px 10px;border-radius:10px;${activeBox}">
+        <div style="font-size:13px">${esc(t)}</div>
+        <div style="font-size:17px;margin-top:3px">${lv > 0 ? '❤️'.repeat(lv) : '💀'}</div>
+      </div>`;
+    }).join('') + `</div>
+    <div class="aibox" style="border-left-color:#EF4444;font-weight:bold;color:#FFC72C">${esc(b.last_msg)}</div>`;
+
+  if (b.question){
+    const q = b.question;
+    const tags = ['ALPHA','BETA','GAMMA','DELTA'];
+    x += `<div class="q">${esc(q.q)}</div>`;
+    q.opts.forEach((opt, i) => {
+      let cls = 'optbtn';
+      if (b.status !== 'playing'){
+        if (i === q.c) cls += ' ok';
+        else if (i === b.last_choice) cls += ' bad';
+      }
+      x += `<button class="${cls}" ${isMyTurn ? '' : 'disabled'} onclick="sendBombChoice(${i})">${tags[i]}: ${esc(opt)}</button>`;
+    });
+    if (!isMyTurn && b.status === 'playing'){
+      x += `<div class="ans" style="margin-top:8px">Hozir <b>${esc(holderName)}</b> javob bermoqda...</div>`;
+    }
+  }
+  x += `</div>`;
+  stage.innerHTML = x;
+}
+
+async function sendBombChoice(choice){
+  if (myTeam === null) return;
+  await fetch('/api/bomb_play', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({room: curRoom, team: myTeam, choice})
+  });
+  poll();
+}
+
+/* ================= 5. JONLI TEST (KAHOOT) ================= */
+function renderKahootStudent(){
+  const stage = document.getElementById('mainstage');
+  const k = S.kahoot;
+  if (!k){
+    stage.innerHTML = `<div class="card"><h2>⚡ JONLI TEST</h2><div class="ans">O‘qituvchi Jonli TEST xonasini ochishini kuting...</div></div>`;
+    return;
+  }
+
+  if (k.phase === 'lobby'){
+    stage.innerHTML = `<div class="card" style="text-align:center;border:2px solid #A855F7">
+      <div style="font-size:44px">⚡</div>
+      <h2 style="color:#D8B4FE;font-size:20px">SIZ O‘YINDASIZ!</h2>
+      <div class="ans">Ekranda ismingiz ko‘rindi. 1-savol boshlanishini kuting...</div>
+    </div>`;
+    return;
+  }
+
+  const myRes = (k.round_results || {})[myName];
+  if (k.phase === 'question' && k.question){
+    const q = k.question;
+    let x = `<div class="card" style="border:2px solid #A855F7">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="color:#D8B4FE;font-weight:bold">${k.q_num + 1} / ${k.total_q}-savol</span>
+        <span style="font-size:22px;font-weight:bold;color:${k.time_left<=5?'#FF8A80':'#7CFC9A'}">⏱ ${k.time_left} s</span>
+      </div>
+      <div class="q">${esc(q.q)}</div>`;
+
+    if (myRes){
+      x += `<div class="aibox" style="text-align:center;border-left-color:#FFC72C;padding:22px">
+        <div style="font-size:32px">⏳</div>
+        <div style="font-size:18px;font-weight:bold;color:#FFC72C;margin-top:6px">Javobingiz qabul qilindi!</div>
+        <div class="ans">Boshqa ishtirokchilar tugatishini kuting...</div>
+      </div>`;
+    } else {
+      x += `<div class="kgrid">` + q.opts.map((opt, i) =>
+        `<button class="kbtn k${i}" onclick="sendKahootChoice(${i})"><span style="font-size:24px">${SHAPES[i]}</span><span>${esc(opt)}</span></button>`
+      ).join('') + `</div>`;
+    }
+    x += `</div>`;
+    stage.innerHTML = x;
+    return;
+  }
+
+  if (k.phase === 'reveal' && k.question){
+    const q = k.question;
+    let banner = '';
+    if (myRes){
+      banner = myRes.ok
+        ? `<div class="aibox" style="border-left-color:#1E8E4E;background:rgba(20,83,45,.55);text-align:center">
+            <div style="font-size:28px">✅ TO‘G‘RI!</div>
+            <div style="font-size:20px;font-weight:bold;color:#7CFC9A">+${fmt(myRes.gained)} ball</div>
+           </div>`
+        : `<div class="aibox" style="border-left-color:#B3261E;background:rgba(127,29,29,.55);text-align:center">
+            <div style="font-size:28px">❌ NOTO‘G‘RI</div>
+            <div class="ans">To‘g‘ri javob: <b>${SHAPES[q.c]} ${esc(q.opts[q.c])}</b></div>
+           </div>`;
+    } else {
+      banner = `<div class="aibox" style="border-left-color:#F59E0B;text-align:center"><b>⏱ Vaqt tugadi!</b> To‘g‘ri javob: <b>${esc(q.opts[q.c])}</b></div>`;
+    }
+    const myRank = (k.leaderboard || []).findIndex(r => r.name === myName);
+    const myRec = myRank >= 0 ? k.leaderboard[myRank] : null;
+    stage.innerHTML = `<div class="card">
+      ${banner}
+      ${q.exp ? `<div class="ans" style="margin-top:10px"><b>Izoh:</b> ${esc(q.exp)}</div>` : ''}
+      ${myRec ? `<div class="aibox">Sizning o‘rningiz: <b style="color:#FFC72C">${myRank + 1}-o‘rin</b> • Jami: <b style="color:#7CFC9A">${fmt(myRec.pts)} ball</b> ${myRec.streak>=2?'🔥'+myRec.streak:''}</div>` : ''}
+    </div>`;
+    return;
+  }
+
+  if (k.phase === 'podium'){
+    const lb = k.leaderboard || [];
+    const myRank = lb.findIndex(r => r.name === myName);
+    let x = `<div class="card" style="border:2px solid #FFC72C">
+      <h2 style="color:#FFC72C;text-align:center;font-size:20px">🏆 YAKUNIY REYTING</h2>`;
+    if (myRank >= 0){
+      x += `<div class="aibox" style="text-align:center;border-left-color:#FFC72C">
+        Sizning yakuniy natijangiz: <b style="color:#FFC72C;font-size:18px">${myRank + 1}-o‘rin</b> (${fmt(lb[myRank].pts)} ball)
+      </div>`;
+    }
+    x += `<table style="margin-top:10px">` + lb.slice(0, 10).map((r, idx) =>
+      `<tr style="${r.name===myName?'background:rgba(255,199,44,.15)':''}">
+        <td><b>${idx+1}.</b> ${esc(r.name)}</td>
+        <td style="text-align:right;color:#FFC72C;font-weight:bold">${fmt(r.pts)}</td>
+      </tr>`
+    ).join('') + `</table></div>`;
+    stage.innerHTML = x;
+  }
+}
+
+async function sendKahootChoice(choice){
+  await fetch('/api/kahoot_play', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({room: curRoom, name: myName, team: myTeam, choice})
+  });
+  poll();
+}
+
+/* ================= 6. PRO SLAYD STUDIO ================= */
+function renderSlidesStudent(){
+  const stage = document.getElementById('mainstage');
+  const sd = S.slides;
+  if (!sd || !sd.items || !sd.items.length){
+    stage.innerHTML = `<div class="card"><h2>🎨 PRO SLAYD STUDIO</h2><div class="ans">O‘qituvchi taqdimotni ochishini kuting...</div></div>`;
+    return;
+  }
+  const idx = Math.max(0, Math.min(sd.items.length - 1, sd.cur_idx || 0));
+  const sl = sd.items[idx];
+  const total = sd.items.length;
+  const thClass = 'theme-' + (sd.theme || 'royal');
+  const layout = sl.layout || 'bullets';
+
+  let bodyHtml = '';
+  if (layout === 'stats' && sl.stats && sl.stats.length){
+    bodyHtml += `<div class="sl-stats">` + sl.stats.map(st =>
+      `<div class="sl-statbox"><div class="sl-statval">${esc(st.value)}</div><div class="sl-statlbl">${esc(st.label)}</div></div>`
+    ).join('') + `</div>`;
+  }
+
+  if (layout === 'quote'){
+    bodyHtml += `<div class="sl-quote">«${esc(sl.highlight || sl.subtitle || sl.title)}»</div>`;
+    if (sl.bullets && sl.bullets.length){
+      bodyHtml += `<ul class="sl-bullets">` + sl.bullets.map(b => `<li>✦ ${esc(b)}</li>`).join('') + `</ul>`;
+    }
+  } else if (layout === 'split'){
+    bodyHtml += `<div class="sl-split">
+      <ul class="sl-bullets">` + (sl.bullets || []).map(b => `<li>▸ ${esc(b)}</li>`).join('') + `</ul>
+      <div class="sl-callout">
+        <div style="font-size:11px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;opacity:.8">💡 Asosiy Xulosa</div>
+        <div style="font-size:17px;font-weight:bold;line-height:1.4">${esc(sl.highlight || sl.subtitle || '')}</div>
+      </div>
+    </div>`;
+  } else {
+    if (sl.bullets && sl.bullets.length){
+      bodyHtml += `<ul class="sl-bullets">` + sl.bullets.map(b => `<li>▸ ${esc(b)}</li>`).join('') + `</ul>`;
+    }
+    if (sl.highlight && layout !== 'cover'){
+      bodyHtml += `<div class="sl-callout" style="margin-top:10px;padding:11px 14px"><b>💡 Eslatma:</b> ${esc(sl.highlight)}</div>`;
+    }
+  }
+
+  stage.innerHTML = `<div class="card" style="padding:12px">
+    <div id="stslidestage" class="slide-stage ${thClass}">
+      <div>
+        <div class="sl-top">
+          <span class="sl-badge">${esc(sl.badge || `${idx+1}-SLAYD`)}</span>
+          <span class="sl-num">${idx + 1} / ${total}</span>
+        </div>
+        <div class="sl-title">${esc(sl.title)}</div>
+        ${sl.subtitle ? `<div class="sl-sub">${esc(sl.subtitle)}</div>` : ''}
+        ${bodyHtml}
+      </div>
+      <div class="sl-foot">
+        <span>${esc(sd.title)}</span>
+        <span>Jeo Quiz</span>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+      <span style="font-size:13px;color:#93C5FD">O‘qituvchi slaydni almashtirganda avtomatik yangilanadi</span>
+      <button onclick="document.getElementById('stslidestage').requestFullscreen && document.getElementById('stslidestage').requestFullscreen()" style="padding:7px 12px;font-size:13px">🖥️ To‘liq ekran</button>
+    </div>
+  </div>`;
+}
+
+/* ================= 7. ODDIY TEST (CLASSIC SELF-PACED TEST) ================= */
+function renderClassicTestStudent(){
+  const stage = document.getElementById('mainstage');
+  const ct = S.classic_test;
+  if (!ct || !ct.pool || !ct.pool.length){
+    stage.innerHTML = `<div class="card"><h2>📝 ODDIY TEST</h2><div class="ans">O‘qituvchi testni boshlashini kuting...</div></div>`;
+    return;
+  }
+
+  const testKey = `${ct.title}_${ct.total_q}_${ct.time_limit}`;
+  if (ctState.key !== testKey){
+    ctState = {
+      key: testKey,
+      answers: new Array(ct.pool.length).fill(null),
+      curIdx: 0,
+      startTime: Date.now(),
+      submittedResult: null,
+      submitting: false,
+    };
+  }
+
+  const serverSub = (ct.submissions || {})[myName];
+  if (serverSub && !ctState.submittedResult){
+    ctState.submittedResult = serverSub;
+  }
+
+  if (ctState.submittedResult){
+    const res = ctState.submittedResult;
+    const mins = Math.floor(res.duration_sec / 60), secs = res.duration_sec % 60;
+    const pColor = res.percent >= 80 ? '#7CFC9A' : (res.percent >= 60 ? '#FFC72C' : '#FF8A80');
+    let x = `<div class="card" style="border:2px solid #10B981">
+      <div style="text-align:center;padding:12px 0">
+        <div style="font-size:14px;color:#6EE7B7;font-weight:bold">✅ TEST YAKUNLANDI — ${esc(ct.title)}</div>
+        <div style="font-size:46px;font-weight:bold;color:${pColor};margin:8px 0">${res.percent}%</div>
+        <div style="font-size:18px">To‘g‘ri javoblar: <b>${res.correct} / ${res.total}</b> • Ball: <b style="color:#FFC72C">${fmt(res.score)}</b></div>
+        <div style="font-size:13px;color:#93C5FD;margin-top:4px">Sarflangan vaqt: ${mins} daqiqa ${secs} soniya</div>
+      </div>`;
+
+    if (res.review && res.review.length){
+      x += `<div class="aibox" style="border-left-color:#10B981"><b>📋 Savollar bo‘yicha tahlil:</b>` +
+        res.review.map((rv, idx) => {
+          const uTxt = (rv.user_choice >= 0 && rv.opts[rv.user_choice]) ? `${L[rv.user_choice]}) ${esc(rv.opts[rv.user_choice])}` : 'Belgilanmagan';
+          const cTxt = `${L[rv.correct_choice]}) ${esc(rv.opts[rv.correct_choice])}`;
+          return `<div style="padding:10px 0;border-bottom:1px solid rgba(59,130,246,.22)">
+            <div><b>${idx+1}. ${esc(rv.q)}</b></div>
+            <div style="font-size:14px;margin-top:4px">
+              Sizning javobingiz: <b style="color:${rv.is_correct?'#7CFC9A':'#FF8A80'}">${uTxt} ${rv.is_correct?'✔':'✘'}</b>
+              ${!rv.is_correct ? `<br>To‘g‘ri javob: <b style="color:#7CFC9A">${cTxt}</b>` : ''}
+            </div>
+            ${rv.exp ? `<div style="font-size:13px;color:#CBD5E1;margin-top:3px">💡 ${esc(rv.exp)}</div>` : ''}
+          </div>`;
+        }).join('') + `</div>`;
+    }
+    x += `</div>`;
+    stage.innerHTML = x;
+    return;
+  }
+
+  if (!ct.active){
+    stage.innerHTML = `<div class="card" style="border:2px solid #EF4444;text-align:center">
+      <h2 style="color:#FF8A80">⏹ TEST VAQTI YAKUNLANDI</h2>
+      <div class="ans">O‘qituvchi ushbu test uchun javoblar qabulini yopdi.</div>
+    </div>`;
+    return;
+  }
+
+  const idx = ctState.curIdx;
+  const q = ct.pool[idx];
+  const answeredCount = ctState.answers.filter(v => v !== null).length;
+
+  let timerHtml = '';
+  if (ct.time_limit > 0){
+    const elapsed = Math.floor((Date.now() - ctState.startTime) / 1000);
+    const left = Math.max(0, ct.time_limit * 60 - elapsed);
+    const mm = String(Math.floor(left / 60)).padStart(2, '0');
+    const ss = String(left % 60).padStart(2, '0');
+    timerHtml = `<span id="cttimerpill" style="font-size:18px;font-weight:bold;color:${left<=30?'#FF8A80':'#FFC72C'}">⏱ ${mm}:${ss}</span>`;
+    if (left <= 0 && !ctState.submitting){
+      submitClassicTest(true);
+      return;
+    }
+  }
+
+  let x = `<div class="card" style="border:2px solid #10B981">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <div>
+        <h2 style="color:#6EE7B7;margin:0">📝 ${esc(ct.title)}</h2>
+        <div style="font-size:13px;color:#CBD5E1">Belgilangan: <b>${answeredCount} / ${ct.pool.length}</b></div>
+      </div>
+      ${timerHtml}
+    </div>
+
+    <div class="qnav">` +
+    ct.pool.map((_, i) => {
+      const cls = 'qpill' + (i === idx ? ' current' : (ctState.answers[i] !== null ? ' answered' : ''));
+      return `<button class="${cls}" onclick="ctGo(${i})">${i+1}</button>`;
+    }).join('') + `</div>
+
+    <div style="font-size:13px;color:#93C5FD">${idx + 1}-savol • ${esc(q.cat)} (${q.pts} ball)</div>
+    <div class="q">${esc(q.q)}</div>`;
+
+  q.opts.forEach((opt, i) => {
+    const isSel = ctState.answers[idx] === i;
+    x += `<button class="optbtn ${isSel ? 'sel' : ''}" onclick="ctPick(${i})">${L[i]}) ${esc(opt)}</button>`;
+  });
+
+  x += `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px">
+    <div style="display:flex;gap:8px">
+      <button ${idx<=0?'disabled':''} onclick="ctGo(${idx-1})">◀ Oldingi</button>
+      <button ${idx>=ct.pool.length-1?'disabled':''} onclick="ctGo(${idx+1})">Keyingi ▶</button>
+    </div>
+    <button class="green" ${ctState.submitting?'disabled':''} onclick="submitClassicTest(false)">✅ Testni topshirish (${answeredCount}/${ct.pool.length})</button>
+  </div></div>`;
+
+  stage.innerHTML = x;
+}
+
+function ctGo(i){
+  ctState.curIdx = i;
+  renderClassicTestStudent();
+}
+
+function ctPick(choice){
+  ctState.answers[ctState.curIdx] = choice;
+  renderClassicTestStudent();
+}
+
+async function submitClassicTest(auto){
+  if (ctState.submitting || ctState.submittedResult) return;
+  const unanswered = ctState.answers.filter(v => v === null).length;
+  if (!auto && unanswered > 0){
+    if (!confirm(`Hali ${unanswered} ta savol belgilanmagan. Baribir testni topshirasizmi?`)) return;
+  }
+  ctState.submitting = true;
+  renderClassicTestStudent();
+
+  const durSec = Math.max(1, Math.round((Date.now() - ctState.startTime) / 1000));
+  const payloadAns = ctState.answers.map(v => v === null ? -1 : v);
+  const r = await fetch('/api/classic_test_submit', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      room: curRoom,
+      name: myName,
+      team: myTeam,
+      answers: payloadAns,
+      duration_sec: durSec
+    })
+  });
+  const j = await r.json();
+  ctState.submitting = false;
+  if (!r.ok){
+    alert(j.error || 'Topshirishda xatolik yuz berdi');
+    renderClassicTestStudent();
+    return;
+  }
+  ctState.submittedResult = j.result;
+  renderClassicTestStudent();
+}
+
+// Init
+checkRoomInfo();
+if (myName){
+  document.getElementById('loginbox').style.display = 'none';
+  document.getElementById('appbox').style.display = 'block';
+  poll();
+}
+setInterval(poll, 900);
+</script>
+</body></html>
