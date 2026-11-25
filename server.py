@@ -13,11 +13,19 @@ import urllib.request
 import zipfile
 import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from xml.sax.saxutils import escape as xml_esc
 
 PORT = int(os.environ.get("PORT", 8080))
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
 DEFAULT_ADMIN_PIN = os.environ.get("ADMIN_PIN", "1234").strip()
+
+# @BotFather bergan tokenning "02:" dan oldingi raqamlarini qo'shing yoki Render Environment Variables ga kiriting
+_FALLBACK_TG_TOKEN = "BOT_ID_RAQAMLARINI_QOYING02:AAGx4ANxgbwJLJXNs7Pr5gti7HWsBvqPsbU"
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip() or (
+    "" if _FALLBACK_TG_TOKEN.startswith("BOT_ID_") else _FALLBACK_TG_TOKEN
+)
+APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "https://jeopardy-viym.onrender.com").strip().rstrip("/")
 
 PRESETS_META = [
     {"id": "econ", "icon": "📈", "title": "Iqtisodiyot va Moliya", "desc": "Mikro va makroiqtisodiyot, bank tizimi, bozor va moliya"},
@@ -395,7 +403,7 @@ class Room:
                 "title": self.topic_title or "Interaktiv Ma'ruza",
                 "subtitle": f"{len(self.cats)} ta asosiy yo‘nalish • {len(self.questions)} ta tahliliy savol-javob",
                 "bullets": self.cats,
-                "highlight": "Jeo Quiz",
+                "highlight": "Jeo Quiz Pro",
                 "stats": [
                     {"label": "Bo‘limlar", "value": str(len(self.cats))},
                     {"label": "Savollar", "value": str(len(self.questions))},
@@ -409,7 +417,8 @@ class Room:
             bullets = []
             for q in cat_qs:
                 ans_txt = q["opts"][q["c"]] if (q.get("opts") and q.get("c") is not None) else q.get("ans", "")
-                bullets.append(f"{q['q']} → {ans_txt}")
+                exp_txt = f" ({q['exp']})" if q.get("exp") else ""
+                bullets.append(f"{q['q']} → {ans_txt}{exp_txt}")
             key_exp = cat_qs[0].get("exp", "") if cat_qs else ""
             items.append(
                 normalize_slide_item({
@@ -620,6 +629,7 @@ class Room:
             "room": self.code, "topic_title": self.topic_title, "presets": PRESETS_META,
             "ai_ready": bool(GEMINI_API_KEY), "ai_busy": self.ai_busy,
             "ai_status": self.ai_status, "ai_error": self.ai_error, "ai_note": self.ai_note,
+            "tg_ready": bool(TELEGRAM_BOT_TOKEN),
             "mode": self.mode, "teams": self.teams, "scores": self.scores,
             "cats": self.cats, "used": self.used, "cur": self.cur, "revealed": self.revealed,
             "question": self.public_q(cur_q, include_secret=inc_sec),
@@ -727,34 +737,38 @@ def _build_fallback_slides(room, topic, slide_count, style, extra_text=""):
     items = [
         normalize_slide_item({
             "layout": "cover",
-            "badge": "01 / TAQDIMOT",
+            "badge": "01 / KIRISH",
             "title": topic,
-            "subtitle": f"{style} • {slide_count} slayddan iborat interaktiv taqdimot",
+            "subtitle": f"{style} • Chuqurlashtirilgan o‘quv-tahliliy taqdimot",
             "bullets": [
-                "Asosiy tushunchalar va nazariy asoslar",
-                "Amaliy tahlil va muhim ko‘rsatkichlar",
-                "Xulosalar va savol-javoblar",
+                f"«{topic}» mavzusining nazariy asoslari, asosiy tushunchalar va ta’riflar tahlili",
+                "Zamonaviy amaliyotdagi o‘rni, asosiy ko‘rsatkichlar va statistik dinamika",
+                "Mavzu yuzasidan tizimli xulosalar, muammolar va yechim mexanizmlari",
             ],
-            "highlight": "Jeo Quiz Pro",
-            "notes": f"«{topic}» mavzusidagi taqdimotni boshlaymiz.",
+            "highlight": "Jeo Quiz Pro — Interaktiv Taqdimot",
+            "notes": f"Assalomu alaykum! Bugun «{topic}» mavzusini nazariy va amaliy jihatdan batafsil ko‘rib chiqamiz.",
         }, 0)
     ]
 
     if extra_text.strip():
-        sents = [s.strip() for s in re.split(r"[.!?\n]+", extra_text) if len(s.strip()) > 20]
-        chunk_size = max(2, len(sents) // max(1, slide_count - 2))
+        sents = [s.strip() for s in re.split(r"[.!?\n]+", extra_text) if len(s.strip()) > 35]
+        chunk_size = max(3, len(sents) // max(1, slide_count - 2))
         for i in range(1, slide_count - 1):
             chunk = sents[(i - 1) * chunk_size : i * chunk_size][:4]
             if not chunk:
-                chunk = [f"{topic} mavzusining {i}-asosiy jihati", "Nazariy va amaliy ahamiyati", "Asosiy xulosalar"]
+                chunk = [
+                    f"{topic} doirasidagi asosiy tushunchalar va ularning o‘zaro bog‘liqligi",
+                    "Amaliy jarayonlarda qo‘llanilish mexanizmlari hamda samaradorlik mezonlari",
+                    "Tahliliy natijalar asosida shakllantirilgan asosiy ilmiy-amaliy xulosalar",
+                ]
             items.append(normalize_slide_item({
                 "layout": "split" if i % 2 == 0 else "bullets",
-                "badge": f"{i + 1:02d} / BO‘LIM",
-                "title": f"{topic} — {i}-qism",
-                "subtitle": "Manba matni asosidagi asosiy fikrlar",
+                "badge": f"{i + 1:02d} / TAHLIL",
+                "title": f"{topic}: {i}-asosiy yo‘nalish",
+                "subtitle": "Yuklangan manba materiallari asosida batafsil sharh",
                 "bullets": chunk,
-                "highlight": chunk[0][:110],
-                "notes": "Ushbu slayddagi asosiy fikrlarni talabalarga izohlab bering.",
+                "highlight": chunk[0][:140],
+                "notes": "Ushbu slayddagi har bir bandni misollar bilan izohlab bering.",
             }, i))
     else:
         matched_qs = []
@@ -767,47 +781,82 @@ def _build_fallback_slides(room, topic, slide_count, style, extra_text=""):
             for i in range(1, slide_count - 1):
                 cat = cats[(i - 1) % len(cats)]
                 c_qs = [q for q in matched_qs if q["cat"] == cat][:4]
-                bullets = [f"{q['q']} → {q['opts'][q['c']]}" for q in c_qs]
+                bullets = [
+                    f"{q['q']} — Javob: {q['opts'][q['c']]}. ({q.get('exp', '')})"
+                    for q in c_qs
+                ]
                 items.append(normalize_slide_item({
                     "layout": "split" if i % 2 == 0 else "bullets",
                     "badge": f"{i + 1:02d} / {cat.upper()}",
                     "title": cat,
-                    "subtitle": f"{topic} bo‘yicha asosiy savol-javob va tushunchalar",
+                    "subtitle": f"{topic} bo‘yicha asosiy qonuniyatlar va tahliliy izohlar",
                     "bullets": bullets,
                     "highlight": c_qs[0].get("exp", "") if c_qs else cat,
-                    "notes": f"{cat} bo‘limi tahlili.",
+                    "notes": f"{cat} bo‘limidagi qonuniyatlarni tushuntiring.",
                 }, i))
         else:
-            templates = [
-                ("Kirish va Dolzarblik", "Mavzuning umumiy mazmuni va maqsadi", ["Asosiy tushuncha va ta’riflar", "Mavzuning bugungi kundagi ahamiyati", "O‘rganishning asosiy maqsadlari"]),
-                ("Nazariy Asoslar", "Asosiy qonuniyatlar va tamoyillar", ["1-asosiy tamoyil va uning mohiyati", "2-asosiy tamoyil va qo‘llanilishi", "Tizimli yondashuv elementlari"]),
-                ("Amaliy Tahlil", "Real hayotiy misollar va ko‘rsatkichlar", ["Amaliyotda qo‘llash mexanizmlari", "Asosiy muammolar va yechimlar", "Samaradorlik ko‘rsatkichlari"]),
-                ("Taqqoslash va Xususiyatlar", "Afzalliklar va cheklovlar tahlili", ["Asosiy ustunlik tomonlari", "E’tibor qaratish lozim bo‘lgan jihatlar", "Rivojlanish istiqbollari"]),
+            deep_blocks = [
+                (
+                    "Nazariy Asoslar va Asosiy Tushunchalar",
+                    f"{topic} tushunchasining iqtisodiy-ilmiy mohiyati va shakllanish bosqichlari",
+                    [
+                        f"Asosiy ta’rif: {topic} tizimli jarayon bo‘lib, resurslar va natijalar o‘rtasidagi muvozanatni belgilaydi.",
+                        "Tarkibiy elementlari: subyektlar, boshqaruv mexanizmlari, me’yoriy-huquqiy baza va baholash indikatorlari.",
+                        "Klassik va zamonaviy yondashuvlar o‘rtasidagi asosiy farqlar hamda evolyutsion rivojlanish bosqichlari.",
+                    ],
+                ),
+                (
+                    "Asosiy Ko‘rsatkichlar va Tahlil Metodologiyasi",
+                    "Samaradorlikni o‘lchash mezonlari va hisoblash usullari",
+                    [
+                        "Miqdoriy ko‘rsatkichlar: o‘sish sur’ati, mutlaq va nisbiy o‘zgarishlar, tarkibiy ulushlar tahlili.",
+                        "Sifat ko‘rsatkichlari: barqarorlik darajasi, raqobatbardoshlik indeksi va innovatsion faollik.",
+                        "Qiyosiy va dinamik tahlil usullari orqali kelgusi davr uchun prognoz ko‘rsatkichlarini aniqlash.",
+                    ],
+                ),
+                (
+                    "Amaliy Mexanizmlar va Real Misollar",
+                    f"{topic} tamoyillarining amaliyotda qo‘llanilishi",
+                    [
+                        "Xalqaro tajriba: rivojlangan mamlakatlar va yetakchi tashkilotlar amaliyotidagi muvaffaqiyatli modellar.",
+                        "O‘zbekiston amaliyoti: so‘nggi yillarda amalga oshirilayotgan islohotlar va erishilgan natijalar.",
+                        "Amaliy keyslar tahlili: nazariy bilimlarni real vaziyatlarda qo‘llash algoritmi.",
+                    ],
+                ),
+                (
+                    "Muammolar, Xatarlar va Rivojlanish Istiqbollari",
+                    "Tizimli to‘siqlarni bartaraf etish va strategik yechimlar",
+                    [
+                        "Asosiy muammolar: resurslar cheklanganligi, tashqi muhit o‘zgaruvchanligi va axborot assimetriyasi.",
+                        "Xatarlarni boshqarish: diversifikatsiya, raqamlashtirish va zamonaviy monitoring tizimlarini joriy etish.",
+                        "Strategik istiqbollar: uzoq muddatli barqaror o‘sishni ta’minlash bo‘yicha ustuvor yo‘nalishlar.",
+                    ],
+                ),
             ]
             for i in range(1, slide_count - 1):
-                t_title, t_sub, t_bul = templates[(i - 1) % len(templates)]
+                t_title, t_sub, t_bul = deep_blocks[(i - 1) % len(deep_blocks)]
                 items.append(normalize_slide_item({
                     "layout": "split" if i % 2 == 0 else "bullets",
-                    "badge": f"{i + 1:02d} / QISM",
-                    "title": f"{t_title} ({topic})",
+                    "badge": f"{i + 1:02d} / BO‘LIM",
+                    "title": f"{t_title} — {topic}",
                     "subtitle": t_sub,
                     "bullets": t_bul,
-                    "highlight": f"{topic} bo‘yicha muhim xulosa",
-                    "notes": f"{t_title} qismini tushuntiring.",
+                    "highlight": t_bul[0],
+                    "notes": f"{t_title} qismini batafsil tushuntirib bering.",
                 }, i))
 
     items.append(normalize_slide_item({
         "layout": "summary",
         "badge": f"{len(items) + 1:02d} / XULOSA",
-        "title": "Yakuniy Xulosalar",
-        "subtitle": f"«{topic}» mavzusi bo‘yicha asosiy natijalar",
+        "title": "Yakuniy Xulosalar va Tavsiyalar",
+        "subtitle": f"«{topic}» mavzusi bo‘yicha umumlashtirilgan natijalar",
         "bullets": [
-            "Mavzuning barcha asosiy yo‘nalishlari ko‘rib chiqildi",
-            "Bilimlarni mustahkamlash uchun Test yoki Jonli o‘yinni ishga tushiring",
-            "Savol va muhokamalar uchun ochiq minbar",
+            f"«{topic}» ning nazariy asoslari va amaliy ahamiyati tizimli ravishda tahlil qilindi.",
+            "Asosiy ko‘rsatkichlar va rivojlanish tendensiyalari bo‘yicha amaliy tavsiyalar shakllantirildi.",
+            "Bilimlarni mustahkamlash uchun Oddiy Test yoki Jonli Viktorina rejimida o‘zingizni sinab ko‘ring.",
         ],
-        "highlight": "E’tiboringiz uchun rahmat!",
-        "notes": "Mavzuni yakunlang.",
+        "highlight": "E’tiboringiz uchun rahmat! Savollar bormi?",
+        "notes": "Mavzuni yakunlang va talabalar savollariga javob bering.",
     }, len(items)))
     return items[:slide_count]
 
@@ -815,17 +864,23 @@ def _build_fallback_slides(room, topic, slide_count, style, extra_text=""):
 def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None, extra_text=""):
     try:
         prompt = (
-            f"O‘zbek tilida '{topic}' mavzusida ({style} uslubida) aynan {slide_count} ta taqdimot slaydi yarat.\n"
-            f"1-slayd 'cover', oxirgisi 'summary', oraliqlar 'bullets', 'split', 'stats' bo‘lsin.\n"
-            f"Faqat JSON qaytar:\n"
-            f'{{"title": "Sarlavha", "slides": ['
-            f'{{"layout": "cover", "badge": "01 / KIRISH", "title": "Sarlavha", "subtitle": "Taglavha", '
-            f'"bullets": ["Fikr 1", "Fikr 2", "Fikr 3"], "highlight": "Xulosa", '
-            f'"stats": [{{"label": "Ko‘rsatkich", "value": "85%"}}], "notes": "Nutq"}}'
+            f"Sen universitet professori va ekspert taqdimot dizaynerisan. O‘zbek tilida '{topic}' mavzusida "
+            f"({style} uslubida) aynan {slide_count} ta CHUQUR, MAZMUNLI va BATAFSIL taqdimot slaydi yarat.\n"
+            f"MUHIM QOIDALAR:\n"
+            f"1. Yuzaki va 3-4 so‘zlik umumiy gaplar YOZMA! Har bir bullet punkt 2 ta to‘liq, mazmunli jumladan iborat bo‘lsin (aniq ta’riflar, formulalar, tarixiy sanalar, statistik raqamlar va real hayotiy misollar bilan).\n"
+            f"2. 1-slayd 'cover', oxirgi slayd 'summary', oraliq slaydlarda 'bullets', 'split', 'stats', 'quote' maketlarini aralashtirib ishlat.\n"
+            f"3. Har bir slaydda 4 tadan boy mazmunli bullet punkt va 1 ta kuchli 'highlight' xulosa bo‘lsin.\n"
+            f"Faqat toza JSON qaytar:\n"
+            f'{{"title": "To‘liq taqdimot sarlavhasi", "slides": ['
+            f'{{"layout": "cover", "badge": "01 / KIRISH", "title": "Sarlavha", "subtitle": "Batafsil taglavha", '
+            f'"bullets": ["1-batafsil fikr va izoh...", "2-batafsil fikr va misol...", "3-batafsil fikr...", "4-batafsil fikr..."], '
+            f'"highlight": "Asosiy ilmiy yoki amaliy xulosa", '
+            f'"stats": [{{"label": "Ko‘rsatkich nomi", "value": "85.4%"}}, {{"label": "Ikkinchi ko‘rsatkich", "value": "2.5x"}}], '
+            f'"notes": "Ma’ruzachi uchun 3 jumlali tushuntirish matni"}}'
             f"]}}"
         )
         if extra_text:
-            prompt += f"\n\nManba matni:\n{extra_text[:20000]}"
+            prompt += f"\n\nQuyidagi manba matnidagi faktlar va raqamlarga tayangan holda tayyorla:\n{extra_text[:22000]}"
 
         raw = call_gemini(prompt, file_part=file_part)
         parsed = extract_json_block(raw)
@@ -841,7 +896,7 @@ def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None,
             room.mode = "slides"
             room.ai_busy = False
             room.ai_error = ""
-            room.ai_status = f"✔ «{deck_title}» bo‘yicha {len(items)} ta Pro slayd tayyor!"
+            room.ai_status = f"✔ «{deck_title}» bo‘yicha {len(items)} ta batafsil Pro slayd tayyor!"
             room.touch()
     except Exception as e:
         err_msg = str(e)
@@ -852,13 +907,285 @@ def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None,
                 room.mode = "slides"
                 room.ai_busy = False
                 room.ai_error = ""
-                room.ai_status = f"⚠ Google AI serveri band (503) — «{topic}» bo‘yicha {len(items)} ta slayd tezkor rejimda tuzildi!"
+                room.ai_status = f"⚠ Google AI band (503) — «{topic}» bo‘yicha {len(items)} ta kengaytirilgan slayd tuzildi!"
                 room.touch()
         else:
             with LOCK:
                 room.ai_busy = False
                 room.ai_error = err_msg
                 room.ai_status = ""
+
+
+THEME_PALETTES = {
+    "royal": ("0F172A", "FFFFFF", "FFC72C", "1E3A8A"),
+    "emerald": ("022C22", "FFFFFF", "34D399", "065F46"),
+    "sunset": ("27102C", "FFFFFF", "FBBF24", "7C2D12"),
+    "obsidian": ("09090B", "FAFAFA", "FACC15", "27272A"),
+    "minimal": ("F8FAFC", "0F172A", "1D4ED8", "E2E8F0"),
+}
+
+
+def build_pptx_bytes(slides_dict):
+    if not slides_dict or not slides_dict.get("items"):
+        slides_dict = {
+            "title": "Jeo Quiz Taqdimot",
+            "theme": "royal",
+            "items": [{"badge": "01", "title": "Taqdimot", "subtitle": "", "bullets": ["Ma’lumot mavjud emas"], "highlight": ""}],
+        }
+    items = slides_dict["items"]
+    bg_hex, fg_hex, acc_hex, card_hex = THEME_PALETTES.get(slides_dict.get("theme", "royal"), THEME_PALETTES["royal"])
+    n = len(items)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        slide_overrides = "\n".join(
+            f'<Override PartName="/ppt/slides/slide{i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>'
+            for i in range(n)
+        )
+        zf.writestr("[Content_Types].xml", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-officedocument.package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
+  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
+  <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+  {slide_overrides}
+</Types>''')
+
+        zf.writestr("_rels/.rels", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+</Relationships>''')
+
+        sld_ids = "\n".join(f'<p:sldId id="{256+i}" r:id="rId{i+2}"/>' for i in range(n))
+        zf.writestr("ppt/presentation.xml", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>
+  <p:sldIdLst>{sld_ids}</p:sldIdLst>
+  <p:sldSz cx="12192000" cy="6858000"/>
+  <p:notesSz cx="6858000" cy="9144000"/>
+</p:presentation>''')
+
+        sld_rels = "\n".join(
+            f'<Relationship Id="rId{i+2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide{i+1}.xml"/>'
+            for i in range(n)
+        )
+        zf.writestr("ppt/_rels/presentation.xml.rels", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
+  {sld_rels}
+  <Relationship Id="rId{n+2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
+</Relationships>''')
+
+        zf.writestr("ppt/slideMasters/slideMaster1.xml", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>
+  <p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>
+  <p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>
+</p:sldMaster>''')
+
+        zf.writestr("ppt/slideMasters/_rels/slideMaster1.xml.rels", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>
+</Relationships>''')
+
+        zf.writestr("ppt/slideLayouts/slideLayout1.xml", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank">
+  <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>
+</p:sldLayout>''')
+
+        zf.writestr("ppt/slideLayouts/_rels/slideLayout1.xml.rels", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>
+</Relationships>''')
+
+        zf.writestr("ppt/theme/theme1.xml", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="JeoTheme">
+  <a:themeElements>
+    <a:clrScheme name="Jeo"><a:dk1><a:srgbClr val="000000"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="1E293B"/></a:dk2><a:lt2><a:srgbClr val="F1F5F9"/></a:lt2><a:accent1><a:srgbClr val="2563EB"/></a:accent1><a:accent2><a:srgbClr val="F59E0B"/></a:accent2><a:accent3><a:srgbClr val="10B981"/></a:accent3><a:accent4><a:srgbClr val="8B5CF6"/></a:accent4><a:accent5><a:srgbClr val="EC4899"/></a:accent5><a:accent6><a:srgbClr val="06B6D4"/></a:accent6><a:hlink><a:srgbClr val="3B82F6"/></a:hlink><a:folHlink><a:srgbClr val="6366F1"/></a:folHlink></a:clrScheme>
+    <a:fontScheme name="JeoFont"><a:majorFont><a:latin typeface="Calibri"/></a:majorFont><a:minorFont><a:latin typeface="Calibri"/></a:minorFont></a:fontScheme>
+    <a:fmtScheme name="JeoFmt"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="9525"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme>
+  </a:themeElements>
+</a:theme>''')
+
+        for i, sl in enumerate(items):
+            badge = xml_esc(f"{sl.get('badge', '')}   ({i+1}/{n})")
+            title = xml_esc(sl.get("title", ""))
+            sub = xml_esc(sl.get("subtitle", ""))
+            bullets = sl.get("bullets") or []
+            hl = xml_esc(sl.get("highlight", ""))
+            paras = []
+            if sub:
+                paras.append(f'<a:p><a:r><a:rPr lang="uz-UZ" sz="1700" i="1"><a:solidFill><a:srgbClr val="{acc_hex}"/></a:solidFill></a:rPr><a:t>{sub}</a:t></a:r></a:p>')
+            for b in bullets:
+                paras.append(f'<a:p><a:pPr marL="285750" indent="-285750"/><a:r><a:rPr lang="uz-UZ" sz="1700"><a:solidFill><a:srgbClr val="{fg_hex}"/></a:solidFill></a:rPr><a:t>▸ {xml_esc(str(b))}</a:t></a:r></a:p>')
+            if hl:
+                paras.append(f'<a:p><a:r><a:rPr lang="uz-UZ" sz="1600" b="1"><a:solidFill><a:srgbClr val="{acc_hex}"/></a:solidFill></a:rPr><a:t>💡 {hl}</a:t></a:r></a:p>')
+            body_xml = "\n".join(paras) if paras else "<a:p/>"
+
+            zf.writestr(f"ppt/slides/slide{i+1}.xml", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:bg><p:bgPr><a:solidFill><a:srgbClr val="{bg_hex}"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr/>
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="2" name="Badge"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="685800" y="380000"/><a:ext cx="10820400" cy="420000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>
+        <p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="uz-UZ" sz="1400" b="1"><a:solidFill><a:srgbClr val="{acc_hex}"/></a:solidFill></a:rPr><a:t>{badge}</a:t></a:r></a:p></p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="3" name="Title"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="685800" y="820000"/><a:ext cx="10820400" cy="950000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>
+        <p:txBody><a:bodyPr wrap="square"/><a:lstStyle/><a:p><a:r><a:rPr lang="uz-UZ" sz="3000" b="1"><a:solidFill><a:srgbClr val="{fg_hex}"/></a:solidFill></a:rPr><a:t>{title}</a:t></a:r></a:p></p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="4" name="Content"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="685800" y="1850000"/><a:ext cx="10820400" cy="4500000"/></a:xfrm><a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="{card_hex}"/></a:solidFill></p:spPr>
+        <p:txBody><a:bodyPr wrap="square" lIns="180000" rIns="180000" tIns="140000" bIns="140000"/><a:lstStyle/>{body_xml}</p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>''')
+
+            zf.writestr(f"ppt/slides/_rels/slide{i+1}.xml.rels", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+</Relationships>''')
+
+    return buf.getvalue()def tg_api(method, payload):
+    if not TELEGRAM_BOT_TOKEN:
+        return None
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=25) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def tg_send_document(chat_id, filename, file_bytes, caption=""):
+    if not TELEGRAM_BOT_TOKEN:
+        return None
+    boundary = f"----JeoBoundary{random.randint(100000, 999999)}"
+    body = (
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n{chat_id}\r\n"
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n{caption}\r\n"
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; filename=\"{filename}\"\r\n"
+        f"Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation\r\n\r\n"
+    ).encode("utf-8") + file_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=35) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def telegram_bot_worker():
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    offset = 0
+    print("Telegram bot ulandi va ishga tushdi!", flush=True)
+    while True:
+        try:
+            res = tg_api("getUpdates", {"offset": offset, "timeout": 25})
+            for upd in (res or {}).get("result", []):
+                offset = upd["update_id"] + 1
+                msg = upd.get("message") or {}
+                chat_id = (msg.get("chat") or {}).get("id")
+                text = (msg.get("text") or "").strip()
+                if not chat_id or not text:
+                    continue
+
+                parts = text.split()
+                cmd = parts[0].lower().split("@")[0]
+                arg = parts[1].strip() if len(parts) > 1 else ""
+
+                if cmd == "/start":
+                    room_code = arg if arg.isdigit() else "0000"
+                    with LOCK:
+                        rm = get_room(room_code)
+                        topic = rm.topic_title if rm else "Jeo Quiz Pro"
+                    kb = {
+                        "inline_keyboard": [
+                            [{"text": f"🎮 Xonaga kirish (#{room_code})", "url": f"{APP_PUBLIC_URL}/?room={room_code}"}],
+                            [{"text": "👨‍🏫 O‘qituvchi (Admin) paneli", "url": f"{APP_PUBLIC_URL}/admin"}],
+                        ]
+                    }
+                    tg_api("sendMessage", {
+                        "chat_id": chat_id,
+                        "text": (
+                            f"⚡ <b>JEO QUIZ PRO</b> botiga xush kelibsiz!\n\n"
+                            f"📌 Faol xona: <b>#{room_code}</b> ({topic})\n"
+                            f"📥 Slaydni .pptx formatda olish: <code>/slayd {room_code}</code>\n"
+                            f"🔎 Xona ma’lumotlari: <code>/xona {room_code}</code>\n"
+                            f"🆔 Sizning Chat ID: <code>{chat_id}</code>"
+                        ),
+                        "parse_mode": "HTML",
+                        "reply_markup": kb,
+                    })
+
+                elif cmd in ("/slayd", "/ppt"):
+                    room_code = arg if arg else "0000"
+                    with LOCK:
+                        rm = get_room(room_code)
+                        if not rm:
+                            sl_copy = None
+                            title = ""
+                        else:
+                            if not rm.slides:
+                                rm.build_slides_from_current_questions()
+                            sl_copy = copy.deepcopy(rm.slides)
+                            title = sl_copy.get("title") or rm.topic_title or "Taqdimot"
+                    if not sl_copy:
+                        tg_api("sendMessage", {"chat_id": chat_id, "text": f"❌ #{room_code} xonasi topilmadi."})
+                    else:
+                        pptx_data = build_pptx_bytes(sl_copy)
+                        safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", title)[:40] or "Taqdimot"
+                        tg_send_document(
+                            chat_id,
+                            f"{safe_name}.pptx",
+                            pptx_data,
+                            caption=f"📊 {title} ({len(sl_copy['items'])} ta slayd) — Jeo Quiz Pro",
+                        )
+
+                elif cmd == "/xona":
+                    room_code = arg if arg else "0000"
+                    with LOCK:
+                        rm = get_room(room_code)
+                        info = (rm.topic_title, rm.mode, len(rm.players)) if rm else None
+                    if not info:
+                        tg_api("sendMessage", {"chat_id": chat_id, "text": f"❌ #{room_code} xonasi topilmadi."})
+                    else:
+                        tg_api("sendMessage", {
+                            "chat_id": chat_id,
+                            "text": (
+                                f"🏫 <b>Xona #{room_code}</b>\n"
+                                f"📚 Mavzu: {info[0]}\n"
+                                f"🎯 Rejim: {info[1]}\n"
+                                f"👥 Talabalar: {info[2]} nafar"
+                            ),
+                            "parse_mode": "HTML",
+                            "reply_markup": {
+                                "inline_keyboard": [
+                                    [{"text": "🚀 O‘yinga qo‘shilish", "url": f"{APP_PUBLIC_URL}/?room={room_code}"}],
+                                ]
+                            },
+                        })
+        except Exception:
+            time.sleep(3)
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
@@ -928,6 +1255,27 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"error": "Noto‘g‘ri PIN kod"}, 403)
                     return
                 self.send_json(room.serialize(is_admin=is_admin))
+            return
+
+        if path == "/api/export_pptx":
+            code = (qs.get("room") or ["0000"])[0]
+            with LOCK:
+                room = get_room(code)
+                if not room:
+                    self.send_json({"error": "Xona topilmadi"}, 404)
+                    return
+                if not room.slides:
+                    room.build_slides_from_current_questions()
+                sl_copy = copy.deepcopy(room.slides)
+                title = sl_copy.get("title") or room.topic_title or "Taqdimot"
+            pptx_bytes = build_pptx_bytes(sl_copy)
+            safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", title)[:40] or "Taqdimot"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+            self.send_header("Content-Disposition", f'attachment; filename="{safe_name}.pptx"')
+            self.send_header("Content-Length", str(len(pptx_bytes)))
+            self.end_headers()
+            self.wfile.write(pptx_bytes)
             return
 
         if path == "/api/questions":
@@ -1493,6 +1841,27 @@ class Handler(BaseHTTPRequestHandler):
                             room.slides["items"].pop(idx)
                             room.slides["cur_idx"] = min(room.slides["cur_idx"], len(room.slides["items"]) - 1)
 
+                    elif action == "tg_send_slides":
+                        chat_id = str(data.get("chat_id") or "").strip()
+                        if not TELEGRAM_BOT_TOKEN:
+                            self.send_json({"error": "Serverda TELEGRAM_BOT_TOKEN sozlanmagan"}, 400)
+                            return
+                        if not chat_id:
+                            self.send_json({"error": "Telegram Chat ID kiriting"}, 400)
+                            return
+                        if not room.slides:
+                            room.build_slides_from_current_questions()
+                        sl_copy = copy.deepcopy(room.slides)
+                        title = sl_copy.get("title") or room.topic_title or "Taqdimot"
+                        pptx_data = build_pptx_bytes(sl_copy)
+                        safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", title)[:40] or "Taqdimot"
+                        tg_send_document(
+                            chat_id,
+                            f"{safe_name}.pptx",
+                            pptx_data,
+                            caption=f"📊 {title} ({len(sl_copy['items'])} ta slayd) — Jeo Quiz Pro",
+                        )
+
                     # --- ODDIY TEST (CLASSIC SELF-PACED TEST) ---
                     elif action == "ctest_start":
                         q_count = max(1, min(25, int(data.get("q_count") or 25)))
@@ -1731,6 +2100,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    if TELEGRAM_BOT_TOKEN:
+        threading.Thread(target=telegram_bot_worker, daemon=True).start()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print(f"JEO QUIZ universal server ishga tushdi: port {PORT}", flush=True)
     server.serve_forever()
+
+
