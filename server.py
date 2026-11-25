@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("PORT", 8080))
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash").strip()
 DEFAULT_ADMIN_PIN = os.environ.get("ADMIN_PIN", "1234").strip()
 
 PRESETS_META = [
@@ -173,7 +174,7 @@ PRESET_DATA = {
                 ("Kompyuterning vaqtinchalik tezkor xotirasi qaysi?", ["RAM", "HDD", "SSD", "DVD"], 0, "Kompyuter o‘chganda RAM xotiradagi ma’lumotlar tozalanadi."),
                 ("Linux operatsion tizimi yadrosini kim yaratgan?", ["Linus Torvalds", "Bill Geyts", "Stiv Jobs", "Mark Sukerberg"], 0, "Linus Torvalds 1991-yilda Linux yadrosini e’lon qilgan."),
                 ("QR-kod qisqartmasidagi «QR» nimani bildiradi?", ["Quick Response", "Quality Rate", "Quantum Radio", "Query Result"], 0, "QR-kod 1994-yilda Yaponiyada ixtiro qilingan."),
-                ("Blokcheyn texnologiyasi asosida yaratilgan birinchi kriptovalyuta?", ["Bitcoin", "Ethereum", "Solana", "Dogecoin"], 0, "Bitcoin 2009-yilda Satoshi Nakamoto taxallusi ostida ishga tushirilgan."),
+                ("Blokcheyn texnologiya asosida yaratilgan birinchi kriptovalyuta?", ["Bitcoin", "Ethereum", "Solana", "Dogecoin"], 0, "Bitcoin 2009-yilda Satoshi Nakamoto taxallusi ostida ishga tushirilgan."),
             ],
         ),
     },
@@ -224,20 +225,36 @@ def call_gemini(prompt_text, file_part=None):
         parts.append({"inline_data": {"mime_type": file_part["mime"], "data": file_part["b64"]}})
     parts.append({"text": prompt_text})
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={urllib.parse.quote(GEMINI_API_KEY)}"
+    candidates = []
+    for m in (GEMINI_MODEL, "gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash"):
+        if m and m not in candidates:
+            candidates.append(m)
+
     payload = json.dumps({"contents": [{"parts": parts}]}).encode("utf-8")
-    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=70) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"Gemini API xatosi ({e.code}): {err_body[:180]}")
-    cands = data.get("candidates") or []
-    if not cands:
-        raise RuntimeError("Gemini javob qaytarmadi.")
-    out_parts = cands[0].get("content", {}).get("parts", [])
-    return "".join(p.get("text", "") for p in out_parts).strip()
+    last_err = "Gemini API xatosi"
+
+    for model_name in candidates:
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{urllib.parse.quote(model_name)}:generateContent?key={urllib.parse.quote(GEMINI_API_KEY)}"
+        )
+        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=70) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            cands = data.get("candidates") or []
+            if not cands:
+                raise RuntimeError("Gemini javob qaytarmadi.")
+            out_parts = cands[0].get("content", {}).get("parts", [])
+            return "".join(p.get("text", "") for p in out_parts).strip()
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="ignore")
+            last_err = f"Gemini API xatosi ({e.code}): {err_body[:180]}"
+            if e.code == 404:
+                continue
+            raise RuntimeError(last_err)
+
+    raise RuntimeError(last_err)
 
 
 def extract_json_block(raw):
@@ -353,7 +370,7 @@ class Room:
                 "title": self.topic_title or "Interaktiv Ma'ruza",
                 "subtitle": f"{len(self.cats)} ta asosiy yo‘nalish • {len(self.questions)} ta tahliliy savol-javob",
                 "bullets": self.cats,
-                "highlight": "Jeo Quiz Pro Slayd Studio",
+                "highlight": "Jeo Quiz",
                 "stats": [
                     {"label": "Bo‘limlar", "value": str(len(self.cats))},
                     {"label": "Savollar", "value": str(len(self.questions))},
@@ -396,7 +413,7 @@ class Room:
             }, len(items))
         )
         self.slides = {
-            "title": self.topic_title or "Pro Taqdimot",
+            "title": self.topic_title or "Taqdimot",
             "theme": theme,
             "cur_idx": 0,
             "items": items,
