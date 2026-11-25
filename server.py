@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("PORT", 8080))
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash").strip()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
 DEFAULT_ADMIN_PIN = os.environ.get("ADMIN_PIN", "1234").strip()
 
 PRESETS_META = [
@@ -226,33 +226,57 @@ def call_gemini(prompt_text, file_part=None):
     parts.append({"text": prompt_text})
 
     candidates = []
-    for m in (GEMINI_MODEL, "gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash"):
+    for m in (
+        GEMINI_MODEL,
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+    ):
         if m and m not in candidates:
             candidates.append(m)
 
     payload = json.dumps({"contents": [{"parts": parts}]}).encode("utf-8")
-    last_err = "Gemini API xatosi"
+    last_err = "Google AI serverlari hozir band. Birozdan so‘ng qayta urinib ko‘ring."
 
     for model_name in candidates:
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
             f"{urllib.parse.quote(model_name)}:generateContent?key={urllib.parse.quote(GEMINI_API_KEY)}"
         )
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-        try:
-            with urllib.request.urlopen(req, timeout=70) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            cands = data.get("candidates") or []
-            if not cands:
-                raise RuntimeError("Gemini javob qaytarmadi.")
-            out_parts = cands[0].get("content", {}).get("parts", [])
-            return "".join(p.get("text", "") for p in out_parts).strip()
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="ignore")
-            last_err = f"Gemini API xatosi ({e.code}): {err_body[:180]}"
-            if e.code == 404:
-                continue
-            raise RuntimeError(last_err)
+        for attempt in range(2):
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=55) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                cands = data.get("candidates") or []
+                if not cands:
+                    raise RuntimeError("Gemini bo‘sh javob qaytardi.")
+                out_parts = cands[0].get("content", {}).get("parts", [])
+                text_out = "".join(p.get("text", "") for p in out_parts).strip()
+                if text_out:
+                    return text_out
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode("utf-8", errors="ignore")
+                if e.code == 404:
+                    break
+                if e.code in (429, 500, 502, 503, 504):
+                    last_err = f"Google AI serverlari hozir band ({e.code}). 10–15 soniyadan so‘ng qayta urinib ko‘ring."
+                    if attempt == 0:
+                        time.sleep(1.5)
+                        continue
+                    break
+                raise RuntimeError(f"Gemini API xatosi ({e.code}): {err_body[:160]}")
+            except Exception:
+                if attempt == 0:
+                    time.sleep(1.2)
+                    continue
+                break
 
     raise RuntimeError(last_err)
 
@@ -302,8 +326,6 @@ def normalize_slide_item(raw_item, idx):
         "stats": stats,
         "notes": str(raw_item.get("notes") or "").strip(),
     }
-
-
 class Room:
     def __init__(self, code, pin, preset_id="econ", teams=None):
         self.code = code
@@ -741,8 +763,6 @@ def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None,
             room.ai_busy = False
             room.ai_error = str(e)
             room.ai_status = ""
-
-
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
@@ -1135,187 +1155,128 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/admin":
             pin = str(data.get("pin") or "")
             action = str(data.get("action") or "")
-            with LOCK:
-                room = get_room(code)
-                if not room:
-                    self.send_json({"error": "Xona topilmadi"}, 404)
-                    return
-                if pin != room.pin:
-                    self.send_json({"error": "Noto‘g‘ri PIN kod"}, 403)
-                    return
+            try:
+                with LOCK:
+                    room = get_room(code)
+                    if not room:
+                        self.send_json({"error": "Xona topilmadi"}, 404)
+                        return
+                    if pin != room.pin:
+                        self.send_json({"error": "Noto‘g‘ri PIN kod"}, 403)
+                        return
 
-                if action == "load_preset":
-                    room.load_preset(str(data.get("preset") or "econ"))
+                    if action == "load_preset":
+                        room.load_preset(str(data.get("preset") or "econ"))
 
-                elif action == "set_mode":
-                    mode = str(data.get("mode") or "jeopardy")
-                    if mode in ("jeopardy", "millionaire", "auction", "bomb", "kahoot", "slides", "classic_test"):
-                        room.mode = mode
-                        if mode == "slides" and not room.slides:
-                            room.build_slides_from_current_questions()
-                        elif mode == "classic_test" and not room.classic_test:
-                            pool = room.get_mc_pool()
-                            room.classic_test = {
-                                "active": True,
-                                "title": room.topic_title or "Oddiy Test",
-                                "time_limit": 0,
-                                "show_explanations": True,
-                                "pool": pool,
-                                "submissions": {},
-                                "team_pts": [0, 0, 0, 0],
+                    elif action == "set_mode":
+                        mode = str(data.get("mode") or "jeopardy")
+                        if mode in ("jeopardy", "millionaire", "auction", "bomb", "kahoot", "slides", "classic_test"):
+                            room.mode = mode
+                            if mode == "slides" and not room.slides:
+                                room.build_slides_from_current_questions()
+                            elif mode == "classic_test" and not room.classic_test:
+                                pool = room.get_mc_pool()
+                                room.classic_test = {
+                                    "active": True,
+                                    "title": room.topic_title or "Oddiy Test",
+                                    "time_limit": 0,
+                                    "show_explanations": True,
+                                    "pool": pool,
+                                    "submissions": {},
+                                    "team_pts": [0, 0, 0, 0],
+                                }
+
+                    elif action == "open":
+                        idx = int(data.get("idx", 0))
+                        room.cur = idx
+                        room.revealed = False
+                        room.answers = {}
+                        room.text_answers = {}
+                        room.ai_grades = {}
+                        room.ai_note = ""
+
+                    elif action == "reveal":
+                        room.revealed = True
+                        if room.cur is not None:
+                            room.used[room.cur] = True
+
+                    elif action == "close":
+                        if room.cur is not None:
+                            room.used[room.cur] = True
+                        room.cur = None
+                        room.revealed = False
+                        room.ai_note = ""
+
+                    elif action == "award":
+                        t = int(data.get("team", 0))
+                        sign = int(data.get("sign", 1))
+                        if room.cur is not None and 0 <= t < 4:
+                            room.scores[t] += sign * room.questions[room.cur]["pts"]
+
+                    elif action == "score":
+                        t = int(data.get("team", 0))
+                        delta = int(data.get("delta", 0))
+                        if 0 <= t < 4:
+                            room.scores[t] += delta
+
+                    elif action == "rename":
+                        tms = data.get("teams") or []
+                        for i in range(min(4, len(tms))):
+                            if str(tms[i]).strip():
+                                room.teams[i] = str(tms[i]).strip()
+
+                    elif action == "reset":
+                        room.scores = [0, 0, 0, 0]
+                        room.used = [False] * 25
+                        room.cur = None
+                        room.revealed = False
+                        room.answers = {}
+                        room.text_answers = {}
+                        room.ai_grades = {}
+                        room.ai_note = ""
+                        room.clear_subgames()
+
+                    elif action == "save":
+                        idx = int(data.get("idx", 0))
+                        q_in = data.get("q") or {}
+                        if 0 <= idx < 25:
+                            old = room.questions[idx]
+                            short = bool(q_in.get("short"))
+                            opts = [] if short else [str(x) for x in (q_in.get("opts") or ["", "", "", ""])][:4]
+                            c_val = None if short else (int(q_in["c"]) if q_in.get("c") is not None else 0)
+                            room.questions[idx] = {
+                                "cat": old["cat"], "pts": old["pts"], "q": str(q_in.get("q") or ""),
+                                "opts": opts, "c": c_val,
+                                "ans": str(q_in.get("ans") or "") if short else (opts[c_val] if opts else ""),
+                                "exp": str(q_in.get("exp") or ""),
                             }
 
-                elif action == "open":
-                    idx = int(data.get("idx", 0))
-                    room.cur = idx
-                    room.revealed = False
-                    room.answers = {}
-                    room.text_answers = {}
-                    room.ai_grades = {}
-                    room.ai_note = ""
+                    elif action == "ai_generate_board":
+                        if room.ai_busy:
+                            self.send_json({"error": "AI hozir band, biroz kuting"}, 400)
+                            return
+                        topic = str(data.get("topic") or "").strip()
+                        level = str(data.get("level") or "universitet talabalari")
+                        room.ai_busy = True
+                        room.ai_error = ""
+                        room.ai_status = f"«{topic}» mavzusida 25 ta savol tuzilmoqda..."
+                        threading.Thread(target=run_ai_board_worker, args=(room, topic, level), daemon=True).start()
 
-                elif action == "reveal":
-                    room.revealed = True
-                    if room.cur is not None:
-                        room.used[room.cur] = True
-
-                elif action == "close":
-                    if room.cur is not None:
-                        room.used[room.cur] = True
-                    room.cur = None
-                    room.revealed = False
-                    room.ai_note = ""
-
-                elif action == "award":
-                    t = int(data.get("team", 0))
-                    sign = int(data.get("sign", 1))
-                    if room.cur is not None and 0 <= t < 4:
-                        room.scores[t] += sign * room.questions[room.cur]["pts"]
-
-                elif action == "score":
-                    t = int(data.get("team", 0))
-                    delta = int(data.get("delta", 0))
-                    if 0 <= t < 4:
-                        room.scores[t] += delta
-
-                elif action == "rename":
-                    tms = data.get("teams") or []
-                    for i in range(min(4, len(tms))):
-                        if str(tms[i]).strip():
-                            room.teams[i] = str(tms[i]).strip()
-
-                elif action == "reset":
-                    room.scores = [0, 0, 0, 0]
-                    room.used = [False] * 25
-                    room.cur = None
-                    room.revealed = False
-                    room.answers = {}
-                    room.text_answers = {}
-                    room.ai_grades = {}
-                    room.ai_note = ""
-                    room.clear_subgames()
-
-                elif action == "save":
-                    idx = int(data.get("idx", 0))
-                    q_in = data.get("q") or {}
-                    if 0 <= idx < 25:
-                        old = room.questions[idx]
-                        short = bool(q_in.get("short"))
-                        opts = [] if short else [str(x) for x in (q_in.get("opts") or ["", "", "", ""])][:4]
-                        c_val = None if short else (int(q_in["c"]) if q_in.get("c") is not None else 0)
-                        room.questions[idx] = {
-                            "cat": old["cat"], "pts": old["pts"], "q": str(q_in.get("q") or ""),
-                            "opts": opts, "c": c_val,
-                            "ans": str(q_in.get("ans") or "") if short else (opts[c_val] if opts else ""),
-                            "exp": str(q_in.get("exp") or ""),
-                        }
-
-                elif action == "ai_generate_board":
-                    if room.ai_busy:
-                        self.send_json({"error": "AI hozir band, biroz kuting"}, 400)
-                        return
-                    topic = str(data.get("topic") or "").strip()
-                    level = str(data.get("level") or "universitet talabalari")
-                    room.ai_busy = True
-                    room.ai_error = ""
-                    room.ai_status = f"«{topic}» mavzusida 25 ta savol tuzilmoqda..."
-                    threading.Thread(target=run_ai_board_worker, args=(room, topic, level), daemon=True).start()
-
-                elif action == "ai_generate_from_file":
-                    if room.ai_busy:
-                        self.send_json({"error": "AI hozir band"}, 400)
-                        return
-                    fname = str(data.get("filename") or "fayl")
-                    mime = str(data.get("mime") or "")
-                    b64 = str(data.get("data_b64") or "")
-                    hint = str(data.get("hint") or "").strip()
-                    level = str(data.get("level") or "universitet talabalari")
-                    topic_lbl = hint if hint else fname
-                    room.ai_busy = True
-                    room.ai_error = ""
-                    room.ai_status = f"«{fname}» fayli tahlil qilinmoqda..."
-                    file_part = None
-                    extra_txt = ""
-                    if fname.lower().endswith(".docx"):
-                        extra_txt = extract_docx_text(b64)
-                    elif fname.lower().endswith((".txt", ".md", ".csv")):
-                        extra_txt = base64.b64decode(b64).decode("utf-8", errors="ignore")[:28000]
-                    else:
-                        if not mime:
-                            mime = "application/pdf" if fname.lower().endswith(".pdf") else "image/jpeg"
-                        file_part = {"mime": mime, "b64": b64}
-                    threading.Thread(target=run_ai_board_worker, args=(room, topic_lbl, level, file_part, extra_txt), daemon=True).start()
-
-                elif action == "ai_generate_slot":
-                    idx = int(data.get("idx", 0))
-                    hint = str(data.get("hint") or "").strip()
-                    old = room.questions[idx]
-                    raw = call_gemini(
-                        f"O‘zbek tilida '{old['cat']}' bo‘limi uchun {old['pts']} ballik 1 ta test savol tuz. "
-                        f"Qo‘shimcha ko‘rsatma: {hint}. JSON qaytar: "
-                        f'{{"q": "...", "opts": ["A", "B", "C", "D"], "c": 0, "exp": "..."}}'
-                    )
-                    parsed = extract_json_block(raw)
-                    room.touch()
-                    self.send_json({"ok": True, "question": parsed})
-                    return
-
-                elif action == "ai_explain":
-                    if room.cur is not None:
-                        q = room.questions[room.cur]
-                        ans_s = q["opts"][q["c"]] if q["opts"] else q["ans"]
-                        room.ai_note = call_gemini(
-                            f"Ushbu savol va to‘g‘ri javobga talabalar uchun 3 jumlada amaliy misol va tushuntirish ber (o‘zbek tilida):\n"
-                            f"Savol: {q['q']}\nJavob: {ans_s}"
-                        )
-
-                elif action == "ai_grade":
-                    if room.cur is not None:
-                        q = room.questions[room.cur]
-                        lines = [f"{i}: {room.text_answers.get(i, '')}" for i in range(4) if room.text_answers.get(i)]
-                        if lines:
-                            raw = call_gemini(
-                                f"Savol: {q['q']}\nEtalon javob: {q['ans']}\nJamoalar javobi:\n" + "\n".join(lines) +
-                                '\nHar bir jamoa uchun JSON qaytar: {"0": {"percent": 85, "verdict": "To‘g‘ri", "comment": "Qisqa izoh"}}'
-                            )
-                            room.ai_grades = extract_json_block(raw)
-
-                # --- PRO SLAYD STUDIO ---
-                elif action == "ai_generate_slides":
-                    if room.ai_busy:
-                        self.send_json({"error": "AI hozir band, biroz kuting"}, 400)
-                        return
-                    topic = str(data.get("topic") or room.topic_title or "Taqdimot").strip()
-                    slide_count = max(4, min(16, int(data.get("slide_count") or 8)))
-                    style = str(data.get("style") or "Akademik ma’ruza").strip()
-                    theme = str(data.get("theme") or "royal").strip()
-                    fname = str(data.get("filename") or "").strip()
-                    mime = str(data.get("mime") or "").strip()
-                    b64 = str(data.get("data_b64") or "").strip()
-
-                    file_part = None
-                    extra_txt = ""
-                    if b64 and fname:
+                    elif action == "ai_generate_from_file":
+                        if room.ai_busy:
+                            self.send_json({"error": "AI hozir band"}, 400)
+                            return
+                        fname = str(data.get("filename") or "fayl")
+                        mime = str(data.get("mime") or "")
+                        b64 = str(data.get("data_b64") or "")
+                        hint = str(data.get("hint") or "").strip()
+                        level = str(data.get("level") or "universitet talabalari")
+                        topic_lbl = hint if hint else fname
+                        room.ai_busy = True
+                        room.ai_error = ""
+                        room.ai_status = f"«{fname}» fayli tahlil qilinmoqda..."
+                        file_part = None
+                        extra_txt = ""
                         if fname.lower().endswith(".docx"):
                             extra_txt = extract_docx_text(b64)
                         elif fname.lower().endswith((".txt", ".md", ".csv")):
@@ -1324,285 +1285,350 @@ class Handler(BaseHTTPRequestHandler):
                             if not mime:
                                 mime = "application/pdf" if fname.lower().endswith(".pdf") else "image/jpeg"
                             file_part = {"mime": mime, "b64": b64}
+                        threading.Thread(target=run_ai_board_worker, args=(room, topic_lbl, level, file_part, extra_txt), daemon=True).start()
 
-                    room.ai_busy = True
-                    room.ai_error = ""
-                    room.ai_status = f"«{topic}» bo‘yicha {slide_count} ta Pro slayd tayyorlanmoqda..."
-                    threading.Thread(
-                        target=run_ai_slides_worker,
-                        args=(room, topic, slide_count, style, theme, file_part, extra_txt),
-                        daemon=True,
-                    ).start()
-
-                elif action == "slides_from_questions":
-                    theme = str(data.get("theme") or (room.slides["theme"] if room.slides else "royal"))
-                    room.build_slides_from_current_questions(theme=theme)
-                    room.mode = "slides"
-
-                elif action == "slides_nav" and room.slides:
-                    idx = int(data.get("idx", 0))
-                    total = len(room.slides["items"])
-                    if total > 0:
-                        room.slides["cur_idx"] = max(0, min(total - 1, idx))
-
-                elif action == "slides_theme" and room.slides:
-                    theme = str(data.get("theme") or "royal")
-                    room.slides["theme"] = theme
-
-                elif action == "slides_save_item" and room.slides:
-                    idx = int(data.get("idx", 0))
-                    s_in = data.get("slide") or {}
-                    if 0 <= idx < len(room.slides["items"]):
-                        room.slides["items"][idx] = normalize_slide_item(s_in, idx)
-
-                elif action == "slides_add_item" and room.slides:
-                    new_idx = len(room.slides["items"])
-                    room.slides["items"].append(
-                        normalize_slide_item({
-                            "layout": "bullets",
-                            "badge": f"{new_idx + 1:02d} / YANGI",
-                            "title": "Yangi slayd sarlavhasi",
-                            "subtitle": "Qo‘shimcha ma’lumot",
-                            "bullets": ["Birinchi muhim fikr", "Ikkinchi muhim fikr"],
-                            "highlight": "Asosiy xulosa",
-                            "notes": "",
-                        }, new_idx)
-                    )
-                    room.slides["cur_idx"] = new_idx
-
-                elif action == "slides_delete_item" and room.slides:
-                    idx = int(data.get("idx", 0))
-                    if len(room.slides["items"]) > 1 and 0 <= idx < len(room.slides["items"]):
-                        room.slides["items"].pop(idx)
-                        room.slides["cur_idx"] = min(room.slides["cur_idx"], len(room.slides["items"]) - 1)
-
-                # --- ODDIY TEST (CLASSIC SELF-PACED TEST) ---
-                elif action == "ctest_start":
-                    q_count = max(1, min(25, int(data.get("q_count") or 25)))
-                    time_limit = max(0, min(180, int(data.get("time_limit") or 0)))
-                    shuffle_q = bool(data.get("shuffle", False))
-                    show_exp = bool(data.get("show_explanations", True))
-                    title = str(data.get("title") or room.topic_title or "Oddiy Test").strip()
-
-                    pool = [copy.deepcopy(q) for q in room.questions if len(q.get("opts") or []) == 4 and q.get("c") is not None]
-                    if not pool:
-                        pool = copy.deepcopy(PRESET_DATA["econ"]["questions"])
-                    if shuffle_q:
-                        random.shuffle(pool)
-                    pool = pool[:q_count]
-
-                    room.classic_test = {
-                        "active": True,
-                        "title": title,
-                        "time_limit": time_limit,
-                        "show_explanations": show_exp,
-                        "pool": pool,
-                        "submissions": {},
-                        "team_pts": [0, 0, 0, 0],
-                    }
-                    room.mode = "classic_test"
-
-                elif action == "ctest_toggle" and room.classic_test:
-                    room.classic_test["active"] = not room.classic_test["active"]
-
-                elif action == "ctest_sync_scores" and room.classic_test:
-                    for i in range(4):
-                        room.scores[i] += room.classic_test["team_pts"][i]
-                    room.classic_test["team_pts"] = [0, 0, 0, 0]
-
-                # --- MILLIONAIRE ---
-                elif action == "mil_start":
-                    pname = str(data.get("player") or "").strip() or "Ishtirokchi"
-                    tv = data.get("team")
-                    t_idx = int(tv) if (tv is not None and tv != "") else None
-                    pool = room.get_mc_pool()
-                    while len(pool) < len(MIL_PRIZES):
-                        pool.extend(room.get_mc_pool())
-                    room.mil = {
-                        "active": True, "player": pname, "team": t_idx,
-                        "pool": pool[:len(MIL_PRIZES)], "step": 0, "won": 0,
-                        "status": "playing", "revealed": False, "selected": None,
-                        "hidden_opts": [], "lifelines": {"fifty": True, "audience": True, "ai": True},
-                        "audience_open": False, "votes": {}, "ai_hint": "", "credited": False,
-                    }
-
-                elif action == "mil_select" and room.mil:
-                    room.mil["selected"] = int(data.get("choice"))
-
-                elif action == "mil_5050" and room.mil and room.mil["lifelines"]["fifty"]:
-                    mq = room.mil["pool"][room.mil["step"]]
-                    wrong = [i for i in range(4) if i != mq["c"]]
-                    room.mil["hidden_opts"] = random.sample(wrong, 2)
-                    room.mil["lifelines"]["fifty"] = False
-
-                elif action == "mil_audience" and room.mil and room.mil["lifelines"]["audience"]:
-                    room.mil["audience_open"] = True
-                    room.mil["lifelines"]["audience"] = False
-
-                elif action == "mil_ai" and room.mil and room.mil["lifelines"]["ai"]:
-                    mq = room.mil["pool"][room.mil["step"]]
-                    room.mil["lifelines"]["ai"] = False
-                    if GEMINI_API_KEY:
-                        room.mil["ai_hint"] = call_gemini(
-                            f"Savol: {mq['q']}. Variantlar: {mq['opts']}. 2 jumlada qisqa maslahat ber (o‘zbek tilida)."
+                    elif action == "ai_generate_slot":
+                        idx = int(data.get("idx", 0))
+                        hint = str(data.get("hint") or "").strip()
+                        old = room.questions[idx]
+                        raw = call_gemini(
+                            f"O‘zbek tilida '{old['cat']}' bo‘limi uchun {old['pts']} ballik 1 ta test savol tuz. "
+                            f"Qo‘shimcha ko‘rsatma: {hint}. JSON qaytar: "
+                            f'{{"q": "...", "opts": ["A", "B", "C", "D"], "c": 0, "exp": "..."}}'
                         )
-                    else:
-                        room.mil["ai_hint"] = f"Eng mantiqiy variant: {['A','B','C','D'][mq['c']]}."
+                        parsed = extract_json_block(raw)
+                        room.touch()
+                        self.send_json({"ok": True, "question": parsed})
+                        return
 
-                elif action == "mil_reveal" and room.mil and room.mil["selected"] is not None:
-                    m = room.mil
-                    mq = m["pool"][m["step"]]
-                    m["revealed"] = True
-                    m["audience_open"] = False
-                    if m["selected"] == mq["c"]:
-                        m["won"] = MIL_PRIZES[m["step"]]
-                        if m["step"] >= len(MIL_PRIZES) - 1:
-                            m["active"] = False
-                            m["status"] = "won"
-                    else:
-                        safe_won = 0
-                        for s_idx in MIL_SAFES:
-                            if m["step"] > s_idx:
-                                safe_won = MIL_PRIZES[s_idx]
-                        m["won"] = safe_won
-                        m["active"] = False
-                        m["status"] = "lost"
+                    elif action == "ai_explain":
+                        if room.cur is not None:
+                            q = room.questions[room.cur]
+                            ans_s = q["opts"][q["c"]] if q["opts"] else q["ans"]
+                            room.ai_note = call_gemini(
+                                f"Ushbu savol va to‘g‘ri javobga talabalar uchun 3 jumlada amaliy misol va tushuntirish ber (o‘zbek tilida):\n"
+                                f"Savol: {q['q']}\nJavob: {ans_s}"
+                            )
 
-                elif action == "mil_next" and room.mil:
-                    m = room.mil
-                    m["step"] += 1
-                    m["revealed"] = False
-                    m["selected"] = None
-                    m["hidden_opts"] = []
-                    m["audience_open"] = False
-                    m["votes"] = {}
-                    m["ai_hint"] = ""
+                    elif action == "ai_grade":
+                        if room.cur is not None:
+                            q = room.questions[room.cur]
+                            lines = [f"{i}: {room.text_answers.get(i, '')}" for i in range(4) if room.text_answers.get(i)]
+                            if lines:
+                                raw = call_gemini(
+                                    f"Savol: {q['q']}\nEtalon javob: {q['ans']}\nJamoalar javobi:\n" + "\n".join(lines) +
+                                    '\nHar bir jamoa uchun JSON qaytar: {"0": {"percent": 85, "verdict": "To‘g‘ri", "comment": "Qisqa izoh"}}'
+                                )
+                                room.ai_grades = extract_json_block(raw)
 
-                elif action == "mil_walk" and room.mil:
-                    room.mil["active"] = False
-                    room.mil["status"] = "walked"
+                    # --- PRO SLAYD STUDIO ---
+                    elif action == "ai_generate_slides":
+                        if room.ai_busy:
+                            self.send_json({"error": "AI hozir band, biroz kuting"}, 400)
+                            return
+                        topic = str(data.get("topic") or room.topic_title or "Taqdimot").strip()
+                        slide_count = max(4, min(16, int(data.get("slide_count") or 8)))
+                        style = str(data.get("style") or "Akademik ma’ruza").strip()
+                        theme = str(data.get("theme") or "royal").strip()
+                        fname = str(data.get("filename") or "").strip()
+                        mime = str(data.get("mime") or "").strip()
+                        b64 = str(data.get("data_b64") or "").strip()
 
-                elif action == "mil_credit" and room.mil and not room.mil["credited"]:
-                    t_idx = room.mil["team"]
-                    if t_idx is not None and 0 <= t_idx < 4:
-                        room.scores[t_idx] += room.mil["won"]
-                        room.mil["credited"] = True
+                        file_part = None
+                        extra_txt = ""
+                        if b64 and fname:
+                            if fname.lower().endswith(".docx"):
+                                extra_txt = extract_docx_text(b64)
+                            elif fname.lower().endswith((".txt", ".md", ".csv")):
+                                extra_txt = base64.b64decode(b64).decode("utf-8", errors="ignore")[:28000]
+                            else:
+                                if not mime:
+                                    mime = "application/pdf" if fname.lower().endswith(".pdf") else "image/jpeg"
+                                file_part = {"mime": mime, "b64": b64}
 
-                # --- AUCTION ---
-                elif action == "auc_start":
-                    pool = room.get_mc_pool()[:8]
-                    room.auc = {
-                        "round": 1, "total_rounds": len(pool), "pool": pool,
-                        "phase": "betting", "bank": [1000, 1000, 1000, 1000],
-                        "bets": {}, "answers": {}, "deltas": [0, 0, 0, 0],
-                    }
+                        room.ai_busy = True
+                        room.ai_error = ""
+                        room.ai_status = f"«{topic}» bo‘yicha {slide_count} ta Pro slayd tayyorlanmoqda..."
+                        threading.Thread(
+                            target=run_ai_slides_worker,
+                            args=(room, topic, slide_count, style, theme, file_part, extra_txt),
+                            daemon=True,
+                        ).start()
 
-                elif action == "auc_open_q" and room.auc:
-                    a = room.auc
-                    for i in range(4):
-                        if str(i) not in a["bets"]:
-                            a["bets"][str(i)] = min(100, a["bank"][i])
-                    a["phase"] = "question"
+                    elif action == "slides_from_questions":
+                        theme = str(data.get("theme") or (room.slides["theme"] if room.slides else "royal"))
+                        room.build_slides_from_current_questions(theme=theme)
+                        room.mode = "slides"
 
-                elif action == "auc_reveal" and room.auc:
-                    a = room.auc
-                    aq = a["pool"][a["round"] - 1]
-                    deltas = [0, 0, 0, 0]
-                    for i in range(4):
-                        bet = int(a["bets"].get(str(i), 0))
-                        ans = a["answers"].get(str(i))
-                        if ans is not None and int(ans) == aq["c"]:
-                            a["bank"][i] += bet
-                            deltas[i] = bet
+                    elif action == "slides_nav" and room.slides:
+                        idx = int(data.get("idx", 0))
+                        total = len(room.slides["items"])
+                        if total > 0:
+                            room.slides["cur_idx"] = max(0, min(total - 1, idx))
+
+                    elif action == "slides_theme" and room.slides:
+                        theme = str(data.get("theme") or "royal")
+                        room.slides["theme"] = theme
+
+                    elif action == "slides_save_item" and room.slides:
+                        idx = int(data.get("idx", 0))
+                        s_in = data.get("slide") or {}
+                        if 0 <= idx < len(room.slides["items"]):
+                            room.slides["items"][idx] = normalize_slide_item(s_in, idx)
+
+                    elif action == "slides_add_item" and room.slides:
+                        new_idx = len(room.slides["items"])
+                        room.slides["items"].append(
+                            normalize_slide_item({
+                                "layout": "bullets",
+                                "badge": f"{new_idx + 1:02d} / YANGI",
+                                "title": "Yangi slayd sarlavhasi",
+                                "subtitle": "Qo‘shimcha ma’lumot",
+                                "bullets": ["Birinchi muhim fikr", "Ikkinchi muhim fikr"],
+                                "highlight": "Asosiy xulosa",
+                                "notes": "",
+                            }, new_idx)
+                        )
+                        room.slides["cur_idx"] = new_idx
+
+                    elif action == "slides_delete_item" and room.slides:
+                        idx = int(data.get("idx", 0))
+                        if len(room.slides["items"]) > 1 and 0 <= idx < len(room.slides["items"]):
+                            room.slides["items"].pop(idx)
+                            room.slides["cur_idx"] = min(room.slides["cur_idx"], len(room.slides["items"]) - 1)
+
+                    # --- ODDIY TEST (CLASSIC SELF-PACED TEST) ---
+                    elif action == "ctest_start":
+                        q_count = max(1, min(25, int(data.get("q_count") or 25)))
+                        time_limit = max(0, min(180, int(data.get("time_limit") or 0)))
+                        shuffle_q = bool(data.get("shuffle", False))
+                        show_exp = bool(data.get("show_explanations", True))
+                        title = str(data.get("title") or room.topic_title or "Oddiy Test").strip()
+
+                        pool = [copy.deepcopy(q) for q in room.questions if len(q.get("opts") or []) == 4 and q.get("c") is not None]
+                        if not pool:
+                            pool = copy.deepcopy(PRESET_DATA["econ"]["questions"])
+                        if shuffle_q:
+                            random.shuffle(pool)
+                        pool = pool[:q_count]
+
+                        room.classic_test = {
+                            "active": True,
+                            "title": title,
+                            "time_limit": time_limit,
+                            "show_explanations": show_exp,
+                            "pool": pool,
+                            "submissions": {},
+                            "team_pts": [0, 0, 0, 0],
+                        }
+                        room.mode = "classic_test"
+
+                    elif action == "ctest_toggle" and room.classic_test:
+                        room.classic_test["active"] = not room.classic_test["active"]
+
+                    elif action == "ctest_sync_scores" and room.classic_test:
+                        for i in range(4):
+                            room.scores[i] += room.classic_test["team_pts"][i]
+                        room.classic_test["team_pts"] = [0, 0, 0, 0]
+
+                    # --- MILLIONAIRE ---
+                    elif action == "mil_start":
+                        pname = str(data.get("player") or "").strip() or "Ishtirokchi"
+                        tv = data.get("team")
+                        t_idx = int(tv) if (tv is not None and tv != "") else None
+                        pool = room.get_mc_pool()
+                        while len(pool) < len(MIL_PRIZES):
+                            pool.extend(room.get_mc_pool())
+                        room.mil = {
+                            "active": True, "player": pname, "team": t_idx,
+                            "pool": pool[:len(MIL_PRIZES)], "step": 0, "won": 0,
+                            "status": "playing", "revealed": False, "selected": None,
+                            "hidden_opts": [], "lifelines": {"fifty": True, "audience": True, "ai": True},
+                            "audience_open": False, "votes": {}, "ai_hint": "", "credited": False,
+                        }
+
+                    elif action == "mil_select" and room.mil:
+                        room.mil["selected"] = int(data.get("choice"))
+
+                    elif action == "mil_5050" and room.mil and room.mil["lifelines"]["fifty"]:
+                        mq = room.mil["pool"][room.mil["step"]]
+                        wrong = [i for i in range(4) if i != mq["c"]]
+                        room.mil["hidden_opts"] = random.sample(wrong, 2)
+                        room.mil["lifelines"]["fifty"] = False
+
+                    elif action == "mil_audience" and room.mil and room.mil["lifelines"]["audience"]:
+                        room.mil["audience_open"] = True
+                        room.mil["lifelines"]["audience"] = False
+
+                    elif action == "mil_ai" and room.mil and room.mil["lifelines"]["ai"]:
+                        mq = room.mil["pool"][room.mil["step"]]
+                        room.mil["lifelines"]["ai"] = False
+                        if GEMINI_API_KEY:
+                            try:
+                                room.mil["ai_hint"] = call_gemini(
+                                    f"Savol: {mq['q']}. Variantlar: {mq['opts']}. 2 jumlada qisqa maslahat ber (o‘zbek tilida)."
+                                )
+                            except Exception:
+                                room.mil["ai_hint"] = f"Eng mantiqiy variant: {['A','B','C','D'][mq['c']]}."
                         else:
-                            a["bank"][i] = max(100, a["bank"][i] - bet)
-                            deltas[i] = -bet
-                    a["deltas"] = deltas
-                    a["phase"] = "revealed"
+                            room.mil["ai_hint"] = f"Eng mantiqiy variant: {['A','B','C','D'][mq['c']]}."
 
-                elif action == "auc_next" and room.auc:
-                    a = room.auc
-                    if a["round"] < a["total_rounds"]:
-                        a["round"] += 1
-                        a["phase"] = "betting"
-                        a["bets"] = {}
-                        a["answers"] = {}
-                        a["deltas"] = [0, 0, 0, 0]
+                    elif action == "mil_reveal" and room.mil and room.mil["selected"] is not None:
+                        m = room.mil
+                        mq = m["pool"][m["step"]]
+                        m["revealed"] = True
+                        m["audience_open"] = False
+                        if m["selected"] == mq["c"]:
+                            m["won"] = MIL_PRIZES[m["step"]]
+                            if m["step"] >= len(MIL_PRIZES) - 1:
+                                m["active"] = False
+                                m["status"] = "won"
+                        else:
+                            safe_won = 0
+                            for s_idx in MIL_SAFES:
+                                if m["step"] > s_idx:
+                                    safe_won = MIL_PRIZES[s_idx]
+                            m["won"] = safe_won
+                            m["active"] = False
+                            m["status"] = "lost"
 
-                elif action == "auc_sync_scores" and room.auc:
-                    for i in range(4):
-                        room.scores[i] += room.auc["bank"][i]
+                    elif action == "mil_next" and room.mil:
+                        m = room.mil
+                        m["step"] += 1
+                        m["revealed"] = False
+                        m["selected"] = None
+                        m["hidden_opts"] = []
+                        m["audience_open"] = False
+                        m["votes"] = {}
+                        m["ai_hint"] = ""
 
-                # --- BOMB ---
-                elif action == "bomb_start":
-                    sec = int(data.get("sec", 20))
-                    pool = room.get_mc_pool()
-                    room.bomb = {
-                        "holder": 0, "lives": [3, 3, 3, 3], "sec": sec,
-                        "deadline": time.time() + sec, "time_left": sec,
-                        "status": "playing", "last_choice": None,
-                        "last_msg": f"💣 Bomba {room.teams[0]} qo‘lida! Tez javob bering!",
-                        "pool": pool, "pool_idx": 0, "cur_q": pool[0],
-                    }
+                    elif action == "mil_walk" and room.mil:
+                        room.mil["active"] = False
+                        room.mil["status"] = "walked"
 
-                elif action == "bomb_resume" and room.bomb:
-                    b = room.bomb
-                    alive = [i for i in range(4) if b["lives"][i] > 0]
-                    if len(alive) <= 1:
-                        b["status"] = "win"
-                        winner = room.teams[alive[0]] if alive else "Hech kim"
-                        b["last_msg"] = f"👑 G‘OLIB: {winner}!"
-                    else:
-                        nxt = (b["holder"] + 1) % 4
-                        for _ in range(4):
-                            if b["lives"][nxt] > 0:
-                                break
-                            nxt = (nxt + 1) % 4
-                        b["holder"] = nxt
-                        b["pool_idx"] = (b["pool_idx"] + 1) % len(b["pool"])
-                        b["cur_q"] = b["pool"][b["pool_idx"]]
-                        b["deadline"] = time.time() + b["sec"]
-                        b["time_left"] = b["sec"]
-                        b["last_choice"] = None
-                        b["status"] = "playing"
-                        b["last_msg"] = f"💣 Bomba {room.teams[nxt]} ga uzatildi!"
+                    elif action == "mil_credit" and room.mil and not room.mil["credited"]:
+                        t_idx = room.mil["team"]
+                        if t_idx is not None and 0 <= t_idx < 4:
+                            room.scores[t_idx] += room.mil["won"]
+                            room.mil["credited"] = True
 
-                # --- JONLI TEST (KAHOOT) ---
-                elif action == "kahoot_start":
-                    dur = int(data.get("duration", 20))
-                    pool = room.get_mc_pool()[:15]
-                    recs = {nm: {"team": tm, "pts": 0, "streak": 0, "correct": 0} for nm, tm in room.players.items()}
-                    room.kahoot = {
-                        "phase": "lobby", "duration": dur, "pool": pool,
-                        "q_num": -1, "cur_q": None, "deadline": 0,
-                        "time_left": dur, "round_results": {}, "records": recs,
-                        "team_pts": [0, 0, 0, 0],
-                    }
+                    # --- AUCTION ---
+                    elif action == "auc_start":
+                        pool = room.get_mc_pool()[:8]
+                        room.auc = {
+                            "round": 1, "total_rounds": len(pool), "pool": pool,
+                            "phase": "betting", "bank": [1000, 1000, 1000, 1000],
+                            "bets": {}, "answers": {}, "deltas": [0, 0, 0, 0],
+                        }
 
-                elif action == "kahoot_next" and room.kahoot:
-                    k = room.kahoot
-                    if k["q_num"] + 1 < len(k["pool"]):
-                        k["q_num"] += 1
-                        k["cur_q"] = k["pool"][k["q_num"]]
-                        k["phase"] = "question"
-                        k["deadline"] = time.time() + k["duration"]
-                        k["time_left"] = k["duration"]
-                        k["round_results"] = {}
+                    elif action == "auc_open_q" and room.auc:
+                        a = room.auc
+                        for i in range(4):
+                            if str(i) not in a["bets"]:
+                                a["bets"][str(i)] = min(100, a["bank"][i])
+                        a["phase"] = "question"
 
-                elif action == "kahoot_reveal" and room.kahoot:
-                    room.kahoot_do_reveal()
+                    elif action == "auc_reveal" and room.auc:
+                        a = room.auc
+                        aq = a["pool"][a["round"] - 1]
+                        deltas = [0, 0, 0, 0]
+                        for i in range(4):
+                            bet = int(a["bets"].get(str(i), 0))
+                            ans = a["answers"].get(str(i))
+                            if ans is not None and int(ans) == aq["c"]:
+                                a["bank"][i] += bet
+                                deltas[i] = bet
+                            else:
+                                a["bank"][i] = max(100, a["bank"][i] - bet)
+                                deltas[i] = -bet
+                        a["deltas"] = deltas
+                        a["phase"] = "revealed"
 
-                elif action == "kahoot_podium" and room.kahoot:
-                    room.kahoot["phase"] = "podium"
+                    elif action == "auc_next" and room.auc:
+                        a = room.auc
+                        if a["round"] < a["total_rounds"]:
+                            a["round"] += 1
+                            a["phase"] = "betting"
+                            a["bets"] = {}
+                            a["answers"] = {}
+                            a["deltas"] = [0, 0, 0, 0]
 
-                elif action == "kahoot_sync_scores" and room.kahoot:
-                    for i in range(4):
-                        room.scores[i] += room.kahoot["team_pts"][i]
-                    room.kahoot["team_pts"] = [0, 0, 0, 0]
+                    elif action == "auc_sync_scores" and room.auc:
+                        for i in range(4):
+                            room.scores[i] += room.auc["bank"][i]
 
-                room.touch()
-                st = room.serialize(is_admin=True)
-            self.send_json(st)
+                    # --- BOMB ---
+                    elif action == "bomb_start":
+                        sec = int(data.get("sec", 20))
+                        pool = room.get_mc_pool()
+                        room.bomb = {
+                            "holder": 0, "lives": [3, 3, 3, 3], "sec": sec,
+                            "deadline": time.time() + sec, "time_left": sec,
+                            "status": "playing", "last_choice": None,
+                            "last_msg": f"💣 Bomba {room.teams[0]} qo‘lida! Tez javob bering!",
+                            "pool": pool, "pool_idx": 0, "cur_q": pool[0],
+                        }
+
+                    elif action == "bomb_resume" and room.bomb:
+                        b = room.bomb
+                        alive = [i for i in range(4) if b["lives"][i] > 0]
+                        if len(alive) <= 1:
+                            b["status"] = "win"
+                            winner = room.teams[alive[0]] if alive else "Hech kim"
+                            b["last_msg"] = f"👑 G‘OLIB: {winner}!"
+                        else:
+                            nxt = (b["holder"] + 1) % 4
+                            for _ in range(4):
+                                if b["lives"][nxt] > 0:
+                                    break
+                                nxt = (nxt + 1) % 4
+                            b["holder"] = nxt
+                            b["pool_idx"] = (b["pool_idx"] + 1) % len(b["pool"])
+                            b["cur_q"] = b["pool"][b["pool_idx"]]
+                            b["deadline"] = time.time() + b["sec"]
+                            b["time_left"] = b["sec"]
+                            b["last_choice"] = None
+                            b["status"] = "playing"
+                            b["last_msg"] = f"💣 Bomba {room.teams[nxt]} ga uzatildi!"
+
+                    # --- JONLI TEST (KAHOOT) ---
+                    elif action == "kahoot_start":
+                        dur = int(data.get("duration", 20))
+                        pool = room.get_mc_pool()[:15]
+                        recs = {nm: {"team": tm, "pts": 0, "streak": 0, "correct": 0} for nm, tm in room.players.items()}
+                        room.kahoot = {
+                            "phase": "lobby", "duration": dur, "pool": pool,
+                            "q_num": -1, "cur_q": None, "deadline": 0,
+                            "time_left": dur, "round_results": {}, "records": recs,
+                            "team_pts": [0, 0, 0, 0],
+                        }
+
+                    elif action == "kahoot_next" and room.kahoot:
+                        k = room.kahoot
+                        if k["q_num"] + 1 < len(k["pool"]):
+                            k["q_num"] += 1
+                            k["cur_q"] = k["pool"][k["q_num"]]
+                            k["phase"] = "question"
+                            k["deadline"] = time.time() + k["duration"]
+                            k["time_left"] = k["duration"]
+                            k["round_results"] = {}
+
+                    elif action == "kahoot_reveal" and room.kahoot:
+                        room.kahoot_do_reveal()
+
+                    elif action == "kahoot_podium" and room.kahoot:
+                        room.kahoot["phase"] = "podium"
+
+                    elif action == "kahoot_sync_scores" and room.kahoot:
+                        for i in range(4):
+                            room.scores[i] += room.kahoot["team_pts"][i]
+                        room.kahoot["team_pts"] = [0, 0, 0, 0]
+
+                    room.touch()
+                    st = room.serialize(is_admin=True)
+                self.send_json(st)
+            except Exception as e:
+                self.send_json({"error": str(e)}, 502)
             return
 
         self.send_json({"error": "Noma’lum so‘rov"}, 404)
