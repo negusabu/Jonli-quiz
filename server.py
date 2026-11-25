@@ -20,12 +20,17 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
 DEFAULT_ADMIN_PIN = os.environ.get("ADMIN_PIN", "1234").strip()
 
-# @BotFather bergan tokenning "02:" dan oldingi raqamlarini qo'shing yoki Render Environment Variables ga kiriting
-_FALLBACK_TG_TOKEN = "BOT_ID_RAQAMLARINI_QOYING02:AAGx4ANxgbwJLJXNs7Pr5gti7HWsBvqPsbU"
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip() or (
-    "" if _FALLBACK_TG_TOKEN.startswith("BOT_ID_") else _FALLBACK_TG_TOKEN
-)
+
+def _clean_tg_token(raw_val):
+    t = str(raw_val or "").strip().strip('"').strip("'")
+    if t.lower().startswith("bot") and ":" in t:
+        t = t[3:].strip()
+    return t
+
+
+TELEGRAM_BOT_TOKEN = _clean_tg_token(os.environ.get("TELEGRAM_BOT_TOKEN", ""))
 APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "https://jeopardy-viym.onrender.com").strip().rstrip("/")
+TG_BOT_INFO = {"ok": False, "username": "", "error": "Token kiritilmagan"}
 
 PRESETS_META = [
     {"id": "econ", "icon": "📈", "title": "Iqtisodiyot va Moliya", "desc": "Mikro va makroiqtisodiyot, bank tizimi, bozor va moliya"},
@@ -629,7 +634,7 @@ class Room:
             "room": self.code, "topic_title": self.topic_title, "presets": PRESETS_META,
             "ai_ready": bool(GEMINI_API_KEY), "ai_busy": self.ai_busy,
             "ai_status": self.ai_status, "ai_error": self.ai_error, "ai_note": self.ai_note,
-            "tg_ready": bool(TELEGRAM_BOT_TOKEN),
+            "tg_ready": bool(TELEGRAM_BOT_TOKEN), "tg_bot": TG_BOT_INFO,
             "mode": self.mode, "teams": self.teams, "scores": self.scores,
             "cats": self.cats, "used": self.used, "cur": self.cur, "revealed": self.revealed,
             "question": self.public_q(cur_q, include_secret=inc_sec),
@@ -1067,8 +1072,17 @@ def tg_api(method, payload):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=25) as r:
-        return json.loads(r.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=25) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        err_txt = e.read().decode("utf-8", errors="ignore")
+        try:
+            err_json = json.loads(err_txt)
+            desc = err_json.get("description") or err_txt
+        except Exception:
+            desc = err_txt
+        raise RuntimeError(f"Telegram API xatosi: {desc}")
 
 
 def tg_send_document(chat_id, filename, file_bytes, caption=""):
@@ -1088,8 +1102,17 @@ def tg_send_document(chat_id, filename, file_bytes, caption=""):
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=35) as r:
-        return json.loads(r.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=35) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        err_txt = e.read().decode("utf-8", errors="ignore")
+        try:
+            err_json = json.loads(err_txt)
+            desc = err_json.get("description") or err_txt
+        except Exception:
+            desc = err_txt
+        raise RuntimeError(f"Telegram fayl yuborish xatosi: {desc}")
 
 
 def telegram_bot_worker():
@@ -1105,7 +1128,7 @@ def telegram_bot_worker():
         tg_api("deleteWebhook", {"drop_pending_updates": False})
         tg_api("setMyCommands", {
             "commands": [
-                {"command": "start", "description": "Botni ishga tushirish va xonaga kirish"},
+                {"command": "start", "description": "Botni ishga tushirish va Chat ID olish"},
                 {"command": "slayd", "description": "Taqdimotni .pptx yuklash (/slayd 6519)"},
                 {"command": "xona", "description": "Xona holatini ko‘rish (/xona 6519)"},
             ]
@@ -1139,9 +1162,6 @@ def telegram_bot_worker():
 
                 if cmd == "/start":
                     room_code = arg if arg.isdigit() else "0000"
-                    with LOCK:
-                        rm = get_room(room_code)
-                        topic = rm.topic_title if rm else "Jeo Quiz Pro"
                     kb = {
                         "inline_keyboard": [
                             [{"text": f"🎮 Xonaga kirish (#{room_code})", "url": f"{APP_PUBLIC_URL}/?room={room_code}"}],
@@ -1153,7 +1173,7 @@ def telegram_bot_worker():
                         "text": (
                             f"⚡ <b>JEO QUIZ PRO</b> botiga xush kelibsiz!\n\n"
                             f"🆔 Sizning Chat ID: <code>{chat_id}</code>\n"
-                            f"<i>(Ushbu raqamni Admin panelga kiritsangiz, slaydlar to‘g‘ridan-to‘g‘ri shu yerga keladi)</i>\n\n"
+                            f"<i>(Ushbu raqamni saytdagi Telegram maydoniga kiritsangiz, slaydlar shu yerga keladi)</i>\n\n"
                             f"📥 Slaydni .pptx yuklash: <code>/slayd {room_code}</code>\n"
                             f"🔎 Xona holatini ko‘rish: <code>/xona {room_code}</code>"
                         ),
@@ -1215,6 +1235,128 @@ def telegram_bot_worker():
             time.sleep(3)
 
 
+ADMIN_EXPORT_WIDGET = r"""
+<div id="jeo-export-dock" style="position:fixed;right:14px;bottom:14px;z-index:9999;font-family:system-ui,-apple-system,sans-serif;">
+  <button id="jeo-dock-toggle" onclick="window.__jeoToggleDock()" style="background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none;border-radius:999px;padding:10px 16px;font-weight:700;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.35);cursor:pointer;display:flex;align-items:center;gap:6px;">
+    📥 .pptx / 📲 Telegram
+  </button>
+  <div id="jeo-dock-box" style="display:none;margin-top:8px;width:300px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:16px;padding:14px;box-shadow:0 14px 36px rgba(0,0,0,.55);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <strong style="font-size:13px;color:#fbbf24;">📊 Slayd Eksport & Telegram</strong>
+      <button onclick="window.__jeoToggleDock(false)" style="background:transparent;border:none;color:#94a3b8;font-size:16px;cursor:pointer;">✕</button>
+    </div>
+    <button onclick="window.__jeoDownloadPptx()" style="width:100%;background:#10b981;color:#052e16;border:none;border-radius:10px;padding:10px;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:10px;">
+      📥 PowerPoint (.pptx) Yuklab olish
+    </button>
+    <div style="border-top:1px solid #1e293b;padding-top:10px;">
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:6px;" id="jeo-tg-status">🤖 Bot holati tekshirilmoqda...</div>
+      <div style="display:flex;gap:6px;">
+        <input id="jeo-tg-chatid" type="text" placeholder="Telegram Chat ID" style="flex:1;background:#1e293b;border:1px solid #334155;color:#fff;border-radius:8px;padding:8px 10px;font-size:12px;outline:none;">
+        <button onclick="window.__jeoSendTg()" style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:700;font-size:12px;cursor:pointer;">
+          📲 Yuborish
+        </button>
+      </div>
+      <div id="jeo-tg-msg" style="font-size:11px;margin-top:6px;min-height:14px;"></div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  let curRoom = new URLSearchParams(location.search).get("room") || "0000";
+  let curPin = new URLSearchParams(location.search).get("pin") || "";
+  let autoOpened = false;
+
+  const savedId = localStorage.getItem("jeo_tg_chat_id") || "";
+  setTimeout(() => {
+    const inp = document.getElementById("jeo-tg-chatid");
+    if (inp && savedId) inp.value = savedId;
+  }, 200);
+
+  function refreshTgStatus(tgReady, tgBot) {
+    const el = document.getElementById("jeo-tg-status");
+    if (!el) return;
+    if (tgReady) {
+      const uname = (tgBot && tgBot.username) ? (" (@" + tgBot.username + ")") : "";
+      el.innerHTML = '<span style="color:#34d399;">● Bot faol' + uname + '</span> — /start bosib Chat ID oling';
+    } else {
+      el.innerHTML = '<span style="color:#f87171;">● Bot ulanmagan</span> (Renderda TELEGRAM_BOT_TOKEN kiriting)';
+    }
+  }
+
+  const origFetch = window.fetch;
+  window.fetch = async function(input) {
+    try {
+      const u = typeof input === "string" ? input : (input && input.url) || "";
+      if (u.includes("/api/state")) {
+        const uo = new URL(u, location.origin);
+        if (uo.searchParams.get("room")) curRoom = uo.searchParams.get("room");
+        if (uo.searchParams.get("pin")) curPin = uo.searchParams.get("pin");
+      }
+    } catch(e) {}
+    const resp = await origFetch.apply(this, arguments);
+    try {
+      const u = typeof input === "string" ? input : (input && input.url) || "";
+      if (u.includes("/api/state") || u.includes("/api/admin") || u.includes("/api/create_room")) {
+        resp.clone().json().then(d => {
+          if (d && d.room) curRoom = d.room;
+          if (d && d.pin) curPin = d.pin;
+          if (d && typeof d.tg_ready === "boolean") refreshTgStatus(d.tg_ready, d.tg_bot);
+          if (d && d.mode === "slides" && !autoOpened) {
+            autoOpened = true;
+            window.__jeoToggleDock(true);
+          }
+        }).catch(()=>{});
+      }
+    } catch(e) {}
+    return resp;
+  };
+
+  window.__jeoToggleDock = function(force) {
+    const box = document.getElementById("jeo-dock-box");
+    if (!box) return;
+    box.style.display = (typeof force === "boolean") ? (force ? "block" : "none") : (box.style.display === "none" ? "block" : "none");
+  };
+
+  window.__jeoDownloadPptx = function() {
+    window.open("/api/export_pptx?room=" + encodeURIComponent(curRoom), "_blank");
+  };
+
+  window.__jeoSendTg = async function() {
+    const inp = document.getElementById("jeo-tg-chatid");
+    const msg = document.getElementById("jeo-tg-msg");
+    const chatId = (inp && inp.value || "").trim();
+    if (!chatId) {
+      msg.style.color = "#fbbf24";
+      msg.textContent = "Avval botga /start yozib Chat ID ni kiriting.";
+      return;
+    }
+    localStorage.setItem("jeo_tg_chat_id", chatId);
+    msg.style.color = "#93c5fd";
+    msg.textContent = "Telegramga yuborilmoqda...";
+    try {
+      const r = await origFetch("/api/admin", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({room: curRoom, pin: curPin, action: "tg_send_slides", chat_id: chatId})
+      });
+      const data = await r.json();
+      if (!r.ok || data.error) {
+        msg.style.color = "#f87171";
+        msg.textContent = "Xato: " + (data.error || "Yuborilmadi");
+      } else {
+        msg.style.color = "#34d399";
+        msg.textContent = "✔ Slaydlar .pptx formatda Telegramga yuborildi!";
+      }
+    } catch(e) {
+      msg.style.color = "#f87171";
+      msg.textContent = "Tarmoq xatosi.";
+    }
+  };
+})();
+</script>
+"""
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
@@ -1236,6 +1378,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         with open(fpath, "rb") as f:
             data = f.read()
+        if filename == "admin.html":
+            html_txt = data.decode("utf-8", errors="ignore")
+            if "</body>" in html_txt:
+                html_txt = html_txt.replace("</body>", ADMIN_EXPORT_WIDGET + "\n</body>")
+            else:
+                html_txt += ADMIN_EXPORT_WIDGET
+            data = html_txt.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
