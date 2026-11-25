@@ -18,6 +18,11 @@ from xml.sax.saxutils import escape as xml_esc
 PORT = int(os.environ.get("PORT", 8080))
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "").strip()
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
+AI_PRIMARY = os.environ.get("AI_PRIMARY", "auto").strip().lower()
 DEFAULT_ADMIN_PIN = os.environ.get("ADMIN_PIN", "1234").strip()
 
 
@@ -31,6 +36,18 @@ def _clean_tg_token(raw_val):
 TELEGRAM_BOT_TOKEN = _clean_tg_token(os.environ.get("TELEGRAM_BOT_TOKEN", ""))
 APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "https://jeopardy-viym.onrender.com").strip().rstrip("/")
 TG_BOT_INFO = {"ok": False, "username": "", "error": "Token kiritilmagan"}
+
+
+def get_active_ai_list():
+    providers = []
+    if GEMINI_API_KEY:
+        providers.append("Gemini")
+    if OPENROUTER_API_KEY:
+        providers.append("OpenRouter")
+    if GROQ_API_KEY:
+        providers.append("Groq")
+    return providers
+
 
 PRESETS_META = [
     {"id": "econ", "icon": "📈", "title": "Iqtisodiyot va Moliya", "desc": "Mikro va makroiqtisodiyot, bank tizimi, bozor va moliya"},
@@ -230,9 +247,7 @@ MIL_PRIZES = [100, 200, 300, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 1
 MIL_SAFES = [4, 9, 14]
 
 
-def call_gemini(prompt_text, file_part=None, json_mode=False):
-    if not GEMINI_API_KEY:
-        raise RuntimeError("Serverda GEMINI_API_KEY sozlanmagan.")
+def _call_gemini_raw(prompt_text, file_part=None, json_mode=False):
     parts = []
     if file_part:
         parts.append({"inline_data": {"mime_type": file_part["mime"], "data": file_part["b64"]}})
@@ -243,7 +258,6 @@ def call_gemini(prompt_text, file_part=None, json_mode=False):
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
         "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
         "gemini-flash-latest",
         GEMINI_MODEL,
     ):
@@ -254,52 +268,175 @@ def call_gemini(prompt_text, file_part=None, json_mode=False):
     if json_mode:
         gen_cfg["responseMimeType"] = "application/json"
 
-    payload = json.dumps({
-        "contents": [{"parts": parts}],
-        "generationConfig": gen_cfg,
-    }).encode("utf-8")
-    last_err = "503: Google AI serverlari hozir band."
+    payload = json.dumps({"contents": [{"parts": parts}], "generationConfig": gen_cfg}).encode("utf-8")
+    last_err = "Gemini serverlari band (503)."
 
     for model_name in candidates:
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
             f"{urllib.parse.quote(model_name)}:generateContent?key={urllib.parse.quote(GEMINI_API_KEY)}"
         )
-        for attempt in range(2):
-            req = urllib.request.Request(
-                url,
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            try:
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                cands = data.get("candidates") or []
-                if not cands:
-                    raise RuntimeError("Gemini bo‘sh javob qaytardi.")
-                out_parts = cands[0].get("content", {}).get("parts", [])
-                text_out = "".join(p.get("text", "") for p in out_parts).strip()
-                if text_out:
-                    return text_out
-            except urllib.error.HTTPError as e:
-                err_body = e.read().decode("utf-8", errors="ignore")
-                if e.code in (400, 404):
-                    break
-                if e.code in (429, 500, 502, 503, 504):
-                    last_err = f"503: Google AI serverlari hozir band ({e.code})."
-                    if attempt == 0:
-                        time.sleep(2.0 + random.uniform(0.3, 1.0))
-                        continue
-                    break
-                raise RuntimeError(f"Gemini API xatosi ({e.code}): {err_body[:160]}")
-            except Exception:
-                if attempt == 0:
-                    time.sleep(1.5)
-                    continue
-                break
-
+        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=35) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            cands = data.get("candidates") or []
+            if not cands:
+                raise RuntimeError("Gemini bo‘sh javob qaytardi.")
+            out_parts = cands[0].get("content", {}).get("parts", [])
+            text_out = "".join(p.get("text", "") for p in out_parts).strip()
+            if text_out:
+                return text_out
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="ignore")
+            if e.code in (400, 404):
+                continue
+            if e.code in (429, 500, 502, 503, 504):
+                last_err = f"Gemini band ({e.code})"
+                continue
+            raise RuntimeError(f"Gemini xatosi ({e.code}): {err_body[:140]}")
+        except Exception as ex:
+            last_err = str(ex)
+            continue
     raise RuntimeError(last_err)
+
+
+def _call_openrouter_raw(prompt_text, file_part=None, json_mode=False):
+    if file_part and not str(file_part.get("mime", "")).startswith("image/"):
+        raise RuntimeError("OpenRouter PDF faylni bevosita o‘qimaydi (.docx yoki .txt yuklang).")
+
+    p_txt = prompt_text + ("\n\nFaqat toza JSON obyekt qaytar, ortiqcha izoh yozma." if json_mode else "")
+    content = [{"type": "text", "text": p_txt}]
+    if file_part and str(file_part.get("mime", "")).startswith("image/"):
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:{file_part['mime']};base64,{file_part['b64']}"},
+        })
+
+    models = []
+    for m in (
+        OPENROUTER_MODEL,
+        "openrouter/free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "google/gemma-3-27b-it:free",
+        "qwen/qwen-2.5-72b-instruct:free",
+    ):
+        if m and m not in models:
+            models.append(m)
+
+    last_err = "OpenRouter javob bermadi."
+    for model_name in models:
+        body_obj = {
+            "model": model_name,
+            "messages": [{"role": "user", "content": content}],
+            "temperature": 0.7,
+        }
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            data=json.dumps(body_obj).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "HTTP-Referer": APP_PUBLIC_URL,
+                "X-Title": "Jeo Quiz Pro",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            txt = ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "").strip()
+            if txt:
+                return txt
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="ignore")
+            last_err = f"OpenRouter xatosi ({e.code}): {err_body[:140]}"
+            if e.code == 401:
+                break
+        except Exception as ex:
+            last_err = str(ex)
+    raise RuntimeError(last_err)
+
+
+def _call_groq_raw(prompt_text, file_part=None, json_mode=False):
+    if file_part and not str(file_part.get("mime", "")).startswith("image/"):
+        raise RuntimeError("Groq PDF faylni bevosita o‘qimaydi (.docx yoki .txt yuklang).")
+
+    content = [{"type": "text", "text": prompt_text}]
+    models = []
+    if file_part and str(file_part.get("mime", "")).startswith("image/"):
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:{file_part['mime']};base64,{file_part['b64']}"},
+        })
+        models = ["meta-llama/llama-4-scout-17b-16e-instruct"]
+    else:
+        for m in (GROQ_MODEL, "llama-3.3-70b-versatile", "llama-3.1-8b-instant"):
+            if m and m not in models:
+                models.append(m)
+
+    last_err = "Groq AI javob bermadi."
+    for model_name in models:
+        body_obj = {
+            "model": model_name,
+            "messages": [{"role": "user", "content": content}],
+            "temperature": 0.7,
+        }
+        if json_mode and "scout" not in model_name:
+            body_obj["response_format"] = {"type": "json_object"}
+        req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=json.dumps(body_obj).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "User-Agent": "Mozilla/5.0 (compatible; JeoQuiz/1.0)",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            txt = ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "").strip()
+            if txt:
+                return txt
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="ignore")
+            last_err = f"Groq xatosi ({e.code}): {err_body[:140]}"
+            if e.code == 401:
+                break
+        except Exception as ex:
+            last_err = str(ex)
+    raise RuntimeError(last_err)
+
+
+def call_gemini(prompt_text, file_part=None, json_mode=False, preferred=None):
+    available = {}
+    if GEMINI_API_KEY:
+        available["gemini"] = _call_gemini_raw
+    if OPENROUTER_API_KEY:
+        available["openrouter"] = _call_openrouter_raw
+    if GROQ_API_KEY:
+        available["groq"] = _call_groq_raw
+
+    if not available:
+        raise RuntimeError("Serverda GEMINI_API_KEY, OPENROUTER_API_KEY yoki GROQ_API_KEY kiritilmagan.")
+
+    pref = (preferred or AI_PRIMARY or "auto").lower()
+    order = []
+    if pref in available:
+        order.append(pref)
+    for k in ("gemini", "openrouter", "groq"):
+        if k in available and k not in order:
+            order.append(k)
+
+    errors = []
+    for prov in order:
+        try:
+            return available[prov](prompt_text, file_part=file_part, json_mode=json_mode)
+        except Exception as e:
+            errors.append(f"{prov.upper()}: {e}")
+    raise RuntimeError("503: AI serverlari band (" + " | ".join(errors) + ")")
 
 
 def extract_json_block(raw):
@@ -346,8 +483,7 @@ def normalize_slide_item(raw_item, idx):
         "highlight": str(raw_item.get("highlight") or "").strip(),
         "stats": stats,
         "notes": str(raw_item.get("notes") or "").strip(),
-    }
-class Room:
+    }class Room:
     def __init__(self, code, pin, preset_id="econ", teams=None):
         self.code = code
         self.pin = pin
@@ -635,10 +771,12 @@ class Room:
                 "team_pts": ct["team_pts"],
             }
 
+        active_ais = get_active_ai_list()
         return {
             "room": self.code, "topic_title": self.topic_title, "presets": PRESETS_META,
-            "ai_ready": bool(GEMINI_API_KEY), "ai_busy": self.ai_busy,
-            "ai_status": self.ai_status, "ai_error": self.ai_error, "ai_note": self.ai_note,
+            "ai_ready": bool(active_ais), "ai_providers": active_ais,
+            "ai_busy": self.ai_busy, "ai_status": self.ai_status,
+            "ai_error": self.ai_error, "ai_note": self.ai_note,
             "tg_ready": bool(TELEGRAM_BOT_TOKEN), "tg_bot": TG_BOT_INFO,
             "mode": self.mode, "teams": self.teams, "scores": self.scores,
             "cats": self.cats, "used": self.used, "cur": self.cur, "revealed": self.revealed,
@@ -678,7 +816,7 @@ def generate_room_code():
     return f"{random.randint(10000, 99999)}"
 
 
-def run_ai_board_worker(room, topic, level, file_part=None, extra_text=""):
+def run_ai_board_worker(room, topic, level, file_part=None, extra_text="", preferred=None):
     try:
         base_prompt = (
             f"O‘zbek tilida '{topic}' mavzusida ({level} uchun) Jeopardy va viktorina o‘yinlariga mos "
@@ -692,7 +830,7 @@ def run_ai_board_worker(room, topic, level, file_part=None, extra_text=""):
         if extra_text:
             base_prompt += f"\n\nManba matni:\n{extra_text[:24000]}"
 
-        raw = call_gemini(base_prompt, file_part=file_part)
+        raw = call_gemini(base_prompt, file_part=file_part, json_mode=True, preferred=preferred)
         parsed = extract_json_block(raw)
         cats = parsed.get("cats") or []
         qs = parsed.get("questions") or []
@@ -808,7 +946,7 @@ def _build_fallback_slides(room, topic, slide_count, style, extra_text=""):
             deep_blocks = [
                 (
                     "Nazariy Asoslar va Asosiy Tushunchalar",
-                    f"{topic} tushunchasining iqtisodiy-ilmiy mohiyati va shakllanish bosqichlari",
+                    f"{topic} tushunchasining ilmiy-nazariy mohiyati va shakllanish bosqichlari",
                     [
                         f"Asosiy ta’rif: {topic} tizimli jarayon bo‘lib, resurslar va natijalar o‘rtasidagi muvozanatni belgilaydi.",
                         "Tarkibiy elementlari: subyektlar, boshqaruv mexanizmlari, me’yoriy-huquqiy baza va baholash indikatorlari.",
@@ -871,27 +1009,28 @@ def _build_fallback_slides(room, topic, slide_count, style, extra_text=""):
     return items[:slide_count]
 
 
-def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None, extra_text=""):
+def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None, extra_text="", preferred=None):
     try:
         prompt = (
             f"Sen universitet professori va ekspert taqdimot dizaynerisan. O‘zbek tilida '{topic}' mavzusida "
             f"({style} uslubida) aynan {slide_count} ta CHUQUR, MAZMUNLI va BATAFSIL taqdimot slaydi yarat.\n"
-            f"QOIDALAR:\n"
-            f"1. Har bir bullet punkt 2 ta to‘liq, mazmunli jumladan iborat bo‘lsin (aniq ta’riflar, sanalar, formulalar, raqamlar va misollar bilan).\n"
-            f"2. 1-slayd 'cover', oxirgisi 'summary', oraliqlarda 'bullets', 'split', 'stats', 'quote' maketlarini ishlat.\n"
-            f"3. Har bir slaydda 4 tadan boy bullet punkt va 1 ta 'highlight' xulosa bo‘lsin.\n"
-            f"JSON sxemasi:\n"
-            f'{{"title": "To‘liq sarlavha", "slides": ['
-            f'{{"layout": "cover", "badge": "01 / KIRISH", "title": "Sarlavha", "subtitle": "Taglavha", '
-            f'"bullets": ["1-fikr...", "2-fikr...", "3-fikr...", "4-fikr..."], '
-            f'"highlight": "Asosiy xulosa", '
-            f'"stats": [{{"label": "Ko‘rsatkich", "value": "85%"}}], "notes": "Ma’ruzachi nutqi"}}'
+            f"MUHIM QOIDALAR:\n"
+            f"1. Har bir bullet punkt 2 ta to‘liq, mazmunli jumladan iborat bo‘lsin (aniq ta’riflar, formulalar, tarixiy sanalar, statistik raqamlar va real hayotiy misollar bilan).\n"
+            f"2. 1-slayd 'cover', oxirgi slayd 'summary', oraliq slaydlarda 'bullets', 'split', 'stats', 'quote' maketlarini aralashtirib ishlat.\n"
+            f"3. Har bir slaydda 4 tadan boy mazmunli bullet punkt va 1 ta kuchli 'highlight' xulosa bo‘lsin.\n"
+            f"Faqat toza JSON qaytar:\n"
+            f'{{"title": "To‘liq taqdimot sarlavhasi", "slides": ['
+            f'{{"layout": "cover", "badge": "01 / KIRISH", "title": "Sarlavha", "subtitle": "Batafsil taglavha", '
+            f'"bullets": ["1-batafsil fikr va izoh...", "2-batafsil fikr va misol...", "3-batafsil fikr...", "4-batafsil fikr..."], '
+            f'"highlight": "Asosiy ilmiy yoki amaliy xulosa", '
+            f'"stats": [{{"label": "Ko‘rsatkich nomi", "value": "85.4%"}}, {{"label": "Ikkinchi ko‘rsatkich", "value": "2.5x"}}], '
+            f'"notes": "Ma’ruzachi uchun 3 jumlali tushuntirish matni"}}'
             f"]}}"
         )
         if extra_text:
-            prompt += f"\n\nManba matni:\n{extra_text[:22000]}"
+            prompt += f"\n\nQuyidagi manba matnidagi faktlar va raqamlarga tayangan holda tayyorla:\n{extra_text[:22000]}"
 
-        raw = call_gemini(prompt, file_part=file_part, json_mode=True)
+        raw = call_gemini(prompt, file_part=file_part, json_mode=True, preferred=preferred)
         parsed = extract_json_block(raw)
         raw_slides = parsed.get("slides") or []
         if not raw_slides:
@@ -906,7 +1045,7 @@ def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None,
             room.mode = "slides"
             room.ai_busy = False
             room.ai_error = ""
-            room.ai_status = f"✔ «{deck_title}» bo‘yicha {len(items)} ta Pro slayd tayyor!"
+            room.ai_status = f"✔ «{deck_title}» bo‘yicha {len(items)} ta batafsil Pro slayd tayyor!"
             room.touch()
     except Exception as e:
         err_msg = str(e)
@@ -918,13 +1057,14 @@ def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None,
                 room.mode = "slides"
                 room.ai_busy = False
                 room.ai_error = ""
-                room.ai_status = f"⚠ Google AI band (503) — «{topic}» bo‘yicha {len(items)} ta slayd tuzildi!"
+                room.ai_status = f"⚠ AI band — «{topic}» bo‘yicha {len(items)} ta kengaytirilgan slayd tuzildi!"
                 room.touch()
         else:
             with LOCK:
                 room.ai_busy = False
                 room.ai_error = err_msg
                 room.ai_status = ""
+
 
 THEME_PALETTES = {
     "royal": ("0F172A", "FFFFFF", "FFC72C", "1E3A8A"),
@@ -1066,8 +1206,7 @@ def build_pptx_bytes(slides_dict):
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
 </Relationships>''')
 
-    return buf.getvalue()
-def tg_api(method, payload):
+    return buf.getvalue()def tg_api(method, payload):
     if not TELEGRAM_BOT_TOKEN:
         return None
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}"
@@ -1245,12 +1384,22 @@ ADMIN_EXPORT_WIDGET = r"""
   <button id="jeo-dock-toggle" onclick="window.__jeoToggleDock()" style="background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none;border-radius:999px;padding:10px 16px;font-weight:700;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.35);cursor:pointer;display:flex;align-items:center;gap:6px;">
     📥 .pptx / 📲 Telegram
   </button>
-  <div id="jeo-dock-box" style="display:none;margin-top:8px;width:305px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:16px;padding:14px;box-shadow:0 14px 36px rgba(0,0,0,.55);">
+  <div id="jeo-dock-box" style="display:none;margin-top:8px;width:312px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:16px;padding:14px;box-shadow:0 14px 36px rgba(0,0,0,.55);">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <strong style="font-size:13px;color:#fbbf24;">📊 Slayd Eksport & AI</strong>
+      <strong style="font-size:13px;color:#fbbf24;">📊 Slayd Eksport & Multi-AI</strong>
       <button onclick="window.__jeoToggleDock(false)" style="background:transparent;border:none;color:#94a3b8;font-size:16px;cursor:pointer;">✕</button>
     </div>
     <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #1e293b;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+        <span style="font-size:11px;color:#94a3b8;">🤖 AI Dvigatel:</span>
+        <span id="jeo-ai-active-list" style="font-size:10px;color:#34d399;">Tekshirilmoqda...</span>
+      </div>
+      <select id="jeo-ai-select" style="width:100%;background:#1e293b;border:1px solid #334155;color:#fff;border-radius:8px;padding:7px 8px;font-size:12px;margin-bottom:8px;outline:none;">
+        <option value="auto">⚡ Auto (Gemini → OpenRouter → Groq)</option>
+        <option value="openrouter">🌐 OpenRouter (Bepul modellar)</option>
+        <option value="groq">🚀 Groq (Llama 3.3 70B — Tezkor)</option>
+        <option value="gemini">✨ Google Gemini</option>
+      </select>
       <div style="font-size:11px;color:#94a3b8;margin-bottom:5px;">✨ Istalgan mavzuda tezkor slayd:</div>
       <div style="display:flex;gap:6px;">
         <input id="jeo-quick-topic" type="text" placeholder="Masalan: Amir Temur, Python..." style="flex:1;background:#1e293b;border:1px solid #334155;color:#fff;border-radius:8px;padding:8px 10px;font-size:12px;outline:none;">
@@ -1302,19 +1451,31 @@ ADMIN_EXPORT_WIDGET = r"""
   }, 300);
 
   const savedId = localStorage.getItem("jeo_tg_chat_id") || "";
+  const savedAi = localStorage.getItem("jeo_ai_pref") || "auto";
   setTimeout(() => {
     const inp = document.getElementById("jeo-tg-chatid");
     if (inp && savedId) inp.value = savedId;
+    const sel = document.getElementById("jeo-ai-select");
+    if (sel) {
+      sel.value = savedAi;
+      sel.addEventListener("change", () => localStorage.setItem("jeo_ai_pref", sel.value));
+    }
   }, 200);
 
-  function refreshTgStatus(tgReady, tgBot) {
+  function refreshStatuses(d) {
     const el = document.getElementById("jeo-tg-status");
-    if (!el) return;
-    if (tgReady) {
-      const uname = (tgBot && tgBot.username) ? (" (@" + tgBot.username + ")") : "";
-      el.innerHTML = '<span style="color:#34d399;">● Bot faol' + uname + '</span> — /start bosib Chat ID oling';
-    } else {
-      el.innerHTML = '<span style="color:#f87171;">● Bot ulanmagan</span> (Jeopardy xizmatida TELEGRAM_BOT_TOKEN kiriting)';
+    if (el && typeof d.tg_ready === "boolean") {
+      if (d.tg_ready) {
+        const uname = (d.tg_bot && d.tg_bot.username) ? (" (@" + d.tg_bot.username + ")") : "";
+        el.innerHTML = '<span style="color:#34d399;">● Bot faol' + uname + '</span> — /start bosib Chat ID oling';
+      } else {
+        el.innerHTML = '<span style="color:#f87171;">● Bot ulanmagan</span> (Jeopardy xizmatida TELEGRAM_BOT_TOKEN kiriting)';
+      }
+    }
+    const aiEl = document.getElementById("jeo-ai-active-list");
+    if (aiEl && Array.isArray(d.ai_providers)) {
+      aiEl.textContent = d.ai_providers.length ? ("Faol: " + d.ai_providers.join(" + ")) : "AI kaliti yo‘q";
+      aiEl.style.color = d.ai_providers.length ? "#34d399" : "#f87171";
     }
   }
 
@@ -1329,10 +1490,14 @@ ADMIN_EXPORT_WIDGET = r"""
       }
       if (u.includes("/api/admin") && init && typeof init.body === "string") {
         const parsed = JSON.parse(init.body);
+        const sel = document.getElementById("jeo-ai-select");
+        if (sel && sel.value && sel.value !== "auto" && !parsed.ai_provider) {
+          parsed.ai_provider = sel.value;
+        }
         if (parsed && parsed.action === "ai_generate_slides" && typedTopic && (!parsed.topic || parsed.topic === "Iqtisodiyot va Moliya")) {
           parsed.topic = typedTopic;
-          init = Object.assign({}, init, {body: JSON.stringify(parsed)});
         }
+        init = Object.assign({}, init, {body: JSON.stringify(parsed)});
       }
     } catch(e) {}
     const resp = await origFetch.call(this, input, init);
@@ -1340,10 +1505,11 @@ ADMIN_EXPORT_WIDGET = r"""
       const u = typeof input === "string" ? input : (input && input.url) || "";
       if (u.includes("/api/state") || u.includes("/api/admin") || u.includes("/api/create_room")) {
         resp.clone().json().then(d => {
-          if (d && d.room) curRoom = d.room;
-          if (d && d.pin) curPin = d.pin;
-          if (d && typeof d.tg_ready === "boolean") refreshTgStatus(d.tg_ready, d.tg_bot);
-          if (d && d.mode === "slides" && !autoOpened) {
+          if (!d) return;
+          if (d.room) curRoom = d.room;
+          if (d.pin) curPin = d.pin;
+          refreshStatuses(d);
+          if (d.mode === "slides" && !autoOpened) {
             autoOpened = true;
             window.__jeoToggleDock(true);
           }
@@ -1361,6 +1527,7 @@ ADMIN_EXPORT_WIDGET = r"""
 
   window.__jeoQuickSlide = async function() {
     const inp = document.getElementById("jeo-quick-topic");
+    const sel = document.getElementById("jeo-ai-select");
     const msg = document.getElementById("jeo-tg-msg");
     const topic = (inp && inp.value || "").trim();
     if (!topic) {
@@ -1369,13 +1536,18 @@ ADMIN_EXPORT_WIDGET = r"""
       return;
     }
     typedTopic = topic;
+    const prefAi = sel ? sel.value : "auto";
     msg.style.color = "#93c5fd";
     msg.textContent = "«" + topic + "» bo‘yicha slayd yaratilmoqda...";
     try {
       const r = await origFetch("/api/admin", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({room: curRoom, pin: curPin, action: "ai_generate_slides", topic: topic, slide_count: 8, style: "Akademik ma’ruza", theme: "royal"})
+        body: JSON.stringify({
+          room: curRoom, pin: curPin, action: "ai_generate_slides",
+          topic: topic, slide_count: 8, style: "Akademik ma’ruza",
+          theme: "royal", ai_provider: prefAi
+        })
       });
       const d = await r.json();
       if (!r.ok || d.error) {
@@ -1383,7 +1555,7 @@ ADMIN_EXPORT_WIDGET = r"""
         msg.textContent = "Xato: " + (d.error || "Yaratilmadi");
       } else {
         msg.style.color = "#34d399";
-        msg.textContent = "✔ Slaydlar tayyorlanmoqda (3–5 soniya)...";
+        msg.textContent = "✔ Slaydlar tayyorlanmoqda (2–5 soniya)...";
       }
     } catch(e) {
       msg.style.color = "#f87171";
@@ -1430,6 +1602,7 @@ ADMIN_EXPORT_WIDGET = r"""
 </script>
 """
 
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
@@ -1471,10 +1644,24 @@ class Handler(BaseHTTPRequestHandler):
             return {}
         return json.loads(self.rfile.read(ln).decode("utf-8"))
 
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.end_headers()
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         qs = urllib.parse.parse_qs(parsed.query)
+
+        if path in ("/ping", "/health"):
+            self.send_json({
+                "ok": True,
+                "alive": True,
+                "ai": get_active_ai_list(),
+                "tg": TG_BOT_INFO.get("ok", False),
+            })
+            return
 
         if path in ("/", "/index.html"):
             self.send_file("index.html")
@@ -1736,7 +1923,7 @@ class Handler(BaseHTTPRequestHandler):
                     m["lifelines"]["audience"] = False
                 elif action == "ai" and m["active"] and not m["revealed"] and m["lifelines"]["ai"]:
                     m["lifelines"]["ai"] = False
-                    if GEMINI_API_KEY:
+                    if get_active_ai_list():
                         try:
                             m["ai_hint"] = call_gemini(
                                 f"«Kim millioner bo‘lishni xohlaydi?» o‘yinida yordam ber. Savol: {mq['q']}. "
@@ -1850,6 +2037,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/admin":
             pin = str(data.get("pin") or "")
             action = str(data.get("action") or "")
+            pref_ai = str(data.get("ai_provider") or "").strip().lower() or None
             try:
                 with LOCK:
                     room = get_room(code)
@@ -1952,10 +2140,16 @@ class Handler(BaseHTTPRequestHandler):
                             return
                         topic = str(data.get("topic") or "").strip()
                         level = str(data.get("level") or "universitet talabalari")
+                        if topic:
+                            room.topic_title = topic
                         room.ai_busy = True
                         room.ai_error = ""
                         room.ai_status = f"«{topic}» mavzusida 25 ta savol tuzilmoqda..."
-                        threading.Thread(target=run_ai_board_worker, args=(room, topic, level), daemon=True).start()
+                        threading.Thread(
+                            target=run_ai_board_worker,
+                            args=(room, topic, level, None, "", pref_ai),
+                            daemon=True,
+                        ).start()
 
                     elif action == "ai_generate_from_file":
                         if room.ai_busy:
@@ -1967,6 +2161,7 @@ class Handler(BaseHTTPRequestHandler):
                         hint = str(data.get("hint") or "").strip()
                         level = str(data.get("level") or "universitet talabalari")
                         topic_lbl = hint if hint else fname
+                        room.topic_title = topic_lbl
                         room.ai_busy = True
                         room.ai_error = ""
                         room.ai_status = f"«{fname}» fayli tahlil qilinmoqda..."
@@ -1980,7 +2175,11 @@ class Handler(BaseHTTPRequestHandler):
                             if not mime:
                                 mime = "application/pdf" if fname.lower().endswith(".pdf") else "image/jpeg"
                             file_part = {"mime": mime, "b64": b64}
-                        threading.Thread(target=run_ai_board_worker, args=(room, topic_lbl, level, file_part, extra_txt), daemon=True).start()
+                        threading.Thread(
+                            target=run_ai_board_worker,
+                            args=(room, topic_lbl, level, file_part, extra_txt, pref_ai),
+                            daemon=True,
+                        ).start()
 
                     elif action == "ai_generate_slot":
                         idx = int(data.get("idx", 0))
@@ -1989,7 +2188,9 @@ class Handler(BaseHTTPRequestHandler):
                         raw = call_gemini(
                             f"O‘zbek tilida '{old['cat']}' bo‘limi uchun {old['pts']} ballik 1 ta test savol tuz. "
                             f"Qo‘shimcha ko‘rsatma: {hint}. JSON qaytar: "
-                            f'{{"q": "...", "opts": ["A", "B", "C", "D"], "c": 0, "exp": "..."}}'
+                            f'{{"q": "...", "opts": ["A", "B", "C", "D"], "c": 0, "exp": "..."}}',
+                            json_mode=True,
+                            preferred=pref_ai,
                         )
                         parsed = extract_json_block(raw)
                         room.touch()
@@ -2002,7 +2203,8 @@ class Handler(BaseHTTPRequestHandler):
                             ans_s = q["opts"][q["c"]] if q["opts"] else q["ans"]
                             room.ai_note = call_gemini(
                                 f"Ushbu savol va to‘g‘ri javobga talabalar uchun 3 jumlada amaliy misol va tushuntirish ber (o‘zbek tilida):\n"
-                                f"Savol: {q['q']}\nJavob: {ans_s}"
+                                f"Savol: {q['q']}\nJavob: {ans_s}",
+                                preferred=pref_ai,
                             )
 
                     elif action == "ai_grade":
@@ -2012,7 +2214,9 @@ class Handler(BaseHTTPRequestHandler):
                             if lines:
                                 raw = call_gemini(
                                     f"Savol: {q['q']}\nEtalon javob: {q['ans']}\nJamoalar javobi:\n" + "\n".join(lines) +
-                                    '\nHar bir jamoa uchun JSON qaytar: {"0": {"percent": 85, "verdict": "To‘g‘ri", "comment": "Qisqa izoh"}}'
+                                    '\nHar bir jamoa uchun JSON qaytar: {"0": {"percent": 85, "verdict": "To‘g‘ri", "comment": "Qisqa izoh"}}',
+                                    json_mode=True,
+                                    preferred=pref_ai,
                                 )
                                 room.ai_grades = extract_json_block(raw)
 
@@ -2048,7 +2252,7 @@ class Handler(BaseHTTPRequestHandler):
                         room.ai_status = f"«{topic}» bo‘yicha {slide_count} ta Pro slayd tayyorlanmoqda..."
                         threading.Thread(
                             target=run_ai_slides_worker,
-                            args=(room, topic, slide_count, style, theme, file_part, extra_txt),
+                            args=(room, topic, slide_count, style, theme, file_part, extra_txt, pref_ai),
                             daemon=True,
                         ).start()
 
@@ -2181,10 +2385,11 @@ class Handler(BaseHTTPRequestHandler):
                     elif action == "mil_ai" and room.mil and room.mil["lifelines"]["ai"]:
                         mq = room.mil["pool"][room.mil["step"]]
                         room.mil["lifelines"]["ai"] = False
-                        if GEMINI_API_KEY:
+                        if get_active_ai_list():
                             try:
                                 room.mil["ai_hint"] = call_gemini(
-                                    f"Savol: {mq['q']}. Variantlar: {mq['opts']}. 2 jumlada qisqa maslahat ber (o‘zbek tilida)."
+                                    f"Savol: {mq['q']}. Variantlar: {mq['opts']}. 2 jumlada qisqa maslahat ber (o‘zbek tilida).",
+                                    preferred=pref_ai,
                                 )
                             except Exception:
                                 room.mil["ai_hint"] = f"Eng mantiqiy variant: {['A','B','C','D'][mq['c']]}."
@@ -2353,6 +2558,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    print(f"Faol AI provayderlar: {get_active_ai_list()}", flush=True)
     if TELEGRAM_BOT_TOKEN:
         threading.Thread(target=telegram_bot_worker, daemon=True).start()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
