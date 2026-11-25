@@ -230,7 +230,7 @@ MIL_PRIZES = [100, 200, 300, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 1
 MIL_SAFES = [4, 9, 14]
 
 
-def call_gemini(prompt_text, file_part=None):
+def call_gemini(prompt_text, file_part=None, json_mode=False):
     if not GEMINI_API_KEY:
         raise RuntimeError("Serverda GEMINI_API_KEY sozlanmagan.")
     parts = []
@@ -240,18 +240,23 @@ def call_gemini(prompt_text, file_part=None):
 
     candidates = []
     for m in (
+        "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
         "gemini-flash-latest",
         GEMINI_MODEL,
-        "gemini-2.5-flash",
-        "gemini-2.5-pro",
     ):
         if m and m not in candidates:
             candidates.append(m)
 
+    gen_cfg = {"temperature": 0.7}
+    if json_mode:
+        gen_cfg["responseMimeType"] = "application/json"
+
     payload = json.dumps({
         "contents": [{"parts": parts}],
-        "generationConfig": {"temperature": 0.7},
+        "generationConfig": gen_cfg,
     }).encode("utf-8")
     last_err = "503: Google AI serverlari hozir band."
 
@@ -279,18 +284,18 @@ def call_gemini(prompt_text, file_part=None):
                     return text_out
             except urllib.error.HTTPError as e:
                 err_body = e.read().decode("utf-8", errors="ignore")
-                if e.code == 404:
+                if e.code in (400, 404):
                     break
                 if e.code in (429, 500, 502, 503, 504):
                     last_err = f"503: Google AI serverlari hozir band ({e.code})."
                     if attempt == 0:
-                        time.sleep(2.5 + random.uniform(0.3, 1.2))
+                        time.sleep(2.0 + random.uniform(0.3, 1.0))
                         continue
                     break
                 raise RuntimeError(f"Gemini API xatosi ({e.code}): {err_body[:160]}")
             except Exception:
                 if attempt == 0:
-                    time.sleep(2.0)
+                    time.sleep(1.5)
                     continue
                 break
 
@@ -871,23 +876,22 @@ def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None,
         prompt = (
             f"Sen universitet professori va ekspert taqdimot dizaynerisan. O‘zbek tilida '{topic}' mavzusida "
             f"({style} uslubida) aynan {slide_count} ta CHUQUR, MAZMUNLI va BATAFSIL taqdimot slaydi yarat.\n"
-            f"MUHIM QOIDALAR:\n"
-            f"1. Yuzaki va 3-4 so‘zlik umumiy gaplar YOZMA! Har bir bullet punkt 2 ta to‘liq, mazmunli jumladan iborat bo‘lsin (aniq ta’riflar, formulalar, tarixiy sanalar, statistik raqamlar va real hayotiy misollar bilan).\n"
-            f"2. 1-slayd 'cover', oxirgi slayd 'summary', oraliq slaydlarda 'bullets', 'split', 'stats', 'quote' maketlarini aralashtirib ishlat.\n"
-            f"3. Har bir slaydda 4 tadan boy mazmunli bullet punkt va 1 ta kuchli 'highlight' xulosa bo‘lsin.\n"
-            f"Faqat toza JSON qaytar:\n"
-            f'{{"title": "To‘liq taqdimot sarlavhasi", "slides": ['
-            f'{{"layout": "cover", "badge": "01 / KIRISH", "title": "Sarlavha", "subtitle": "Batafsil taglavha", '
-            f'"bullets": ["1-batafsil fikr va izoh...", "2-batafsil fikr va misol...", "3-batafsil fikr...", "4-batafsil fikr..."], '
-            f'"highlight": "Asosiy ilmiy yoki amaliy xulosa", '
-            f'"stats": [{{"label": "Ko‘rsatkich nomi", "value": "85.4%"}}, {{"label": "Ikkinchi ko‘rsatkich", "value": "2.5x"}}], '
-            f'"notes": "Ma’ruzachi uchun 3 jumlali tushuntirish matni"}}'
+            f"QOIDALAR:\n"
+            f"1. Har bir bullet punkt 2 ta to‘liq, mazmunli jumladan iborat bo‘lsin (aniq ta’riflar, sanalar, formulalar, raqamlar va misollar bilan).\n"
+            f"2. 1-slayd 'cover', oxirgisi 'summary', oraliqlarda 'bullets', 'split', 'stats', 'quote' maketlarini ishlat.\n"
+            f"3. Har bir slaydda 4 tadan boy bullet punkt va 1 ta 'highlight' xulosa bo‘lsin.\n"
+            f"JSON sxemasi:\n"
+            f'{{"title": "To‘liq sarlavha", "slides": ['
+            f'{{"layout": "cover", "badge": "01 / KIRISH", "title": "Sarlavha", "subtitle": "Taglavha", '
+            f'"bullets": ["1-fikr...", "2-fikr...", "3-fikr...", "4-fikr..."], '
+            f'"highlight": "Asosiy xulosa", '
+            f'"stats": [{{"label": "Ko‘rsatkich", "value": "85%"}}], "notes": "Ma’ruzachi nutqi"}}'
             f"]}}"
         )
         if extra_text:
-            prompt += f"\n\nQuyidagi manba matnidagi faktlar va raqamlarga tayangan holda tayyorla:\n{extra_text[:22000]}"
+            prompt += f"\n\nManba matni:\n{extra_text[:22000]}"
 
-        raw = call_gemini(prompt, file_part=file_part)
+        raw = call_gemini(prompt, file_part=file_part, json_mode=True)
         parsed = extract_json_block(raw)
         raw_slides = parsed.get("slides") or []
         if not raw_slides:
@@ -897,29 +901,30 @@ def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None,
         deck_title = str(parsed.get("title") or topic).strip()
 
         with LOCK:
+            room.topic_title = deck_title
             room.slides = {"title": deck_title, "theme": theme, "cur_idx": 0, "items": items}
             room.mode = "slides"
             room.ai_busy = False
             room.ai_error = ""
-            room.ai_status = f"✔ «{deck_title}» bo‘yicha {len(items)} ta batafsil Pro slayd tayyor!"
+            room.ai_status = f"✔ «{deck_title}» bo‘yicha {len(items)} ta Pro slayd tayyor!"
             room.touch()
     except Exception as e:
         err_msg = str(e)
         if "503" in err_msg or "band" in err_msg.lower():
             items = _build_fallback_slides(room, topic, slide_count, style, extra_text)
             with LOCK:
+                room.topic_title = topic
                 room.slides = {"title": topic, "theme": theme, "cur_idx": 0, "items": items}
                 room.mode = "slides"
                 room.ai_busy = False
                 room.ai_error = ""
-                room.ai_status = f"⚠ Google AI band (503) — «{topic}» bo‘yicha {len(items)} ta kengaytirilgan slayd tuzildi!"
+                room.ai_status = f"⚠ Google AI band (503) — «{topic}» bo‘yicha {len(items)} ta slayd tuzildi!"
                 room.touch()
         else:
             with LOCK:
                 room.ai_busy = False
                 room.ai_error = err_msg
                 room.ai_status = ""
-
 
 THEME_PALETTES = {
     "royal": ("0F172A", "FFFFFF", "FFC72C", "1E3A8A"),
@@ -1240,10 +1245,19 @@ ADMIN_EXPORT_WIDGET = r"""
   <button id="jeo-dock-toggle" onclick="window.__jeoToggleDock()" style="background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none;border-radius:999px;padding:10px 16px;font-weight:700;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.35);cursor:pointer;display:flex;align-items:center;gap:6px;">
     📥 .pptx / 📲 Telegram
   </button>
-  <div id="jeo-dock-box" style="display:none;margin-top:8px;width:300px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:16px;padding:14px;box-shadow:0 14px 36px rgba(0,0,0,.55);">
+  <div id="jeo-dock-box" style="display:none;margin-top:8px;width:305px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:16px;padding:14px;box-shadow:0 14px 36px rgba(0,0,0,.55);">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <strong style="font-size:13px;color:#fbbf24;">📊 Slayd Eksport & Telegram</strong>
+      <strong style="font-size:13px;color:#fbbf24;">📊 Slayd Eksport & AI</strong>
       <button onclick="window.__jeoToggleDock(false)" style="background:transparent;border:none;color:#94a3b8;font-size:16px;cursor:pointer;">✕</button>
+    </div>
+    <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #1e293b;">
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:5px;">✨ Istalgan mavzuda tezkor slayd:</div>
+      <div style="display:flex;gap:6px;">
+        <input id="jeo-quick-topic" type="text" placeholder="Masalan: Amir Temur, Python..." style="flex:1;background:#1e293b;border:1px solid #334155;color:#fff;border-radius:8px;padding:8px 10px;font-size:12px;outline:none;">
+        <button onclick="window.__jeoQuickSlide()" style="background:#8b5cf6;color:#fff;border:none;border-radius:8px;padding:8px 11px;font-weight:700;font-size:12px;cursor:pointer;">
+          Yaratish
+        </button>
+      </div>
     </div>
     <button onclick="window.__jeoDownloadPptx()" style="width:100%;background:#10b981;color:#052e16;border:none;border-radius:10px;padding:10px;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:10px;">
       📥 PowerPoint (.pptx) Yuklab olish
@@ -1265,6 +1279,27 @@ ADMIN_EXPORT_WIDGET = r"""
   let curRoom = new URLSearchParams(location.search).get("room") || "0000";
   let curPin = new URLSearchParams(location.search).get("pin") || "";
   let autoOpened = false;
+  let typedTopic = "";
+
+  document.addEventListener("input", function(e) {
+    const el = e.target;
+    if (!el || el.tagName !== "INPUT") return;
+    if (el.closest("#jeo-export-dock")) return;
+    if (el.type === "text" || !el.type) {
+      const v = (el.value || "").trim();
+      if (v && v !== "Iqtisodiyot va Moliya") typedTopic = v;
+    }
+  }, true);
+
+  setInterval(function() {
+    if (!typedTopic) return;
+    document.querySelectorAll("input").forEach(function(inp) {
+      if (inp.closest("#jeo-export-dock")) return;
+      if ((inp.type === "text" || !inp.type) && inp.value === "Iqtisodiyot va Moliya") {
+        inp.value = typedTopic;
+      }
+    });
+  }, 300);
 
   const savedId = localStorage.getItem("jeo_tg_chat_id") || "";
   setTimeout(() => {
@@ -1279,12 +1314,12 @@ ADMIN_EXPORT_WIDGET = r"""
       const uname = (tgBot && tgBot.username) ? (" (@" + tgBot.username + ")") : "";
       el.innerHTML = '<span style="color:#34d399;">● Bot faol' + uname + '</span> — /start bosib Chat ID oling';
     } else {
-      el.innerHTML = '<span style="color:#f87171;">● Bot ulanmagan</span> (Renderda TELEGRAM_BOT_TOKEN kiriting)';
+      el.innerHTML = '<span style="color:#f87171;">● Bot ulanmagan</span> (Jeopardy xizmatida TELEGRAM_BOT_TOKEN kiriting)';
     }
   }
 
   const origFetch = window.fetch;
-  window.fetch = async function(input) {
+  window.fetch = async function(input, init) {
     try {
       const u = typeof input === "string" ? input : (input && input.url) || "";
       if (u.includes("/api/state")) {
@@ -1292,8 +1327,15 @@ ADMIN_EXPORT_WIDGET = r"""
         if (uo.searchParams.get("room")) curRoom = uo.searchParams.get("room");
         if (uo.searchParams.get("pin")) curPin = uo.searchParams.get("pin");
       }
+      if (u.includes("/api/admin") && init && typeof init.body === "string") {
+        const parsed = JSON.parse(init.body);
+        if (parsed && parsed.action === "ai_generate_slides" && typedTopic && (!parsed.topic || parsed.topic === "Iqtisodiyot va Moliya")) {
+          parsed.topic = typedTopic;
+          init = Object.assign({}, init, {body: JSON.stringify(parsed)});
+        }
+      }
     } catch(e) {}
-    const resp = await origFetch.apply(this, arguments);
+    const resp = await origFetch.call(this, input, init);
     try {
       const u = typeof input === "string" ? input : (input && input.url) || "";
       if (u.includes("/api/state") || u.includes("/api/admin") || u.includes("/api/create_room")) {
@@ -1315,6 +1357,38 @@ ADMIN_EXPORT_WIDGET = r"""
     const box = document.getElementById("jeo-dock-box");
     if (!box) return;
     box.style.display = (typeof force === "boolean") ? (force ? "block" : "none") : (box.style.display === "none" ? "block" : "none");
+  };
+
+  window.__jeoQuickSlide = async function() {
+    const inp = document.getElementById("jeo-quick-topic");
+    const msg = document.getElementById("jeo-tg-msg");
+    const topic = (inp && inp.value || "").trim();
+    if (!topic) {
+      msg.style.color = "#fbbf24";
+      msg.textContent = "Avval mavzu nomini yozing.";
+      return;
+    }
+    typedTopic = topic;
+    msg.style.color = "#93c5fd";
+    msg.textContent = "«" + topic + "» bo‘yicha slayd yaratilmoqda...";
+    try {
+      const r = await origFetch("/api/admin", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({room: curRoom, pin: curPin, action: "ai_generate_slides", topic: topic, slide_count: 8, style: "Akademik ma’ruza", theme: "royal"})
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) {
+        msg.style.color = "#f87171";
+        msg.textContent = "Xato: " + (d.error || "Yaratilmadi");
+      } else {
+        msg.style.color = "#34d399";
+        msg.textContent = "✔ Slaydlar tayyorlanmoqda (3–5 soniya)...";
+      }
+    } catch(e) {
+      msg.style.color = "#f87171";
+      msg.textContent = "Tarmoq xatosi.";
+    }
   };
 
   window.__jeoDownloadPptx = function() {
@@ -1355,7 +1429,6 @@ ADMIN_EXPORT_WIDGET = r"""
 })();
 </script>
 """
-
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
@@ -1949,6 +2022,8 @@ class Handler(BaseHTTPRequestHandler):
                             self.send_json({"error": "AI hozir band, biroz kuting"}, 400)
                             return
                         topic = str(data.get("topic") or room.topic_title or "Taqdimot").strip()
+                        if topic:
+                            room.topic_title = topic
                         slide_count = max(4, min(16, int(data.get("slide_count") or 8)))
                         style = str(data.get("style") or "Akademik ma’ruza").strip()
                         theme = str(data.get("theme") or "royal").strip()
