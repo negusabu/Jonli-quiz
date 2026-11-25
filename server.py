@@ -1094,12 +1094,33 @@ def tg_send_document(chat_id, filename, file_bytes, caption=""):
 
 def telegram_bot_worker():
     if not TELEGRAM_BOT_TOKEN:
+        print("DIQQAT: TELEGRAM_BOT_TOKEN topilmadi!", flush=True)
         return
+    try:
+        me = tg_api("getMe", {})
+        if me and me.get("ok"):
+            uname = me["result"].get("username", "")
+            TG_BOT_INFO.update({"ok": True, "username": uname, "error": ""})
+            print(f"Telegram bot ulandi: @{uname}", flush=True)
+        tg_api("deleteWebhook", {"drop_pending_updates": False})
+        tg_api("setMyCommands", {
+            "commands": [
+                {"command": "start", "description": "Botni ishga tushirish va xonaga kirish"},
+                {"command": "slayd", "description": "Taqdimotni .pptx yuklash (/slayd 6519)"},
+                {"command": "xona", "description": "Xona holatini ko‘rish (/xona 6519)"},
+            ]
+        })
+    except Exception as e:
+        TG_BOT_INFO.update({"ok": False, "error": str(e)})
+        print(f"Telegram bot ulanish xatosi: {e}", flush=True)
+
     offset = 0
-    print("Telegram bot ulandi va ishga tushdi!", flush=True)
     while True:
         try:
             res = tg_api("getUpdates", {"offset": offset, "timeout": 25})
+            if res and res.get("ok"):
+                TG_BOT_INFO["ok"] = True
+                TG_BOT_INFO["error"] = ""
             for upd in (res or {}).get("result", []):
                 offset = upd["update_id"] + 1
                 msg = upd.get("message") or {}
@@ -1111,6 +1132,10 @@ def telegram_bot_worker():
                 parts = text.split()
                 cmd = parts[0].lower().split("@")[0]
                 arg = parts[1].strip() if len(parts) > 1 else ""
+
+                if cmd.isdigit() and len(cmd) in (4, 5):
+                    arg = cmd
+                    cmd = "/xona"
 
                 if cmd == "/start":
                     room_code = arg if arg.isdigit() else "0000"
@@ -1127,10 +1152,10 @@ def telegram_bot_worker():
                         "chat_id": chat_id,
                         "text": (
                             f"⚡ <b>JEO QUIZ PRO</b> botiga xush kelibsiz!\n\n"
-                            f"📌 Faol xona: <b>#{room_code}</b> ({topic})\n"
-                            f"📥 Slaydni .pptx formatda olish: <code>/slayd {room_code}</code>\n"
-                            f"🔎 Xona ma’lumotlari: <code>/xona {room_code}</code>\n"
-                            f"🆔 Sizning Chat ID: <code>{chat_id}</code>"
+                            f"🆔 Sizning Chat ID: <code>{chat_id}</code>\n"
+                            f"<i>(Ushbu raqamni Admin panelga kiritsangiz, slaydlar to‘g‘ridan-to‘g‘ri shu yerga keladi)</i>\n\n"
+                            f"📥 Slaydni .pptx yuklash: <code>/slayd {room_code}</code>\n"
+                            f"🔎 Xona holatini ko‘rish: <code>/xona {room_code}</code>"
                         ),
                         "parse_mode": "HTML",
                         "reply_markup": kb,
@@ -1174,7 +1199,8 @@ def telegram_bot_worker():
                                 f"🏫 <b>Xona #{room_code}</b>\n"
                                 f"📚 Mavzu: {info[0]}\n"
                                 f"🎯 Rejim: {info[1]}\n"
-                                f"👥 Talabalar: {info[2]} nafar"
+                                f"👥 Talabalar: {info[2]} nafar\n\n"
+                                f"📥 Slaydni yuklash uchun: <code>/slayd {room_code}</code>"
                             ),
                             "parse_mode": "HTML",
                             "reply_markup": {
@@ -1183,7 +1209,9 @@ def telegram_bot_worker():
                                 ]
                             },
                         })
-        except Exception:
+        except Exception as e:
+            TG_BOT_INFO["error"] = str(e)
+            print(f"Telegram polling xatosi: {e}", flush=True)
             time.sleep(3)
 
 
