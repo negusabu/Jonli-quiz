@@ -227,17 +227,20 @@ def call_gemini(prompt_text, file_part=None):
 
     candidates = []
     for m in (
+        "gemini-2.5-flash-lite",
+        "gemini-flash-latest",
         GEMINI_MODEL,
         "gemini-2.5-flash",
-        "gemini-2.5-flash-lite",
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
+        "gemini-2.5-pro",
     ):
         if m and m not in candidates:
             candidates.append(m)
 
-    payload = json.dumps({"contents": [{"parts": parts}]}).encode("utf-8")
-    last_err = "Google AI serverlari hozir band. Birozdan so‘ng qayta urinib ko‘ring."
+    payload = json.dumps({
+        "contents": [{"parts": parts}],
+        "generationConfig": {"temperature": 0.7},
+    }).encode("utf-8")
+    last_err = "503: Google AI serverlari hozir band."
 
     for model_name in candidates:
         url = (
@@ -252,7 +255,7 @@ def call_gemini(prompt_text, file_part=None):
                 method="POST",
             )
             try:
-                with urllib.request.urlopen(req, timeout=55) as resp:
+                with urllib.request.urlopen(req, timeout=60) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                 cands = data.get("candidates") or []
                 if not cands:
@@ -266,15 +269,15 @@ def call_gemini(prompt_text, file_part=None):
                 if e.code == 404:
                     break
                 if e.code in (429, 500, 502, 503, 504):
-                    last_err = f"Google AI serverlari hozir band ({e.code}). 10–15 soniyadan so‘ng qayta urinib ko‘ring."
+                    last_err = f"503: Google AI serverlari hozir band ({e.code})."
                     if attempt == 0:
-                        time.sleep(1.5)
+                        time.sleep(2.5 + random.uniform(0.3, 1.2))
                         continue
                     break
                 raise RuntimeError(f"Gemini API xatosi ({e.code}): {err_body[:160]}")
             except Exception:
                 if attempt == 0:
-                    time.sleep(1.2)
+                    time.sleep(2.0)
                     continue
                 break
 
@@ -720,49 +723,142 @@ def run_ai_board_worker(room, topic, level, file_part=None, extra_text=""):
             room.ai_status = ""
 
 
+def _build_fallback_slides(room, topic, slide_count, style, extra_text=""):
+    items = [
+        normalize_slide_item({
+            "layout": "cover",
+            "badge": "01 / TAQDIMOT",
+            "title": topic,
+            "subtitle": f"{style} • {slide_count} slayddan iborat interaktiv taqdimot",
+            "bullets": [
+                "Asosiy tushunchalar va nazariy asoslar",
+                "Amaliy tahlil va muhim ko‘rsatkichlar",
+                "Xulosalar va savol-javoblar",
+            ],
+            "highlight": "Jeo Quiz Pro",
+            "notes": f"«{topic}» mavzusidagi taqdimotni boshlaymiz.",
+        }, 0)
+    ]
+
+    if extra_text.strip():
+        sents = [s.strip() for s in re.split(r"[.!?\n]+", extra_text) if len(s.strip()) > 20]
+        chunk_size = max(2, len(sents) // max(1, slide_count - 2))
+        for i in range(1, slide_count - 1):
+            chunk = sents[(i - 1) * chunk_size : i * chunk_size][:4]
+            if not chunk:
+                chunk = [f"{topic} mavzusining {i}-asosiy jihati", "Nazariy va amaliy ahamiyati", "Asosiy xulosalar"]
+            items.append(normalize_slide_item({
+                "layout": "split" if i % 2 == 0 else "bullets",
+                "badge": f"{i + 1:02d} / BO‘LIM",
+                "title": f"{topic} — {i}-qism",
+                "subtitle": "Manba matni asosidagi asosiy fikrlar",
+                "bullets": chunk,
+                "highlight": chunk[0][:110],
+                "notes": "Ushbu slayddagi asosiy fikrlarni talabalarga izohlab bering.",
+            }, i))
+    else:
+        matched_qs = []
+        for p in PRESET_DATA.values():
+            if topic.lower() in p["title"].lower() or p["title"].lower() in topic.lower():
+                matched_qs = p["questions"]
+                break
+        if matched_qs:
+            cats = list(dict.fromkeys(q["cat"] for q in matched_qs))
+            for i in range(1, slide_count - 1):
+                cat = cats[(i - 1) % len(cats)]
+                c_qs = [q for q in matched_qs if q["cat"] == cat][:4]
+                bullets = [f"{q['q']} → {q['opts'][q['c']]}" for q in c_qs]
+                items.append(normalize_slide_item({
+                    "layout": "split" if i % 2 == 0 else "bullets",
+                    "badge": f"{i + 1:02d} / {cat.upper()}",
+                    "title": cat,
+                    "subtitle": f"{topic} bo‘yicha asosiy savol-javob va tushunchalar",
+                    "bullets": bullets,
+                    "highlight": c_qs[0].get("exp", "") if c_qs else cat,
+                    "notes": f"{cat} bo‘limi tahlili.",
+                }, i))
+        else:
+            templates = [
+                ("Kirish va Dolzarblik", "Mavzuning umumiy mazmuni va maqsadi", ["Asosiy tushuncha va ta’riflar", "Mavzuning bugungi kundagi ahamiyati", "O‘rganishning asosiy maqsadlari"]),
+                ("Nazariy Asoslar", "Asosiy qonuniyatlar va tamoyillar", ["1-asosiy tamoyil va uning mohiyati", "2-asosiy tamoyil va qo‘llanilishi", "Tizimli yondashuv elementlari"]),
+                ("Amaliy Tahlil", "Real hayotiy misollar va ko‘rsatkichlar", ["Amaliyotda qo‘llash mexanizmlari", "Asosiy muammolar va yechimlar", "Samaradorlik ko‘rsatkichlari"]),
+                ("Taqqoslash va Xususiyatlar", "Afzalliklar va cheklovlar tahlili", ["Asosiy ustunlik tomonlari", "E’tibor qaratish lozim bo‘lgan jihatlar", "Rivojlanish istiqbollari"]),
+            ]
+            for i in range(1, slide_count - 1):
+                t_title, t_sub, t_bul = templates[(i - 1) % len(templates)]
+                items.append(normalize_slide_item({
+                    "layout": "split" if i % 2 == 0 else "bullets",
+                    "badge": f"{i + 1:02d} / QISM",
+                    "title": f"{t_title} ({topic})",
+                    "subtitle": t_sub,
+                    "bullets": t_bul,
+                    "highlight": f"{topic} bo‘yicha muhim xulosa",
+                    "notes": f"{t_title} qismini tushuntiring.",
+                }, i))
+
+    items.append(normalize_slide_item({
+        "layout": "summary",
+        "badge": f"{len(items) + 1:02d} / XULOSA",
+        "title": "Yakuniy Xulosalar",
+        "subtitle": f"«{topic}» mavzusi bo‘yicha asosiy natijalar",
+        "bullets": [
+            "Mavzuning barcha asosiy yo‘nalishlari ko‘rib chiqildi",
+            "Bilimlarni mustahkamlash uchun Test yoki Jonli o‘yinni ishga tushiring",
+            "Savol va muhokamalar uchun ochiq minbar",
+        ],
+        "highlight": "E’tiboringiz uchun rahmat!",
+        "notes": "Mavzuni yakunlang.",
+    }, len(items)))
+    return items[:slide_count]
+
+
 def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None, extra_text=""):
     try:
         prompt = (
-            f"O‘zbek tilida '{topic}' mavzusida ({style} uslubida) aynan {slide_count} ta professional taqdimot slaydi yarat.\n"
-            f"1-slayd albatta 'cover' (muqova), oxirgi slayd 'summary' (xulosa) bo‘lsin. Oraliq slaydlarda 'bullets', 'split', 'stats', 'quote' maketlarini navbatma-navbat ishlat.\n"
-            f"Qat'iy JSON formatida javob ber:\n"
-            f'{{"title": "Taqdimot sarlavhasi", "slides": ['
+            f"O‘zbek tilida '{topic}' mavzusida ({style} uslubida) aynan {slide_count} ta taqdimot slaydi yarat.\n"
+            f"1-slayd 'cover', oxirgisi 'summary', oraliqlar 'bullets', 'split', 'stats' bo‘lsin.\n"
+            f"Faqat JSON qaytar:\n"
+            f'{{"title": "Sarlavha", "slides": ['
             f'{{"layout": "cover", "badge": "01 / KIRISH", "title": "Sarlavha", "subtitle": "Taglavha", '
-            f'"bullets": ["Fikr 1", "Fikr 2", "Fikr 3"], "highlight": "Muhim xulosa yoki ta’rif", '
-            f'"stats": [{{"label": "Ko‘rsatkich 1", "value": "85%"}}, {{"label": "Ko‘rsatkich 2", "value": "24/7"}}], '
-            f'"notes": "Spiker uchun 2 jumlali nutq matni"}}'
-            f"]}}\n"
-            f"Talablar: Har bir slaydda 3-5 ta aniq, mazmunli va qisqa bullet punktlar bo‘lsin, matnlar ekranda chiroyli o‘qiladigan darajada lo‘nda yozilsin."
+            f'"bullets": ["Fikr 1", "Fikr 2", "Fikr 3"], "highlight": "Xulosa", '
+            f'"stats": [{{"label": "Ko‘rsatkich", "value": "85%"}}], "notes": "Nutq"}}'
+            f"]}}"
         )
         if extra_text:
-            prompt += f"\n\nManba matni:\n{extra_text[:24000]}"
+            prompt += f"\n\nManba matni:\n{extra_text[:20000]}"
 
         raw = call_gemini(prompt, file_part=file_part)
         parsed = extract_json_block(raw)
         raw_slides = parsed.get("slides") or []
         if not raw_slides:
-            raise RuntimeError("AI slaydlar ro‘yxatini qaytarmadi, qayta urinib ko‘ring.")
+            raise RuntimeError("503: AI bo‘sh ro‘yxat qaytardi.")
 
         items = [normalize_slide_item(it, i) for i, it in enumerate(raw_slides[:16])]
         deck_title = str(parsed.get("title") or topic).strip()
 
         with LOCK:
-            room.slides = {
-                "title": deck_title,
-                "theme": theme,
-                "cur_idx": 0,
-                "items": items,
-            }
+            room.slides = {"title": deck_title, "theme": theme, "cur_idx": 0, "items": items}
             room.mode = "slides"
             room.ai_busy = False
             room.ai_error = ""
             room.ai_status = f"✔ «{deck_title}» bo‘yicha {len(items)} ta Pro slayd tayyor!"
             room.touch()
     except Exception as e:
-        with LOCK:
-            room.ai_busy = False
-            room.ai_error = str(e)
-            room.ai_status = ""
+        err_msg = str(e)
+        if "503" in err_msg or "band" in err_msg.lower():
+            items = _build_fallback_slides(room, topic, slide_count, style, extra_text)
+            with LOCK:
+                room.slides = {"title": topic, "theme": theme, "cur_idx": 0, "items": items}
+                room.mode = "slides"
+                room.ai_busy = False
+                room.ai_error = ""
+                room.ai_status = f"⚠ Google AI serveri band (503) — «{topic}» bo‘yicha {len(items)} ta slayd tezkor rejimda tuzildi!"
+                room.touch()
+        else:
+            with LOCK:
+                room.ai_busy = False
+                room.ai_error = err_msg
+                room.ai_status = ""
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
