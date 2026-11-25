@@ -1056,7 +1056,8 @@ def build_pptx_bytes(slides_dict):
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
 </Relationships>''')
 
-    return buf.getvalue()def tg_api(method, payload):
+    return buf.getvalue()
+def tg_api(method, payload):
     if not TELEGRAM_BOT_TOKEN:
         return None
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}"
@@ -2105,5 +2106,3 @@ if __name__ == "__main__":
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print(f"JEO QUIZ universal server ishga tushdi: port {PORT}", flush=True)
     server.serve_forever()
-
-
