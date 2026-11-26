@@ -530,8 +530,7 @@ def normalize_slide_item(raw_item, idx):
         "stats": stats,
         "diagram_steps": d_steps,
         "image_query": str(raw_item.get("image_query") or "").strip(),
-        "notes": str(raw_item.get("notes") or "").strip(),
-    }
+        "notes": str(raw_item.get("notes") or "").strip(),}
     
     
     class Room:
