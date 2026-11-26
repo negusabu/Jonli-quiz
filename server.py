@@ -1,4 +1,5 @@
 import base64
+import concurrent.futures
 import copy
 import io
 import json
@@ -278,7 +279,7 @@ def _call_gemini_raw(prompt_text, file_part=None, json_mode=False):
         )
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=35) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             cands = data.get("candidates") or []
             if not cands:
@@ -305,7 +306,7 @@ def _call_openrouter_raw(prompt_text, file_part=None, json_mode=False):
     if file_part and not str(file_part.get("mime", "")).startswith("image/"):
         raise RuntimeError("OpenRouter PDF faylni bevosita o‘qimaydi (.docx yoki .txt yuklang).")
 
-    p_txt = prompt_text + ("\n\nFaqat toza JSON obyekt qaytar, ortiqcha izoh yozma." if json_mode else "")
+    p_txt = prompt_text + ("\n\nFaqat toza JSON obyekt qaytar, ``` yoki ortiqcha matn yozma." if json_mode else "")
     content = [{"type": "text", "text": p_txt}]
     if file_part and str(file_part.get("mime", "")).startswith("image/"):
         content.append({
@@ -317,9 +318,10 @@ def _call_openrouter_raw(prompt_text, file_part=None, json_mode=False):
     for m in (
         OPENROUTER_MODEL,
         "openrouter/free",
-        "meta-llama/llama-3.3-70b-instruct:free",
         "google/gemma-3-27b-it:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
         "qwen/qwen-2.5-72b-instruct:free",
+        "mistralai/mistral-small-3.1-24b-instruct:free",
     ):
         if m and m not in models:
             models.append(m)
@@ -332,7 +334,7 @@ def _call_openrouter_raw(prompt_text, file_part=None, json_mode=False):
             "temperature": 0.7,
         }
         req = urllib.request.Request(
-            "https://openrouter.ai/api/v1/chat/completions",
+            "[https://openrouter.ai/api/v1/chat/completions](https://openrouter.ai/api/v1/chat/completions)",
             data=json.dumps(body_obj).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
@@ -385,7 +387,7 @@ def _call_groq_raw(prompt_text, file_part=None, json_mode=False):
         if json_mode and "scout" not in model_name:
             body_obj["response_format"] = {"type": "json_object"}
         req = urllib.request.Request(
-            "https://api.groq.com/openai/v1/chat/completions",
+            "[https://api.groq.com/openai/v1/chat/completions](https://api.groq.com/openai/v1/chat/completions)",
             data=json.dumps(body_obj).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
@@ -461,19 +463,63 @@ def extract_docx_text(b64_data):
     return " ".join(texts)[:28000]
 
 
+def fetch_topic_image_bytes(query):
+    q = str(query or "").strip()
+    if not q:
+        return None, None
+    try:
+        api_url = (
+            "[https://en.wikipedia.org/w/api.php?action=query&generator=search](https://en.wikipedia.org/w/api.php?action=query&generator=search)"
+            f"&gsrsearch={urllib.parse.quote(q)}&gsrlimit=4&prop=pageimages&pithumbsize=800&format=json"
+        )
+        req = urllib.request.Request(api_url, headers={"User-Agent": "JeoQuizPro/1.0 ([https://jeopardy-viym.onrender.com](https://jeopardy-viym.onrender.com))"})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        pages = ((data.get("query") or {}).get("pages") or {}).values()
+        for pg in sorted(pages, key=lambda x: x.get("index", 99)):
+            thumb = (pg.get("thumbnail") or {}).get("source", "")
+            low = thumb.lower().split("?")[0]
+            if low.endswith((".jpg", ".jpeg", ".png")):
+                ext = "png" if low.endswith(".png") else "jpg"
+                ireq = urllib.request.Request(thumb, headers={"User-Agent": "JeoQuizPro/1.0"})
+                with urllib.request.urlopen(ireq, timeout=7) as iresp:
+                    ibytes = iresp.read()
+                if 2000 < len(ibytes) < 2_500_000:
+                    return ibytes, ext
+    except Exception:
+        pass
+    return None, None
+
+
 def normalize_slide_item(raw_item, idx):
-    layout = str(raw_item.get("layout") or ("cover" if idx == 0 else "bullets")).strip().lower()
-    if layout not in ("cover", "bullets", "split", "stats", "quote", "summary"):
-        layout = "bullets"
-    bullets = [str(b).strip() for b in (raw_item.get("bullets") or []) if str(b).strip()][:6]
+    layout = str(raw_item.get("layout") or ("cover" if idx == 0 else "split_image")).strip().lower()
+    valid_layouts = ("cover", "split_image", "diagram_flow", "comparison", "stats_chart", "bullets", "split", "stats", "quote", "summary")
+    if layout not in valid_layouts:
+        layout = "split_image"
+    bullets = [str(b).strip() for b in (raw_item.get("bullets") or []) if str(b).strip()][:5]
     stats_raw = raw_item.get("stats") or []
     stats = []
     for st in stats_raw[:4]:
         if isinstance(st, dict):
             lbl = str(st.get("label") or "").strip()
             val = str(st.get("value") or "").strip()
+            pct = st.get("pct")
+            try:
+                pct_num = max(10, min(100, int(float(str(pct).replace("%", ""))))) if pct is not None else 75
+            except Exception:
+                pct_num = 75
             if lbl or val:
-                stats.append({"label": lbl, "value": val})
+                stats.append({"label": lbl, "value": val, "pct": pct_num})
+
+    d_steps_raw = raw_item.get("diagram_steps") or []
+    d_steps = []
+    for s_i, ds in enumerate(d_steps_raw[:4]):
+        if isinstance(ds, dict):
+            st_lbl = str(ds.get("label") or ds.get("title") or f"{s_i + 1}-bosqich").strip()
+            st_desc = str(ds.get("desc") or ds.get("text") or "").strip()
+            if st_lbl or st_desc:
+                d_steps.append({"step": f"{s_i + 1:02d}", "label": st_lbl, "desc": st_desc})
+
     return {
         "layout": layout,
         "badge": str(raw_item.get("badge") or f"{idx + 1:02d}-SLAYD").strip(),
@@ -482,10 +528,13 @@ def normalize_slide_item(raw_item, idx):
         "bullets": bullets,
         "highlight": str(raw_item.get("highlight") or "").strip(),
         "stats": stats,
-        "notes": str(raw_item.get("notes") or "").strip(),}
-
-
-class Room:
+        "diagram_steps": d_steps,
+        "image_query": str(raw_item.get("image_query") or "").strip(),
+        "notes": str(raw_item.get("notes") or "").strip(),
+    }
+    
+    
+    class Room:
     def __init__(self, code, pin, preset_id="econ", teams=None):
         self.code = code
         self.pin = pin
@@ -550,33 +599,37 @@ class Room:
                 "badge": "01 / TAQDIMOT",
                 "title": self.topic_title or "Interaktiv Ma'ruza",
                 "subtitle": f"{len(self.cats)} ta asosiy yo‘nalish • {len(self.questions)} ta tahliliy savol-javob",
-                "bullets": self.cats,
-                "highlight": "Jeo Quiz Pro",
-                "stats": [
-                    {"label": "Bo‘limlar", "value": str(len(self.cats))},
-                    {"label": "Savollar", "value": str(len(self.questions))},
-                    {"label": "Format", "value": "Interaktiv"},
-                ],
-                "notes": "Kirish qismi: mavzuning umumiy tuzilishi va asosiy bo‘limlar bilan tanishtiring.",
+                "bullets": self.cats[:4],
+                "highlight": "Jeo Quiz Pro — Vizual Taqdimot",
+                "image_query": self.topic_title or "Education science",
+                "notes": "Kirish qismi: mavzuning umumiy tuzilishi bilan tanishtiring.",
             }, 0)
         ]
+        layouts = ["split_image", "diagram_flow", "comparison", "stats_chart", "split_image"]
         for c_idx, cat in enumerate(self.cats):
-            cat_qs = [q for q in self.questions if q["cat"] == cat][:5]
+            cat_qs = [q for q in self.questions if q["cat"] == cat][:4]
             bullets = []
-            for q in cat_qs:
+            d_steps = []
+            stats = []
+            for idx_q, q in enumerate(cat_qs):
                 ans_txt = q["opts"][q["c"]] if (q.get("opts") and q.get("c") is not None) else q.get("ans", "")
-                exp_txt = f" ({q['exp']})" if q.get("exp") else ""
+                exp_txt = f" — {q['exp']}" if q.get("exp") else ""
                 bullets.append(f"{q['q']} → {ans_txt}{exp_txt}")
+                d_steps.append({"label": ans_txt[:36], "desc": q["q"][:85]})
+                stats.append({"label": ans_txt[:32], "value": f"{(idx_q + 1) * 100} ball", "pct": 45 + idx_q * 15})
             key_exp = cat_qs[0].get("exp", "") if cat_qs else ""
             items.append(
                 normalize_slide_item({
-                    "layout": "split" if c_idx % 2 == 0 else "bullets",
+                    "layout": layouts[c_idx % len(layouts)],
                     "badge": f"{c_idx + 2:02d} / BO‘LIM",
                     "title": cat,
-                    "subtitle": f"{cat} yo‘nalishi bo‘yicha asosiy tushunchalar va qoidalar",
+                    "subtitle": f"{cat} yo‘nalishi bo‘yicha asosiy qoidalar va tahlil",
                     "bullets": bullets,
+                    "diagram_steps": d_steps,
+                    "stats": stats,
+                    "image_query": f"{cat} {self.topic_title}",
                     "highlight": key_exp or f"{cat} bo‘yicha muhim xulosalar",
-                    "notes": f"{cat} bo‘limidagi asosiy faktlar va savol-javoblarni tushuntirib bering.",
+                    "notes": f"{cat} bo‘limidagi asosiy faktlarni tushuntiring.",
                 }, c_idx + 1)
             )
         items.append(
@@ -586,12 +639,13 @@ class Room:
                 "title": "Asosiy Xulosalar va Mustahkamlash",
                 "subtitle": f"«{self.topic_title}» mavzusi yakuni",
                 "bullets": [
-                    "Barcha 5 ta asosiy yo‘nalish ko‘rib chiqildi",
-                    "Bilimlarni tekshirish uchun Oddiy Test yoki Jonli O‘yin rejimiga o‘tish mumkin",
+                    "Barcha 5 ta asosiy yo‘nalish tizimli ko‘rib chiqildi",
+                    "Nazariy bilimlar amaliy savol-javoblar bilan mustahkamlandi",
+                    "Bilimlarni tekshirish uchun Oddiy Test rejimiga o‘tish mumkin",
                     "Savol va takliflar uchun ochiq muhokama",
                 ],
                 "highlight": "E’tiboringiz uchun rahmat!",
-                "notes": "Mavzuni yakunlang va talabalarni test yoki viktorinaga taklif qiling.",
+                "notes": "Mavzuni yakunlang.",
             }, len(items))
         )
         self.slides = {
@@ -826,8 +880,7 @@ def run_ai_board_worker(room, topic, level, file_part=None, extra_text="", prefe
             f"Qat'iy JSON formatida javob ber:\n"
             f'{{"cats": ["Bo‘lim 1", "Bo‘lim 2", "Bo‘lim 3", "Bo‘lim 4", "Bo‘lim 5"], '
             f'"questions": [{{"cat": "Bo‘lim 1", "q": "Savol?", "opts": ["A", "B", "C", "D"], "c": 0, "exp": "Qisqa izoh"}} ...]}}\n'
-            f"Talablar: 'questions' ro‘yxatida aynan 25 ta obyekt bo‘lsin (har bo‘limga 5 tadan, 100 dan 500 ballgacha qiyinlashib borsin), "
-            f"'c' 0 dan 3 gacha to‘g‘ri variant indeksi bo‘lsin."
+            f"Talablar: 'questions' ro‘yxatida aynan 25 ta obyekt bo‘lsin, 'c' 0 dan 3 gacha to‘g‘ri variant indeksi bo‘lsin."
         )
         if extra_text:
             base_prompt += f"\n\nManba matni:\n{extra_text[:24000]}"
@@ -889,14 +942,15 @@ def _build_fallback_slides(room, topic, slide_count, style, extra_text=""):
             "layout": "cover",
             "badge": "01 / KIRISH",
             "title": topic,
-            "subtitle": f"{style} • Chuqurlashtirilgan o‘quv-tahliliy taqdimot",
+            "subtitle": f"{style} • Chuqurlashtirilgan ilmiy-tahliliy taqdimot",
             "bullets": [
-                f"«{topic}» mavzusining nazariy asoslari, asosiy tushunchalar va ta’riflar tahlili",
-                "Zamonaviy amaliyotdagi o‘rni, asosiy ko‘rsatkichlar va statistik dinamika",
-                "Mavzu yuzasidan tizimli xulosalar, muammolar va yechim mexanizmlari",
+                f"«{topic}» mavzusining kelib chiqishi, mohiyati va asosiy tushunchalari",
+                "Asosiy qonuniyatlar, maktablar va tarixiy rivojlanish bosqichlari",
+                "Zamonaviy fanda tutgan o‘rni va amaliy ahamiyati",
             ],
-            "highlight": "Jeo Quiz Pro — Interaktiv Taqdimot",
-            "notes": f"Assalomu alaykum! Bugun «{topic}» mavzusini nazariy va amaliy jihatdan batafsil ko‘rib chiqamiz.",
+            "highlight": "Jeo Quiz Pro — Vizual Taqdimot",
+            "image_query": topic,
+            "notes": f"Assalomu alaykum! Bugun «{topic}» mavzusini batafsil ko‘rib chiqamiz.",
         }, 0)
     ]
 
@@ -907,106 +961,119 @@ def _build_fallback_slides(room, topic, slide_count, style, extra_text=""):
             chunk = sents[(i - 1) * chunk_size : i * chunk_size][:4]
             if not chunk:
                 chunk = [
-                    f"{topic} doirasidagi asosiy tushunchalar va ularning o‘zaro bog‘liqligi",
-                    "Amaliy jarayonlarda qo‘llanilish mexanizmlari hamda samaradorlik mezonlari",
-                    "Tahliliy natijalar asosida shakllantirilgan asosiy ilmiy-amaliy xulosalar",
+                    f"{topic} doirasidagi asosiy tushunchalar va ilmiy ta’riflar",
+                    "Asosiy tamoyillar va ularning o‘zaro mantiqiy bog‘liqligi",
+                    "Amaliy misollar va tahliliy xulosalar",
                 ]
             items.append(normalize_slide_item({
-                "layout": "split" if i % 2 == 0 else "bullets",
+                "layout": "split_image" if i % 2 == 1 else "diagram_flow",
                 "badge": f"{i + 1:02d} / TAHLIL",
-                "title": f"{topic}: {i}-asosiy yo‘nalish",
-                "subtitle": "Yuklangan manba materiallari asosida batafsil sharh",
+                "title": f"{topic}: {i}-yo‘nalish",
+                "subtitle": "Yuklangan manba asosida tizimli tahlil",
                 "bullets": chunk,
+                "diagram_steps": [{"label": f"{j+1}-qadam", "desc": c[:75]} for j, c in enumerate(chunk[:4])],
+                "image_query": topic,
                 "highlight": chunk[0][:140],
-                "notes": "Ushbu slayddagi har bir bandni misollar bilan izohlab bering.",
+                "notes": "Ushbu slayddagi har bir bandni misollar bilan izohlang.",
             }, i))
     else:
-        matched_qs = []
-        for p in PRESET_DATA.values():
-            if topic.lower() in p["title"].lower() or p["title"].lower() in topic.lower():
-                matched_qs = p["questions"]
-                break
-        if matched_qs:
-            cats = list(dict.fromkeys(q["cat"] for q in matched_qs))
-            for i in range(1, slide_count - 1):
-                cat = cats[(i - 1) % len(cats)]
-                c_qs = [q for q in matched_qs if q["cat"] == cat][:4]
-                bullets = [
-                    f"{q['q']} — Javob: {q['opts'][q['c']]}. ({q.get('exp', '')})"
-                    for q in c_qs
-                ]
-                items.append(normalize_slide_item({
-                    "layout": "split" if i % 2 == 0 else "bullets",
-                    "badge": f"{i + 1:02d} / {cat.upper()}",
-                    "title": cat,
-                    "subtitle": f"{topic} bo‘yicha asosiy qonuniyatlar va tahliliy izohlar",
-                    "bullets": bullets,
-                    "highlight": c_qs[0].get("exp", "") if c_qs else cat,
-                    "notes": f"{cat} bo‘limidagi qonuniyatlarni tushuntiring.",
-                }, i))
-        else:
-            deep_blocks = [
-                (
-                    "Nazariy Asoslar va Asosiy Tushunchalar",
-                    f"{topic} tushunchasining ilmiy-nazariy mohiyati va shakllanish bosqichlari",
-                    [
-                        f"Asosiy ta’rif: {topic} tizimli jarayon bo‘lib, resurslar va natijalar o‘rtasidagi muvozanatni belgilaydi.",
-                        "Tarkibiy elementlari: subyektlar, boshqaruv mexanizmlari, me’yoriy-huquqiy baza va baholash indikatorlari.",
-                        "Klassik va zamonaviy yondashuvlar o‘rtasidagi asosiy farqlar hamda evolyutsion rivojlanish bosqichlari.",
-                    ],
-                ),
-                (
-                    "Asosiy Ko‘rsatkichlar va Tahlil Metodologiyasi",
-                    "Samaradorlikni o‘lchash mezonlari va hisoblash usullari",
-                    [
-                        "Miqdoriy ko‘rsatkichlar: o‘sish sur’ati, mutlaq va nisbiy o‘zgarishlar, tarkibiy ulushlar tahlili.",
-                        "Sifat ko‘rsatkichlari: barqarorlik darajasi, raqobatbardoshlik indeksi va innovatsion faollik.",
-                        "Qiyosiy va dinamik tahlil usullari orqali kelgusi davr uchun prognoz ko‘rsatkichlarini aniqlash.",
-                    ],
-                ),
-                (
-                    "Amaliy Mexanizmlar va Real Misollar",
-                    f"{topic} tamoyillarining amaliyotda qo‘llanilishi",
-                    [
-                        "Xalqaro tajriba: rivojlangan mamlakatlar va yetakchi tashkilotlar amaliyotidagi muvaffaqiyatli modellar.",
-                        "O‘zbekiston amaliyoti: so‘nggi yillarda amalga oshirilayotgan islohotlar va erishilgan natijalar.",
-                        "Amaliy keyslar tahlili: nazariy bilimlarni real vaziyatlarda qo‘llash algoritmi.",
-                    ],
-                ),
-                (
-                    "Muammolar, Xatarlar va Rivojlanish Istiqbollari",
-                    "Tizimli to‘siqlarni bartaraf etish va strategik yechimlar",
-                    [
-                        "Asosiy muammolar: resurslar cheklanganligi, tashqi muhit o‘zgaruvchanligi va axborot assimetriyasi.",
-                        "Xatarlarni boshqarish: diversifikatsiya, raqamlashtirish va zamonaviy monitoring tizimlarini joriy etish.",
-                        "Strategik istiqbollar: uzoq muddatli barqaror o‘sishni ta’minlash bo‘yicha ustuvor yo‘nalishlar.",
-                    ],
-                ),
-            ]
-            for i in range(1, slide_count - 1):
-                t_title, t_sub, t_bul = deep_blocks[(i - 1) % len(deep_blocks)]
-                items.append(normalize_slide_item({
-                    "layout": "split" if i % 2 == 0 else "bullets",
-                    "badge": f"{i + 1:02d} / BO‘LIM",
-                    "title": f"{t_title} — {topic}",
-                    "subtitle": t_sub,
-                    "bullets": t_bul,
-                    "highlight": t_bul[0],
-                    "notes": f"{t_title} qismini batafsil tushuntirib bering.",
-                }, i))
+        templates = [
+            {
+                "layout": "split_image",
+                "badge": "02 / MOHIYAT",
+                "title": f"«{topic}» tushunchasi va tarixiy ildizlari",
+                "subtitle": "Asosiy ta’riflar, obyekt va predmeti",
+                "bullets": [
+                    f"Ilmiy ta’rif: «{topic}» — inson tafakkuri, bilish jarayoni va olam qonuniyatlarini o‘rganuvchi muhim yo‘nalish.",
+                    "Tarixiy shakllanishi: Qadimgi Sharq (Forobiy, Ibn Sino) va Yunon (Arastu, Aflotun) mutafakkirlarining qo‘shgan hissasi.",
+                    "O‘rganish predmeti: asosiy kategoriyalar, tushunchalar tizimi va ularni tahlil qilish metodlari.",
+                    "Zamonaviy talqin: klassik qarashlar va bugungi ilmiy yondashuvlar uyg‘unligi.",
+                ],
+                "image_query": f"{topic} philosophy history",
+                "highlight": f"«{topic}» — tizimli va tanqidiy fikrlashning asosiy poydevori.",
+            },
+            {
+                "layout": "diagram_flow",
+                "badge": "03 / BOSQICHLAR",
+                "title": f"{topic}: Rivojlanish va bilish bosqichlari",
+                "subtitle": "Oddiydan murakkabga tomon mantiqiy ketma-ketlik",
+                "bullets": [
+                    "1-bosqich: Kuzatish va dastlabki faktlarni to‘plash",
+                    "2-bosqich: Tushuncha va hukmlarni shakllantirish",
+                    "3-bosqich: Mantiqiy xulosa chiqarish va isbotlash",
+                    "4-bosqich: Amaliyotda tekshirish va nazariy umumlashtirish",
+                ],
+                "diagram_steps": [
+                    {"label": "1. Kuzatish", "desc": "Hodisa va faktlarni dastlabki o‘rganish"},
+                    {"label": "2. Tahlil", "desc": "Asosiy belgi va qonuniyatlarni ajratish"},
+                    {"label": "3. Xulosa", "desc": "Mantiqiy isbot va nazariy asoslash"},
+                    {"label": "4. Amaliyot", "desc": "Real hayot va fanda qo‘llash"},
+                ],
+                "highlight": "Har bir ilmiy xulosa izchil mantiqiy zanjirga tayanadi.",
+            },
+            {
+                "layout": "comparison",
+                "badge": "04 / TAQQOSLASH",
+                "title": "Klassik va Zamonaviy Yondashuvlar Qiyosi",
+                "subtitle": f"{topic} sohasidagi ikki asosiy yo‘nalish tahlili",
+                "bullets": [
+                    "Klassik yondashuv: qat’iy qoidalar, deduktiv isbotlash va o‘zgarmas aksiomalarga asoslanadi.",
+                    "Klassik maktab vakillari: asosiy e’tiborni shakl va nazariy mukammallikka qaratgan.",
+                    "Zamonaviy yondashuv: ko‘p qirrali tahlil, ehtimollik va amaliy natijadorlikni ustun qo‘yadi.",
+                    "Zamonaviy metodlar: fanlararo integratsiya va raqamli texnologiyalar bilan boyitilgan.",
+                ],
+                "highlight": "Ikkala yondashuv bir-birini to‘ldirib, yaxlit ilmiy manzarani yaratadi.",
+            },
+            {
+                "layout": "stats_chart",
+                "badge": "05 / KO‘RSATKICHLAR",
+                "title": f"{topic}ning Fanlararo Ta’siri",
+                "subtitle": "Zamonaviy ta’lim va tadqiqotlardagi ahamiyat ulushi",
+                "bullets": [
+                    "Tanqidiy fikrlash va argumentatsiya ko‘nikmalarini shakllantirishda asosiy o‘rin tutadi.",
+                    "Ilmiy tadqiqot metodologiyasi va to‘g‘ri xulosa chiqarish madaniyatini rivojlantiradi.",
+                    "Sun’iy intellekt, huquq va gumanitar fanlar bilan uzviy bog‘langan.",
+                ],
+                "stats": [
+                    {"label": "Tanqidiy fikrlash", "value": "92%", "pct": 92},
+                    {"label": "Ilmiy metodologiya", "value": "85%", "pct": 85},
+                    {"label": "Fanlararo bog‘liqlik", "value": "78%", "pct": 78},
+                    {"label": "Amaliy qo‘llanilish", "value": "70%", "pct": 70},
+                ],
+                "highlight": "Nazariy bilim va mantiqiy tahlil har qanday sohaning muvaffaqiyat kalitidir.",
+            },
+            {
+                "layout": "split_image",
+                "badge": "06 / AMALIYOT",
+                "title": f"{topic}: Hayotiy Misollar va Qo‘llanilishi",
+                "subtitle": "Nazariy qoidalarning real vaziyatlarda namoyon bo‘lishi",
+                "bullets": [
+                    "Ilmiy bahslarda: to‘g‘ri dalil keltirish va mantiqiy xatolarni (sofizmlarni) aniqlash.",
+                    "Ta’lim jarayonida: murakkab matnlarni tahlil qilish va mustaqil fikr bildirish.",
+                    "Kundalik hayotda: asosli qaror qabul qilish va axborotlarni tanqidiy saralash.",
+                ],
+                "image_query": "Aristotle logic library books",
+                "highlight": "Bilimning haqiqiy kuchi uning amaliyotda to‘g‘ri qo‘llanilishidadir.",
+            },
+        ]
+        for i in range(1, slide_count - 1):
+            tpl = copy.deepcopy(templates[(i - 1) % len(templates)])
+            tpl["badge"] = f"{i + 1:02d} / BO‘LIM"
+            items.append(normalize_slide_item(tpl, i))
 
     items.append(normalize_slide_item({
         "layout": "summary",
         "badge": f"{len(items) + 1:02d} / XULOSA",
-        "title": "Yakuniy Xulosalar va Tavsiyalar",
-        "subtitle": f"«{topic}» mavzusi bo‘yicha umumlashtirilgan natijalar",
+        "title": "Yakuniy Xulosalar va Mustahkamlash",
+        "subtitle": f"«{topic}» mavzusi bo‘yicha asosiy natijalar",
         "bullets": [
-            f"«{topic}» ning nazariy asoslari va amaliy ahamiyati tizimli ravishda tahlil qilindi.",
-            "Asosiy ko‘rsatkichlar va rivojlanish tendensiyalari bo‘yicha amaliy tavsiyalar shakllantirildi.",
-            "Bilimlarni mustahkamlash uchun Oddiy Test yoki Jonli Viktorina rejimida o‘zingizni sinab ko‘ring.",
+            f"«{topic}»ning nazariy asoslari va tarixiy rivojlanishi o‘rganildi",
+            "Asosiy bosqichlar va mantiqiy bog‘liqliklar diagramma asosida tahlil qilindi",
+            "Klassik va zamonaviy yondashuvlarning o‘ziga xos jihatlari solishtirildi",
+            "Bilimlarni mustahkamlash uchun Oddiy Test yoki Viktorina o‘yinini boshlang",
         ],
         "highlight": "E’tiboringiz uchun rahmat! Savollar bormi?",
-        "notes": "Mavzuni yakunlang va talabalar savollariga javob bering.",
+        "notes": "Mavzuni yakunlang.",
     }, len(items)))
     return items[:slide_count]
 
@@ -1014,23 +1081,29 @@ def _build_fallback_slides(room, topic, slide_count, style, extra_text=""):
 def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None, extra_text="", preferred=None):
     try:
         prompt = (
-            f"Sen universitet professori va ekspert taqdimot dizaynerisan. O‘zbek tilida '{topic}' mavzusida "
-            f"({style} uslubida) aynan {slide_count} ta CHUQUR, MAZMUNLI va BATAFSIL taqdimot slaydi yarat.\n"
-            f"MUHIM QOIDALAR:\n"
-            f"1. Har bir bullet punkt 2 ta to‘liq, mazmunli jumladan iborat bo‘lsin (aniq ta’riflar, formulalar, tarixiy sanalar, statistik raqamlar va real hayotiy misollar bilan).\n"
-            f"2. 1-slayd 'cover', oxirgi slayd 'summary', oraliq slaydlarda 'bullets', 'split', 'stats', 'quote' maketlarini aralashtirib ishlat.\n"
-            f"3. Har bir slaydda 4 tadan boy mazmunli bullet punkt va 1 ta kuchli 'highlight' xulosa bo‘lsin.\n"
-            f"Faqat toza JSON qaytar:\n"
-            f'{{"title": "To‘liq taqdimot sarlavhasi", "slides": ['
-            f'{{"layout": "cover", "badge": "01 / KIRISH", "title": "Sarlavha", "subtitle": "Batafsil taglavha", '
-            f'"bullets": ["1-batafsil fikr va izoh...", "2-batafsil fikr va misol...", "3-batafsil fikr...", "4-batafsil fikr..."], '
-            f'"highlight": "Asosiy ilmiy yoki amaliy xulosa", '
-            f'"stats": [{{"label": "Ko‘rsatkich nomi", "value": "85.4%"}}, {{"label": "Ikkinchi ko‘rsatkich", "value": "2.5x"}}], '
-            f'"notes": "Ma’ruzachi uchun 3 jumlali tushuntirish matni"}}'
+            f"Sen universitet professori va vizual taqdimot dizaynerisan. O‘zbek tilida '{topic}' mavzusida "
+            f"({style} uslubida) aynan {slide_count} ta VIZUAL, BATAFSIL va ILMIY taqdimot slaydi yarat.\n\n"
+            f"ENG MUHIM QOIDA: '{topic}' qaysi fanga tegishli bo‘lsa (falsafa, mantiq, tarix, fizika, IT, adabiyot yoki iqtisodiyot), "
+            f"FAQAT o‘sha fanning asl tushunchalari, olimlari, qonunlari va real misollarini yoz! Boshqa fan atamalarini umuman aralashtirma!\n\n"
+            f"MAKETLAR (layout) VA VIZUAL ELEMENTLAR:\n"
+            f"- 1-slayd: layout='cover' (inglizcha 'image_query' yoz, masalan: 'Aristotle philosophy' yoki 'Solar system')\n"
+            f"- 2-slayd: layout='split_image' (chapda 4 ta mazmunli bullet, o‘ngda rasm uchun inglizcha 'image_query')\n"
+            f"- 3-slayd: layout='diagram_flow' (4 bosqichli sxema uchun 'diagram_steps': [{{'label': 'Bosqich nomi', 'desc': 'Qisqa izoh'}}])\n"
+            f"- 4-slayd: layout='comparison' (2 tomonni solishtirish uchun aynan 4 ta bullet: 1-2-si chap karta, 3-4-si o‘ng karta)\n"
+            f"- 5-slayd: layout='stats_chart' (diagramma uchun 4 ta 'stats': [{{'label': 'Ko‘rsatkich', 'value': '85%', 'pct': 85}}])\n"
+            f"- Keyingi slaydlar: 'split_image', 'diagram_flow', 'comparison' larni navbat bilan ishlat, oxirgi slayd: layout='summary' (4 ta xulosa bullet).\n"
+            f"- Har bir slaydda 'image_query' maydoniga Wikipedia'dan rasm topish uchun 2–3 ta INGLIZCHA kalit so‘z yoz.\n\n"
+            f"Faqat sof JSON obyekt qaytar:\n"
+            f'{{"title": "To‘liq sarlavha", "slides": ['
+            f'{{"layout": "cover", "badge": "01 / KIRISH", "title": "Sarlavha", "subtitle": "Taglavha", '
+            f'"bullets": ["1-fikr", "2-fikr", "3-fikr", "4-fikr"], '
+            f'"diagram_steps": [{{"label": "1-qadam", "desc": "Izoh"}}], '
+            f'"stats": [{{"label": "Ko‘rsatkich", "value": "85%", "pct": 85}}], '
+            f'"image_query": "English keywords", "highlight": "Asosiy xulosa", "notes": "Nutq"}}'
             f"]}}"
         )
         if extra_text:
-            prompt += f"\n\nQuyidagi manba matnidagi faktlar va raqamlarga tayangan holda tayyorla:\n{extra_text[:22000]}"
+            prompt += f"\n\nManba matnidagi faktlarga asoslan:\n{extra_text[:22000]}"
 
         raw = call_gemini(prompt, file_part=file_part, json_mode=True, preferred=preferred)
         parsed = extract_json_block(raw)
@@ -1047,7 +1120,7 @@ def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None,
             room.mode = "slides"
             room.ai_busy = False
             room.ai_error = ""
-            room.ai_status = f"✔ «{deck_title}» bo‘yicha {len(items)} ta batafsil Pro slayd tayyor!"
+            room.ai_status = f"✔ «{deck_title}» bo‘yicha {len(items)} ta rasmli va diagrammali slayd tayyor!"
             room.touch()
     except Exception as e:
         err_msg = str(e)
@@ -1059,7 +1132,7 @@ def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None,
                 room.mode = "slides"
                 room.ai_busy = False
                 room.ai_error = ""
-                room.ai_status = f"⚠ AI band — «{topic}» bo‘yicha {len(items)} ta kengaytirilgan slayd tuzildi!"
+                room.ai_status = f"⚠ AI band — «{topic}» bo‘yicha {len(items)} ta diagrammali slayd tuzildi!"
                 room.touch()
         else:
             with LOCK:
@@ -1069,12 +1142,65 @@ def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None,
 
 
 THEME_PALETTES = {
-    "royal": ("0F172A", "FFFFFF", "FFC72C", "1E3A8A"),
-    "emerald": ("022C22", "FFFFFF", "34D399", "065F46"),
-    "sunset": ("27102C", "FFFFFF", "FBBF24", "7C2D12"),
-    "obsidian": ("09090B", "FAFAFA", "FACC15", "27272A"),
-    "minimal": ("F8FAFC", "0F172A", "1D4ED8", "E2E8F0"),
+    "royal": ("0B132B", "FFFFFF", "F59E0B", "1C2541", "3B82F6", "2A3964"),
+    "emerald": ("022C22", "FFFFFF", "34D399", "064E3B", "10B981", "0B6E53"),
+    "sunset": ("230C2B", "FFFFFF", "FBBF24", "4A154B", "EC4899", "69216B"),
+    "obsidian": ("09090B", "FAFAFA", "FACC15", "18181B", "38BDF8", "27272A"),
+    "minimal": ("F8FAFC", "0F172A", "2563EB", "FFFFFF", "0EA5E9", "E2E8F0"),
 }
+
+
+def _clean_xml(val):
+    s = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", str(val or ""))
+    return xml_esc(s)
+
+
+def _sp_rect(sp_id, name, x, y, cx, cy, fill_hex=None, border_hex=None, prst="roundRect", paras_xml="<a:p/>", l_ins=150000, t_ins=110000):
+    fill_tag = f'<a:solidFill><a:srgbClr val="{fill_hex}"/></a:solidFill>' if fill_hex else "<a:noFill/>"
+    ln_tag = f'<a:ln w="12700"><a:solidFill><a:srgbClr val="{border_hex}"/></a:solidFill></a:ln>' if border_hex else "<a:ln><a:noFill/></a:ln>"
+    return f'''<p:sp>
+  <p:nvSpPr><p:cNvPr id="{sp_id}" name="{_clean_xml(name)}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+  <p:spPr>
+    <a:xfrm><a:off x="{x}" y="{y}"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>
+    <a:prstGeom prst="{prst}"><a:avLst/></a:prstGeom>
+    {fill_tag}
+    {ln_tag}
+  </p:spPr>
+  <p:txBody>
+    <a:bodyPr wrap="square" lIns="{l_ins}" rIns="{l_ins}" tIns="{t_ins}" bIns="{t_ins}"/>
+    <a:lstStyle/>
+    {paras_xml}
+  </p:txBody>
+</p:sp>'''
+
+
+def _sp_pic(sp_id, r_id, x, y, cx, cy, border_hex="FFFFFF"):
+    return f'''<p:pic>
+  <p:nvPicPr>
+    <p:cNvPr id="{sp_id}" name="Picture{sp_id}"/>
+    <p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>
+    <p:nvPr/>
+  </p:nvPicPr>
+  <p:blipFill>
+    <a:blip r:embed="{r_id}"/>
+    <a:stretch><a:fillRect/></a:stretch>
+  </p:blipFill>
+  <p:spPr>
+    <a:xfrm><a:off x="{x}" y="{y}"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>
+    <a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>
+    <a:ln w="19050"><a:solidFill><a:srgbClr val="{border_hex}"/></a:solidFill></a:ln>
+  </p:spPr>
+</p:pic>'''
+
+
+def _para(text, sz=1600, color="FFFFFF", bold=False, italic=False, align="l", spc_after=900):
+    b_attr = ' b="1"' if bold else ""
+    i_attr = ' i="1"' if italic else ""
+    return (
+        f'<a:p><a:pPr algn="{align}"><a:spcAft><a:spcPts val="{spc_after}"/></a:spcAft></a:pPr>'
+        f'<a:r><a:rPr lang="uz-UZ" sz="{sz}"{b_attr}{i_attr}><a:solidFill><a:srgbClr val="{color}"/></a:solidFill></a:rPr>'
+        f'<a:t>{_clean_xml(text)}</a:t></a:r></a:p>'
+    )
 
 
 def build_pptx_bytes(slides_dict):
@@ -1082,11 +1208,31 @@ def build_pptx_bytes(slides_dict):
         slides_dict = {
             "title": "Jeo Quiz Taqdimot",
             "theme": "royal",
-            "items": [{"badge": "01", "title": "Taqdimot", "subtitle": "", "bullets": ["Ma’lumot mavjud emas"], "highlight": ""}],
+            "items": [{"layout": "cover", "badge": "01", "title": "Taqdimot", "subtitle": "", "bullets": ["Ma’lumot mavjud emas"], "highlight": ""}],
         }
     items = slides_dict["items"]
-    bg_hex, fg_hex, acc_hex, card_hex = THEME_PALETTES.get(slides_dict.get("theme", "royal"), THEME_PALETTES["royal"])
+    bg_hex, fg_hex, acc_hex, card_hex, acc2_hex, track_hex = THEME_PALETTES.get(
+        slides_dict.get("theme", "royal"), THEME_PALETTES["royal"]
+    )
     n = len(items)
+
+    # Mavzuga mos rasmlarni parallel yuklab olish (1-slayd va split_image slaydlar uchun)
+    images_map = {}
+
+    def _fetch_for_idx(idx_sl):
+        idx, sl = idx_sl
+        ly = sl.get("layout", "split_image")
+        if ly in ("cover", "split_image", "split", "bullets"):
+            q_str = sl.get("image_query") or sl.get("title") or slides_dict.get("title", "")
+            ibytes, ext = fetch_topic_image_bytes(q_str)
+            if ibytes:
+                return idx, (ibytes, ext)
+        return idx, None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        for idx, res_img in ex.map(_fetch_for_idx, list(enumerate(items))):
+            if res_img:
+                images_map[idx] = res_img
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -1098,6 +1244,9 @@ def build_pptx_bytes(slides_dict):
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-officedocument.package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="jpg" ContentType="image/jpeg"/>
+  <Default Extension="jpeg" ContentType="image/jpeg"/>
+  <Default Extension="png" ContentType="image/png"/>
   <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
   <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
   <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
@@ -1163,20 +1312,173 @@ def build_pptx_bytes(slides_dict):
 </a:theme>''')
 
         for i, sl in enumerate(items):
-            badge = xml_esc(f"{sl.get('badge', '')}   ({i+1}/{n})")
-            title = xml_esc(sl.get("title", ""))
-            sub = xml_esc(sl.get("subtitle", ""))
+            layout = sl.get("layout", "split_image")
+            badge_txt = sl.get("badge", f"{i+1:02d}-SLAYD")
+            title_txt = sl.get("title", "")
+            sub_txt = sl.get("subtitle", "")
             bullets = sl.get("bullets") or []
-            hl = xml_esc(sl.get("highlight", ""))
-            paras = []
-            if sub:
-                paras.append(f'<a:p><a:r><a:rPr lang="uz-UZ" sz="1700" i="1"><a:solidFill><a:srgbClr val="{acc_hex}"/></a:solidFill></a:rPr><a:t>{sub}</a:t></a:r></a:p>')
-            for b in bullets:
-                paras.append(f'<a:p><a:pPr marL="285750" indent="-285750"/><a:r><a:rPr lang="uz-UZ" sz="1700"><a:solidFill><a:srgbClr val="{fg_hex}"/></a:solidFill></a:rPr><a:t>▸ {xml_esc(str(b))}</a:t></a:r></a:p>')
-            if hl:
-                paras.append(f'<a:p><a:r><a:rPr lang="uz-UZ" sz="1600" b="1"><a:solidFill><a:srgbClr val="{acc_hex}"/></a:solidFill></a:rPr><a:t>💡 {hl}</a:t></a:r></a:p>')
-            body_xml = "\n".join(paras) if paras else "<a:p/>"
+            hl_txt = sl.get("highlight", "")
+            img_info = images_map.get(i)
 
+            shapes = []
+            sid = 2
+
+            # Yuqori dekorativ chiziq
+            shapes.append(_sp_rect(sid, "TopStripe", 0, 0, 12192000, 85000, fill_hex=acc_hex, prst="rect", l_ins=0, t_ins=0))
+            sid += 1
+
+            if layout == "cover":
+                hero_w = 6650000 if img_info else 10900000
+                shapes.append(_sp_rect(sid, "Badge", 640000, 620000, 3200000, 420000, fill_hex=card_hex, border_hex=acc_hex, paras_xml=_para(badge_txt, sz=1300, color=acc_hex, bold=True, spc_after=0), t_ins=60000))
+                sid += 1
+                shapes.append(_sp_rect(sid, "CoverTitle", 640000, 1180000, hero_w, 1650000, paras_xml=_para(title_txt, sz=3800, color=fg_hex, bold=True, spc_after=0), l_ins=0, t_ins=40000))
+                sid += 1
+                shapes.append(_sp_rect(sid, "Divider", 640000, 2920000, 2200000, 75000, fill_hex=acc_hex, prst="rect", l_ins=0, t_ins=0))
+                sid += 1
+                if sub_txt:
+                    shapes.append(_sp_rect(sid, "CoverSub", 640000, 3120000, hero_w, 950000, paras_xml=_para(sub_txt, sz=1700, color=acc2_hex, italic=True, spc_after=0), l_ins=0, t_ins=40000))
+                    sid += 1
+
+                if img_info:
+                    ibytes, ext = img_info
+                    zf.writestr(f"ppt/media/image{i+1}.{ext}", ibytes)
+                    shapes.append(_sp_pic(sid, "rId2", 7550000, 650000, 4000000, 3550000, border_hex=acc_hex))
+                    sid += 1
+
+                # Pastki 3 ta reja kartochkasi
+                plan_items = bullets[:3] if bullets else ["Nazariy asoslar", "Tahliliy diagrammalar", "Amaliy xulosalar"]
+                for k, p_txt in enumerate(plan_items):
+                    cx_k = 640000 + k * 3710000
+                    card_p = (
+                        _para(f"0{k+1} • YO‘NALISH", sz=1150, color=acc_hex, bold=True, spc_after=350)
+                        + _para(p_txt[:115], sz=1400, color=fg_hex, spc_after=0)
+                    )
+                    shapes.append(_sp_rect(sid, f"Plan{k}", cx_k, 4550000, 3480000, 1750000, fill_hex=card_hex, border_hex=track_hex, paras_xml=card_p))
+                    sid += 1
+            else:
+                # Barcha ichki slaydlar uchun umumiy sarlavha va nishon
+                shapes.append(_sp_rect(sid, "Badge", 640000, 240000, 3400000, 360000, fill_hex=card_hex, border_hex=acc_hex, paras_xml=_para(badge_txt, sz=1200, color=acc_hex, bold=True, spc_after=0), t_ins=45000))
+                sid += 1
+                shapes.append(_sp_rect(sid, "PageNum", 10200000, 240000, 1350000, 360000, paras_xml=_para(f"{i+1} / {n}", sz=1300, color=acc_hex, bold=True, align="r", spc_after=0), l_ins=0, t_ins=45000))
+                sid += 1
+                shapes.append(_sp_rect(sid, "SlideTitle", 640000, 650000, 10910000, 740000, paras_xml=_para(title_txt, sz=2600, color=fg_hex, bold=True, spc_after=0), l_ins=0, t_ins=20000))
+                sid += 1
+                if sub_txt:
+                    shapes.append(_sp_rect(sid, "SlideSub", 640000, 1390000, 10910000, 380000, paras_xml=_para(sub_txt, sz=1450, color=acc2_hex, italic=True, spc_after=0), l_ins=0, t_ins=10000))
+                    sid += 1
+
+                if layout == "diagram_flow":
+                    steps = sl.get("diagram_steps") or []
+                    if not steps:
+                        steps = [{"step": f"0{k+1}", "label": b.split(":")[0][:32], "desc": b[:85]} for k, b in enumerate(bullets[:4])]
+                    steps = steps[:4]
+                    cnt_s = max(1, len(steps))
+                    gap = 460000
+                    box_w = (10910000 - gap * (cnt_s - 1)) // cnt_s
+                    for k, st in enumerate(steps):
+                        bx = 640000 + k * (box_w + gap)
+                        st_paras = (
+                            _para(f"BOSQICH {st.get('step', f'0{k+1}')}", sz=1250, color=acc_hex, bold=True, align="ctr", spc_after=500)
+                            + _para(st.get("label", ""), sz=1650, color=fg_hex, bold=True, align="ctr", spc_after=600)
+                            + _para(st.get("desc", ""), sz=1350, color=fg_hex, align="ctr", spc_after=0)
+                        )
+                        shapes.append(_sp_rect(sid, f"FlowBox{k}", bx, 2020000, box_w, 3650000, fill_hex=card_hex, border_hex=acc_hex, paras_xml=st_paras))
+                        sid += 1
+                        if k < cnt_s - 1:
+                            ax = bx + box_w + 70000
+                            shapes.append(_sp_rect(sid, f"Arrow{k}", ax, 3620000, gap - 140000, 420000, fill_hex=acc_hex, prst="rightArrow", l_ins=0, t_ins=0))
+                            sid += 1
+
+                elif layout == "comparison":
+                    left_b = bullets[:2] if bullets else ["1-tomon xususiyatlari"]
+                    right_b = bullets[2:4] if len(bullets) > 2 else ["2-tomon xususiyatlari"]
+                    l_paras = _para("I. NAZARIY / KLASSIK JIHAT", sz=1450, color=acc_hex, bold=True, spc_after=700) + "".join(
+                        _para(f"▸ {b}", sz=1500, color=fg_hex, spc_after=750) for b in left_b
+                    )
+                    r_paras = _para("II. ZAMONAVIY / AMALIY JIHAT", sz=1450, color=acc2_hex, bold=True, spc_after=700) + "".join(
+                        _para(f"▸ {b}", sz=1500, color=fg_hex, spc_after=750) for b in right_b
+                    )
+                    shapes.append(_sp_rect(sid, "CompLeft", 640000, 1950000, 5280000, 3800000, fill_hex=card_hex, border_hex=acc_hex, paras_xml=l_paras))
+                    sid += 1
+                    shapes.append(_sp_rect(sid, "CompRight", 6270000, 1950000, 5280000, 3800000, fill_hex=card_hex, border_hex=acc2_hex, paras_xml=r_paras))
+                    sid += 1
+
+                elif layout == "stats_chart":
+                    l_paras = _para("TAHLILIY SHARH", sz=1400, color=acc_hex, bold=True, spc_after=650) + "".join(
+                        _para(f"▸ {b}", sz=1450, color=fg_hex, spc_after=700) for b in (bullets[:3] or ["Asosiy ko‘rsatkichlar diagrammada keltirilgan."])
+                    )
+                    shapes.append(_sp_rect(sid, "StatsNotes", 640000, 1950000, 5050000, 3800000, fill_hex=card_hex, border_hex=track_hex, paras_xml=l_paras))
+                    sid += 1
+
+                    st_list = sl.get("stats") or [
+                        {"label": "1-ko‘rsatkich", "value": "88%", "pct": 88},
+                        {"label": "2-ko‘rsatkich", "value": "74%", "pct": 74},
+                        {"label": "3-ko‘rsatkich", "value": "65%", "pct": 65},
+                    ]
+                    shapes.append(_sp_rect(sid, "ChartBg", 5920000, 1950000, 5630000, 3800000, fill_hex=card_hex, border_hex=acc_hex, paras_xml=_para("📊 VIZUAL DIAGRAMMA", sz=1350, color=acc_hex, bold=True, spc_after=0)))
+                    sid += 1
+                    for k, st in enumerate(st_list[:4]):
+                        ry = 2480000 + k * 790000
+                        lbl_line = f"{st.get('label', '')} — {st.get('value', '')}"
+                        shapes.append(_sp_rect(sid, f"BarLbl{k}", 6150000, ry, 5150000, 320000, paras_xml=_para(lbl_line, sz=1350, color=fg_hex, bold=True, spc_after=0), l_ins=0, t_ins=0))
+                        sid += 1
+                        shapes.append(_sp_rect(sid, f"BarTrk{k}", 6150000, ry + 340000, 5100000, 230000, fill_hex=track_hex, l_ins=0, t_ins=0))
+                        sid += 1
+                        pct_v = max(12, min(100, int(st.get("pct", 75))))
+                        bar_w = int(5100000 * pct_v / 100)
+                        bar_col = acc_hex if k % 2 == 0 else acc2_hex
+                        shapes.append(_sp_rect(sid, f"BarVal{k}", 6150000, ry + 340000, bar_w, 230000, fill_hex=bar_col, l_ins=0, t_ins=0))
+                        sid += 1
+
+                elif layout == "summary":
+                    sum_b = bullets[:4] if bullets else ["Mavzu bo‘yicha asosiy xulosalar shakllantirildi."]
+                    for k, b in enumerate(sum_b):
+                        col_i = k % 2
+                        row_i = k // 2
+                        gx = 640000 + col_i * 5630000
+                        gy = 1950000 + row_i * 1950000
+                        g_paras = (
+                            _para(f"0{k+1} • XULOSA", sz=1250, color=acc_hex, bold=True, spc_after=450)
+                            + _para(b, sz=1500, color=fg_hex, spc_after=0)
+                        )
+                        shapes.append(_sp_rect(sid, f"SumCard{k}", gx, gy, 5280000, 1800000, fill_hex=card_hex, border_hex=acc_hex if k % 2 == 0 else acc2_hex, paras_xml=g_paras))
+                        sid += 1
+
+                else:
+                    # split_image: chapda tahliliy fikrlar, o‘ngda mavzuga oid haqiqiy rasm (yoki 2x2 infografika kartalar)
+                    if img_info:
+                        ibytes, ext = img_info
+                        zf.writestr(f"ppt/media/image{i+1}.{ext}", ibytes)
+                        b_paras = "".join(_para(f"▸ {b}", sz=1500, color=fg_hex, spc_after=720) for b in (bullets[:4] or ["Asosiy ma’lumotlar"]))
+                        shapes.append(_sp_rect(sid, "SplitText", 640000, 1950000, 6420000, 3800000, fill_hex=card_hex, border_hex=track_hex, paras_xml=b_paras))
+                        sid += 1
+                        shapes.append(_sp_rect(sid, "ImgFrame", 7260000, 1950000, 4290000, 3800000, fill_hex=card_hex, border_hex=acc_hex, paras_xml="<a:p/>", l_ins=0, t_ins=0))
+                        sid += 1
+                        shapes.append(_sp_pic(sid, "rId2", 7380000, 2070000, 4050000, 3050000, border_hex=acc_hex))
+                        sid += 1
+                        cap = sl.get("image_query") or title_txt
+                        shapes.append(_sp_rect(sid, "ImgCap", 7380000, 5180000, 4050000, 460000, paras_xml=_para(f"🖼 {cap[:48]}", sz=1200, color=acc_hex, italic=True, align="ctr", spc_after=0), l_ins=40000, t_ins=40000))
+                        sid += 1
+                    else:
+                        grid_b = bullets[:4] if bullets else ["Asosiy tushunchalar"]
+                        for k, b in enumerate(grid_b):
+                            col_i = k % 2
+                            row_i = k // 2
+                            gx = 640000 + col_i * 5630000
+                            gy = 1950000 + row_i * 1950000
+                            g_paras = (
+                                _para(f"▸ 0{k+1}-ASOSIY FIKR", sz=1250, color=acc_hex, bold=True, spc_after=400)
+                                + _para(b, sz=1480, color=fg_hex, spc_after=0)
+                            )
+                            shapes.append(_sp_rect(sid, f"Concept{k}", gx, gy, 5280000, 1800000, fill_hex=card_hex, border_hex=track_hex, paras_xml=g_paras))
+                            sid += 1
+
+                # Pastki xulosa chizig‘i
+                if hl_txt:
+                    shapes.append(_sp_rect(sid, "HighlightBar", 640000, 5940000, 10910000, 580000, fill_hex=card_hex, border_hex=acc_hex, paras_xml=_para(f"💡 {hl_txt}", sz=1400, color=acc_hex, bold=True, spc_after=0), t_ins=95000))
+                    sid += 1
+
+            shapes_xml = "\n".join(shapes)
             zf.writestr(f"ppt/slides/slide{i+1}.xml", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
   <p:cSld>
@@ -1184,30 +1486,23 @@ def build_pptx_bytes(slides_dict):
     <p:spTree>
       <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
       <p:grpSpPr/>
-      <p:sp>
-        <p:nvSpPr><p:cNvPr id="2" name="Badge"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
-        <p:spPr><a:xfrm><a:off x="685800" y="380000"/><a:ext cx="10820400" cy="420000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>
-        <p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="uz-UZ" sz="1400" b="1"><a:solidFill><a:srgbClr val="{acc_hex}"/></a:solidFill></a:rPr><a:t>{badge}</a:t></a:r></a:p></p:txBody>
-      </p:sp>
-      <p:sp>
-        <p:nvSpPr><p:cNvPr id="3" name="Title"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
-        <p:spPr><a:xfrm><a:off x="685800" y="820000"/><a:ext cx="10820400" cy="950000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>
-        <p:txBody><a:bodyPr wrap="square"/><a:lstStyle/><a:p><a:r><a:rPr lang="uz-UZ" sz="3000" b="1"><a:solidFill><a:srgbClr val="{fg_hex}"/></a:solidFill></a:rPr><a:t>{title}</a:t></a:r></a:p></p:txBody>
-      </p:sp>
-      <p:sp>
-        <p:nvSpPr><p:cNvPr id="4" name="Content"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
-        <p:spPr><a:xfrm><a:off x="685800" y="1850000"/><a:ext cx="10820400" cy="4500000"/></a:xfrm><a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="{card_hex}"/></a:solidFill></p:spPr>
-        <p:txBody><a:bodyPr wrap="square" lIns="180000" rIns="180000" tIns="140000" bIns="140000"/><a:lstStyle/>{body_xml}</p:txBody>
-      </p:sp>
+      {shapes_xml}
     </p:spTree>
   </p:cSld>
 </p:sld>''')
 
-            zf.writestr(f"ppt/slides/_rels/slide{i+1}.xml.rels", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            rel_extra = ""
+            if img_info:
+                _, ext = img_info
+                rel_extra = f'\n  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image{i+1}.{ext}"/>'
+            zf.writestr(f"ppt/slides/_rels/slide{i+1}.xml.rels", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>{rel_extra}
 </Relationships>''')
+
     return buf.getvalue()
+
+
 def tg_api(method, payload):
     if not TELEGRAM_BOT_TOKEN:
         return None
@@ -1265,17 +1560,21 @@ def _tg_generate_ai_pptx_task(chat_id, topic):
     try:
         slide_count = 8
         prompt = (
-            f"Sen universitet professori va ekspert taqdimot dizaynerisan. O‘zbek tilida '{topic}' mavzusida "
-            f"(Akademik ma’ruza uslubida) aynan {slide_count} ta CHUQUR, MAZMUNLI va BATAFSIL taqdimot slaydi yarat.\n"
+            f"Sen universitet professori va vizual taqdimot dizaynerisan. O‘zbek tilida '{topic}' mavzusida "
+            f"(Akademik ma’ruza uslubida) aynan {slide_count} ta VIZUAL va ILMIY taqdimot slaydi yarat.\n"
             f"QOIDALAR:\n"
-            f"1. Har bir bullet punkt 2 ta to‘liq, mazmunli jumladan iborat bo‘lsin (ta’riflar, sanalar, formulalar, raqamlar va misollar bilan).\n"
-            f"2. 1-slayd 'cover', oxirgi slayd 'summary', oraliqlarda 'bullets', 'split', 'stats' maketlarini ishlat.\n"
-            f"3. Har bir slaydda 4 tadan boy bullet punkt va 1 ta 'highlight' xulosa bo‘lsin.\n"
-            f"Faqat toza JSON qaytar:\n"
-            f'{{"title": "To‘liq taqdimot sarlavhasi", "slides": ['
+            f"1. '{topic}' qaysi fanga oid bo‘lsa, FAQAT o‘sha fanning asl tushunchalari, olimlari va misollarini yoz.\n"
+            f"2. Maketlar: 1-slayd 'cover', 2-slayd 'split_image', 3-slayd 'diagram_flow' (4 ta diagram_steps), "
+            f"4-slayd 'comparison' (4 ta bullet), 5-slayd 'stats_chart' (4 ta stats pct bilan), 6-slayd 'split_image', "
+            f"7-slayd 'diagram_flow', 8-slayd 'summary' (4 ta xulosa).\n"
+            f"3. Har bir slaydda Wikipedia rasm qidiruvi uchun inglizcha 'image_query' yoz.\n"
+            f"Faqat sof JSON obyekt qaytar:\n"
+            f'{{"title": "Sarlavha", "slides": ['
             f'{{"layout": "cover", "badge": "01 / KIRISH", "title": "Sarlavha", "subtitle": "Taglavha", '
-            f'"bullets": ["1-fikr...", "2-fikr...", "3-fikr...", "4-fikr..."], '
-            f'"highlight": "Asosiy xulosa", "notes": ""}}'
+            f'"bullets": ["1-fikr", "2-fikr", "3-fikr", "4-fikr"], '
+            f'"diagram_steps": [{{"label": "1-qadam", "desc": "Izoh"}}], '
+            f'"stats": [{{"label": "Ko‘rsatkich", "value": "85%", "pct": 85}}], '
+            f'"image_query": "English keywords", "highlight": "Xulosa", "notes": ""}}'
             f"]}}"
         )
         try:
@@ -1309,13 +1608,13 @@ def _tg_generate_ai_pptx_task(chat_id, topic):
             f"{safe_name}.pptx",
             pptx_data,
             caption=(
-                f"📊 {deck_title} ({len(items)} ta slayd)\n"
+                f"📊 {deck_title} ({len(items)} ta vizual slayd)\n"
                 f"🔑 Xona kodi: #{code} | Admin PIN: {pin}"
             ),
         )
         tg_api("sendMessage", {
             "chat_id": chat_id,
-            "text": f"🌐 Slaydni saytda jonli ko‘rsatish yoki tahrirlash uchun:",
+            "text": "🌐 Slaydni saytda jonli ko‘rsatish yoki tahrirlash uchun:",
             "reply_markup": {
                 "inline_keyboard": [
                     [{"text": f"📺 Jonli taqdimot (#{code})", "url": f"{APP_PUBLIC_URL}/?room={code}"}],
@@ -1390,7 +1689,7 @@ def telegram_bot_worker():
                         "text": (
                             f"⚡ <b>JEO QUIZ PRO</b> AI botiga xush kelibsiz!\n\n"
                             f"✨ <b>AI Slayd yaratish:</b> shunchaki mavzu nomini yozing yoki "
-                            f"<code>/yarat Mikroiqtisodiyot asoslari</code> deb yuboring.\n\n"
+                            f"<code>/yarat Mantiq va falsafa</code> deb yuboring.\n\n"
                             f"🆔 Sizning Chat ID: <code>{chat_id}</code>\n"
                             f"📥 Mavjud xona slaydi: <code>/slayd {room_code}</code>\n"
                             f"🔎 Xona holati: <code>/xona {room_code}</code>"
@@ -1403,13 +1702,13 @@ def telegram_bot_worker():
                     if len(arg) < 2:
                         tg_api("sendMessage", {
                             "chat_id": chat_id,
-                            "text": "ℹ️ Mavzu nomini yozing. Masalan:\n<code>/yarat O‘zbekiston bank tizimi</code>",
+                            "text": "ℹ️ Mavzu nomini yozing. Masalan:\n<code>/yarat Mantiq va falsafa</code>",
                             "parse_mode": "HTML",
                         })
                     else:
                         tg_api("sendMessage", {
                             "chat_id": chat_id,
-                            "text": f"⏳ <b>«{xml_esc(arg)}»</b> mavzusida AI taqdimot tayyorlanmoqda (5–10 soniya)...",
+                            "text": f"⏳ <b>«{_clean_xml(arg)}»</b> mavzusida rasmli va diagrammali taqdimot tayyorlanmoqda...",
                             "parse_mode": "HTML",
                         })
                         threading.Thread(
@@ -1479,7 +1778,7 @@ ADMIN_EXPORT_WIDGET = r"""
   </button>
   <div id="jeo-dock-box" style="display:none;margin-top:8px;width:312px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:16px;padding:14px;box-shadow:0 14px 36px rgba(0,0,0,.55);">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <strong style="font-size:13px;color:#fbbf24;">📊 Slayd Eksport & Multi-AI</strong>
+      <strong style="font-size:13px;color:#fbbf24;">📊 Vizual Slayd & Multi-AI</strong>
       <button onclick="window.__jeoToggleDock(false)" style="background:transparent;border:none;color:#94a3b8;font-size:16px;cursor:pointer;">✕</button>
     </div>
     <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #1e293b;">
@@ -1493,9 +1792,9 @@ ADMIN_EXPORT_WIDGET = r"""
         <option value="groq">🚀 Groq (Llama 3.3 70B — Tezkor)</option>
         <option value="gemini">✨ Google Gemini</option>
       </select>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:5px;">✨ Istalgan mavzuda tezkor slayd:</div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:5px;">✨ Istalgan mavzuda rasmli slayd:</div>
       <div style="display:flex;gap:6px;">
-        <input id="jeo-quick-topic" type="text" placeholder="Masalan: Amir Temur, Python..." style="flex:1;background:#1e293b;border:1px solid #334155;color:#fff;border-radius:8px;padding:8px 10px;font-size:12px;outline:none;">
+        <input id="jeo-quick-topic" type="text" placeholder="Masalan: Mantiq va falsafa..." style="flex:1;background:#1e293b;border:1px solid #334155;color:#fff;border-radius:8px;padding:8px 10px;font-size:12px;outline:none;">
         <button onclick="window.__jeoQuickSlide()" style="background:#8b5cf6;color:#fff;border:none;border-radius:8px;padding:8px 11px;font-weight:700;font-size:12px;cursor:pointer;">
           Yaratish
         </button>
@@ -1562,7 +1861,7 @@ ADMIN_EXPORT_WIDGET = r"""
         const uname = (d.tg_bot && d.tg_bot.username) ? (" (@" + d.tg_bot.username + ")") : "";
         el.innerHTML = '<span style="color:#34d399;">● Bot faol' + uname + '</span> — /start bosib Chat ID oling';
       } else {
-        el.innerHTML = '<span style="color:#f87171;">● Bot ulanmagan</span> (Jeopardy xizmatida TELEGRAM_BOT_TOKEN kiriting)';
+        el.innerHTML = '<span style="color:#f87171;">● Bot ulanmagan</span>';
       }
     }
     const aiEl = document.getElementById("jeo-ai-active-list");
@@ -1631,7 +1930,7 @@ ADMIN_EXPORT_WIDGET = r"""
     typedTopic = topic;
     const prefAi = sel ? sel.value : "auto";
     msg.style.color = "#93c5fd";
-    msg.textContent = "«" + topic + "» bo‘yicha slayd yaratilmoqda...";
+    msg.textContent = "«" + topic + "» bo‘yicha vizual slayd yaratilmoqda...";
     try {
       const r = await origFetch("/api/admin", {
         method: "POST",
@@ -1648,7 +1947,7 @@ ADMIN_EXPORT_WIDGET = r"""
         msg.textContent = "Xato: " + (d.error || "Yaratilmadi");
       } else {
         msg.style.color = "#34d399";
-        msg.textContent = "✔ Slaydlar tayyorlanmoqda (2–5 soniya)...";
+        msg.textContent = "✔ Rasmli va diagrammali slayd tayyorlanmoqda...";
       }
     } catch(e) {
       msg.style.color = "#f87171";
@@ -1684,7 +1983,7 @@ ADMIN_EXPORT_WIDGET = r"""
         msg.textContent = "Xato: " + (data.error || "Yuborilmadi");
       } else {
         msg.style.color = "#34d399";
-        msg.textContent = "✔ Slaydlar .pptx formatda Telegramga yuborildi!";
+        msg.textContent = "✔ Vizual slaydlar Telegramga yuborildi!";
       }
     } catch(e) {
       msg.style.color = "#f87171";
@@ -2342,7 +2641,7 @@ class Handler(BaseHTTPRequestHandler):
 
                         room.ai_busy = True
                         room.ai_error = ""
-                        room.ai_status = f"«{topic}» bo‘yicha {slide_count} ta Pro slayd tayyorlanmoqda..."
+                        room.ai_status = f"«{topic}» bo‘yicha {slide_count} ta vizual slayd tayyorlanmoqda..."
                         threading.Thread(
                             target=run_ai_slides_worker,
                             args=(room, topic, slide_count, style, theme, file_part, extra_txt, pref_ai),
@@ -2374,7 +2673,7 @@ class Handler(BaseHTTPRequestHandler):
                         new_idx = len(room.slides["items"])
                         room.slides["items"].append(
                             normalize_slide_item({
-                                "layout": "bullets",
+                                "layout": "split_image",
                                 "badge": f"{new_idx + 1:02d} / YANGI",
                                 "title": "Yangi slayd sarlavhasi",
                                 "subtitle": "Qo‘shimcha ma’lumot",
@@ -2409,10 +2708,10 @@ class Handler(BaseHTTPRequestHandler):
                             chat_id,
                             f"{safe_name}.pptx",
                             pptx_data,
-                            caption=f"📊 {title} ({len(sl_copy['items'])} ta slayd) — Jeo Quiz Pro",
+                            caption=f"📊 {title} ({len(sl_copy['items'])} ta vizual slayd) — Jeo Quiz Pro",
                         )
 
-                    # --- ODDIY TEST (CLASSIC SELF-PACED TEST) ---
+                    # --- ODDIY TEST ---
                     elif action == "ctest_start":
                         q_count = max(1, min(25, int(data.get("q_count") or 25)))
                         time_limit = max(0, min(180, int(data.get("time_limit") or 0)))
