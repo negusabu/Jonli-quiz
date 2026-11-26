@@ -50,6 +50,24 @@ def get_active_ai_list():
     return providers
 
 
+def is_economics_topic(topic):
+    t = str(topic or "").lower()
+    econ_keys = (
+        "iqtisod", "moliya", "bank", "soliq", "byudjet", "korxona", "firma",
+        "xarajat", "foyda", "tannarx", "ish haqi", "mehnat", "bozor", "savdo",
+        "inflyatsiya", "yalpi", "yaim", "kredit", "investitsiya", "biznes",
+        "marketing", "menejment", "buxgalter", "kapital", "aksiya", "valyuta",
+        "eksport", "import", "monopoliya", "raqobat", "narx", "daromad", "renta",
+    )
+    return any(k in t for k in econ_keys)
+
+
+ECON_LEAK_RE = re.compile(
+    r"(UX\s*=\s*DX|Pc\s*=\s*s\s*\+\s*v|Sv\s*=\s*C\s*\+\s*v|F_?ich\s*=|R'\s*=\s*\(?R\s*/\s*W|VP\s*=\s*VH\s*/\s*R|ulgurji narx|avanslangan mablag)",
+    re.IGNORECASE,
+)
+
+
 PRESETS_META = [
     {"id": "econ", "icon": "📈", "title": "Iqtisodiyot va Moliya", "desc": "Mikro va makroiqtisodiyot, bank tizimi, bozor va moliya"},
     {"id": "logic", "icon": "🧠", "title": "Mantiq va Zehn", "desc": "Mantiqiy masalalar, sonlar ketma-ketligi va tezkor fikrlash"},
@@ -265,7 +283,7 @@ def _call_gemini_raw(prompt_text, file_part=None, json_mode=False):
         if m and m not in candidates:
             candidates.append(m)
 
-    gen_cfg = {"temperature": 0.7}
+    gen_cfg = {"temperature": 0.65}
     if json_mode:
         gen_cfg["responseMimeType"] = "application/json"
 
@@ -331,7 +349,7 @@ def _call_openrouter_raw(prompt_text, file_part=None, json_mode=False):
         body_obj = {
             "model": model_name,
             "messages": [{"role": "user", "content": content}],
-            "temperature": 0.7,
+            "temperature": 0.65,
         }
         req = urllib.request.Request(
             "[https://openrouter.ai/api/v1/chat/completions](https://openrouter.ai/api/v1/chat/completions)",
@@ -382,7 +400,7 @@ def _call_groq_raw(prompt_text, file_part=None, json_mode=False):
         body_obj = {
             "model": model_name,
             "messages": [{"role": "user", "content": content}],
-            "temperature": 0.7,
+            "temperature": 0.65,
         }
         if json_mode and "scout" not in model_name:
             body_obj["response_format"] = {"type": "json_object"}
@@ -491,18 +509,28 @@ def fetch_topic_image_bytes(query):
     return None, None
 
 
-def normalize_slide_item(raw_item, idx):
+def normalize_slide_item(raw_item, idx, allow_econ=True):
     layout = str(raw_item.get("layout") or ("cover" if idx == 0 else "split_image")).strip().lower()
-    valid_layouts = ("cover", "split_image", "diagram_flow", "comparison", "stats_chart", "bullets", "split", "stats", "quote", "summary")
+    valid_layouts = (
+        "cover", "split_image", "formula_model", "table_matrix",
+        "diagram_flow", "comparison", "stats_chart", "bullets", "split", "stats", "quote", "summary",
+    )
     if layout not in valid_layouts:
         layout = "split_image"
-    bullets = [str(b).strip() for b in (raw_item.get("bullets") or []) if str(b).strip()][:5]
+
+    def _clean_txt(val):
+        s = str(val or "").strip()
+        if not allow_econ and ECON_LEAK_RE.search(s):
+            return ""
+        return s
+
+    bullets = [_clean_txt(b) for b in (raw_item.get("bullets") or []) if _clean_txt(b)][:5]
     stats_raw = raw_item.get("stats") or []
     stats = []
     for st in stats_raw[:4]:
         if isinstance(st, dict):
-            lbl = str(st.get("label") or "").strip()
-            val = str(st.get("value") or "").strip()
+            lbl = _clean_txt(st.get("label"))
+            val = _clean_txt(st.get("value"))
             pct = st.get("pct")
             try:
                 pct_num = max(10, min(100, int(float(str(pct).replace("%", ""))))) if pct is not None else 75
@@ -515,22 +543,37 @@ def normalize_slide_item(raw_item, idx):
     d_steps = []
     for s_i, ds in enumerate(d_steps_raw[:4]):
         if isinstance(ds, dict):
-            st_lbl = str(ds.get("label") or ds.get("title") or f"{s_i + 1}-bosqich").strip()
-            st_desc = str(ds.get("desc") or ds.get("text") or "").strip()
+            st_lbl = _clean_txt(ds.get("label") or ds.get("title") or f"{s_i + 1}-bosqich")
+            st_desc = _clean_txt(ds.get("desc") or ds.get("text"))
             if st_lbl or st_desc:
                 d_steps.append({"step": f"{s_i + 1:02d}", "label": st_lbl, "desc": st_desc})
+
+    t_headers = [_clean_txt(h) for h in (raw_item.get("table_headers") or []) if _clean_txt(h)][:4]
+    t_rows = []
+    for rw in (raw_item.get("table_rows") or [])[:6]:
+        if isinstance(rw, list):
+            cells = [str(c or "").strip() for c in rw][:4]
+            if any(cells) and (allow_econ or not ECON_LEAK_RE.search(" ".join(cells))):
+                t_rows.append(cells)
+
+    formula_txt = _clean_txt(raw_item.get("formula"))
+    formula_desc = _clean_txt(raw_item.get("formula_desc"))
 
     return {
         "layout": layout,
         "badge": str(raw_item.get("badge") or f"{idx + 1:02d}-SLAYD").strip(),
-        "title": str(raw_item.get("title") or f"Slayd #{idx + 1}").strip(),
-        "subtitle": str(raw_item.get("subtitle") or "").strip(),
+        "title": _clean_txt(raw_item.get("title")) or f"Slayd #{idx + 1}",
+        "subtitle": _clean_txt(raw_item.get("subtitle")),
         "bullets": bullets,
-        "highlight": str(raw_item.get("highlight") or "").strip(),
+        "formula": formula_txt,
+        "formula_desc": formula_desc,
+        "table_headers": t_headers,
+        "table_rows": t_rows,
+        "highlight": _clean_txt(raw_item.get("highlight")),
         "stats": stats,
         "diagram_steps": d_steps,
         "image_query": str(raw_item.get("image_query") or "").strip(),
-        "notes": str(raw_item.get("notes") or "").strip(),
+        "notes": _clean_txt(raw_item.get("notes")),
     }
 
 
@@ -593,30 +636,31 @@ class Room:
         self.clear_subgames()
 
     def build_slides_from_current_questions(self, theme="royal"):
+        allow_ec = is_economics_topic(self.topic_title)
         items = [
             normalize_slide_item({
                 "layout": "cover",
-                "badge": "01 / TAQDIMOT",
+                "badge": "01 / REJA",
                 "title": self.topic_title or "Interaktiv Ma'ruza",
-                "subtitle": f"{len(self.cats)} ta asosiy yo‘nalish • {len(self.questions)} ta tahliliy savol-javob",
-                "bullets": self.cats[:4],
-                "highlight": "Jeo Quiz Pro — Vizual Taqdimot",
+                "subtitle": f"REJA: {len(self.cats)} ta asosiy yo‘nalish • {len(self.questions)} ta tahliliy savol",
+                "bullets": self.cats[:5],
+                "highlight": "Jeo Quiz Pro — Akademik Infografik Taqdimot",
                 "image_query": self.topic_title or "Education science",
-                "notes": "Kirish qismi: mavzuning umumiy tuzilishi bilan tanishtiring.",
-            }, 0)
+                "notes": "Kirish qismi: mavzuning rejasi bilan tanishtiring.",
+            }, 0, allow_econ=allow_ec)
         ]
-        layouts = ["split_image", "diagram_flow", "comparison", "stats_chart", "split_image"]
+        layouts = ["split_image", "formula_model", "table_matrix", "diagram_flow", "comparison"]
         for c_idx, cat in enumerate(self.cats):
             cat_qs = [q for q in self.questions if q["cat"] == cat][:4]
             bullets = []
             d_steps = []
-            stats = []
+            t_rows = []
             for idx_q, q in enumerate(cat_qs):
                 ans_txt = q["opts"][q["c"]] if (q.get("opts") and q.get("c") is not None) else q.get("ans", "")
                 exp_txt = f" — {q['exp']}" if q.get("exp") else ""
                 bullets.append(f"{q['q']} → {ans_txt}{exp_txt}")
                 d_steps.append({"label": ans_txt[:36], "desc": q["q"][:85]})
-                stats.append({"label": ans_txt[:32], "value": f"{(idx_q + 1) * 100} ball", "pct": 45 + idx_q * 15})
+                t_rows.append([f"0{idx_q+1}", ans_txt[:34], (q.get("exp") or q["q"])[:55]])
             key_exp = cat_qs[0].get("exp", "") if cat_qs else ""
             items.append(
                 normalize_slide_item({
@@ -625,12 +669,15 @@ class Room:
                     "title": cat,
                     "subtitle": f"{cat} yo‘nalishi bo‘yicha asosiy qoidalar va tahlil",
                     "bullets": bullets,
+                    "formula": f"{cat}: Asosiy Qoida va Tizim",
+                    "formula_desc": key_exp or f"{cat} doirasidagi asosiy tushunchalar o‘zaro bog‘liq.",
+                    "table_headers": ["№", "Asosiy tushuncha", "Izoh va ahamiyati"],
+                    "table_rows": t_rows,
                     "diagram_steps": d_steps,
-                    "stats": stats,
                     "image_query": f"{cat} {self.topic_title}",
                     "highlight": key_exp or f"{cat} bo‘yicha muhim xulosalar",
                     "notes": f"{cat} bo‘limidagi asosiy faktlarni tushuntiring.",
-                }, c_idx + 1)
+                }, c_idx + 1, allow_econ=allow_ec)
             )
         items.append(
             normalize_slide_item({
@@ -639,14 +686,14 @@ class Room:
                 "title": "Asosiy Xulosalar va Mustahkamlash",
                 "subtitle": f"«{self.topic_title}» mavzusi yakuni",
                 "bullets": [
-                    "Barcha 5 ta asosiy yo‘nalish tizimli ko‘rib chiqildi",
-                    "Nazariy bilimlar amaliy savol-javoblar bilan mustahkamlandi",
+                    "Barcha rejadagi asosiy yo‘nalishlar tizimli ko‘rib chiqildi",
+                    "Nazariy qoidalar jadval va sxemalar asosida mustahkamlandi",
                     "Bilimlarni tekshirish uchun Oddiy Test rejimiga o‘tish mumkin",
                     "Savol va takliflar uchun ochiq muhokama",
                 ],
                 "highlight": "E’tiboringiz uchun rahmat!",
                 "notes": "Mavzuni yakunlang.",
-            }, len(items))
+            }, len(items), allow_econ=allow_ec)
         )
         self.slides = {
             "title": self.topic_title or "Taqdimot",
@@ -874,2073 +921,1224 @@ def generate_room_code():
 
 def run_ai_board_worker(room, topic, level, file_part=None, extra_text="", preferred=None):
     try:
+        allow_econ = is_economics_topic(topic)
+        domain_rule = (
+            "Mavzu iqtisodiyotga oid: zarur o‘rinlarda iqtisodiy tushunchalar va formulalardan foydalan."
+            if allow_econ
+            else f"MUHIM: '{topic}' mavzusi iqtisodiyotga oid EMAS! Savol va izohlarda iqtisodiy formulalar (UX=DX+O'X, Pc=s+v, Sv=C+v+m, F_ich, R', VP va h.k.) umuman ishlatilmasin."
+        )
         base_prompt = (
             f"O‘zbek tilida '{topic}' mavzusida ({level} uchun) Jeopardy va viktorina o‘yinlariga mos "
             f"5 ta bo‘lim va har bir bo‘limda 5 tadan — jami 25 ta test savol tuz.\n"
+            f"{domain_rule}\n"
             f"Qat'iy JSON formatida javob ber:\n"
             f'{{"cats": ["Bo‘lim 1", "Bo‘lim 2", "Bo‘lim 3", "Bo‘lim 4", "Bo‘lim 5"], '
             f'"questions": [{{"cat": "Bo‘lim 1", "q": "Savol?", "opts": ["A", "B", "C", "D"], "c": 0, "exp": "Qisqa izoh"}} ...]}}\n'
-            f"Talablar: 'questions' ro‘yxatida aynan 25 ta obyekt bo‘lsin, 'c' 0 dan 3 gacha to‘g‘ri variant indeksi bo‘lsin."
+            f"Har bir savolda 4 ta variant ('opts') va to‘g‘ri javob indeksi ('c': 0, 1, 2 yoki 3) aniq bo‘lsin."
         )
         if extra_text:
-            base_prompt += f"\n\nManba matni:\n{extra_text[:24000]}"
-
-        raw = call_gemini(base_prompt, file_part=file_part, json_mode=True, preferred=preferred)
-        parsed = extract_json_block(raw)
-        cats = parsed.get("cats") or []
-        qs = parsed.get("questions") or []
-        if len(cats) != 5 or len(qs) < 25:
-            raise RuntimeError("AI 25 ta to‘liq savol qaytarmadi, qayta urinib ko‘ring.")
-
-        formatted = []
-        for idx in range(25):
-            c_idx = idx // 5
-            r_idx = idx % 5
-            item = qs[idx]
-            opts = [str(x) for x in (item.get("opts") or [])][:4]
-            while len(opts) < 4:
-                opts.append("Variant")
-            c_val = int(item.get("c", 0))
-            if c_val < 0 or c_val > 3:
-                c_val = 0
-            formatted.append({
-                "cat": str(cats[c_idx]),
-                "pts": (r_idx + 1) * 100,
-                "q": str(item.get("q", "Savol")),
-                "opts": opts,
-                "c": c_val,
-                "ans": opts[c_val],
-                "exp": str(item.get("exp", "")),
-            })
+            base_prompt += f"\n\nManba matni asosida savollar tuz:\n{extra_text[:18000]}"
 
         with LOCK:
-            room.cats = [str(x) for x in cats]
-            room.questions = formatted
-            room.topic_title = topic
+            room.ai_status = "AI 25 ta savol va 5 ta bo‘lim tuzmoqda..."
+
+        raw = call_gemini(base_prompt, file_part=file_part, json_mode=True, preferred=preferred)
+        data = extract_json_block(raw)
+
+        raw_cats = [str(c).strip() for c in (data.get("cats") or []) if str(c).strip()]
+        raw_qs = data.get("questions") or []
+
+        if len(raw_cats) < 5:
+            seen = []
+            for q in raw_qs:
+                ct = str(q.get("cat") or "").strip()
+                if ct and ct not in seen:
+                    seen.append(ct)
+            for ct in seen:
+                if ct not in raw_cats:
+                    raw_cats.append(ct)
+            while len(raw_cats) < 5:
+                raw_cats.append(f"{len(raw_cats) + 1}-bo‘lim")
+        cats = raw_cats[:5]
+
+        by_cat = {c: [] for c in cats}
+        leftover = []
+        for q in raw_qs:
+            if not isinstance(q, dict):
+                continue
+            q_txt = str(q.get("q") or "").strip()
+            opts = [str(o).strip() for o in (q.get("opts") or []) if str(o).strip()]
+            if not q_txt or len(opts) < 2:
+                continue
+            while len(opts) < 4:
+                opts.append(f"Variant {len(opts) + 1}")
+            opts = opts[:4]
+            try:
+                c_idx = int(q.get("c", 0))
+            except Exception:
+                c_idx = 0
+            if c_idx < 0 or c_idx > 3:
+                c_idx = 0
+            item = {
+                "cat": str(q.get("cat") or "").strip(),
+                "q": q_txt,
+                "opts": opts,
+                "c": c_idx,
+                "ans": opts[c_idx],
+                "exp": str(q.get("exp") or "").strip(),
+            }
+            if item["cat"] in by_cat and len(by_cat[item["cat"]]) < 5:
+                by_cat[item["cat"]].append(item)
+            else:
+                leftover.append(item)
+
+        final_questions = []
+        for c in cats:
+            bucket = by_cat[c]
+            while len(bucket) < 5 and leftover:
+                extra_item = leftover.pop(0)
+                extra_item["cat"] = c
+                bucket.append(extra_item)
+            while len(bucket) < 5:
+                n = len(bucket) + 1
+                bucket.append({
+                    "cat": c,
+                    "q": f"{topic}: {c} yo‘nalishi bo‘yicha {n}-savol?",
+                    "opts": ["To‘g‘ri ilmiy yondashuv", "Noto‘g‘ri talqin", "Qisman bog‘liq", "Aloqasiz tushuncha"],
+                    "c": 0,
+                    "ans": "To‘g‘ri ilmiy yondashuv",
+                    "exp": f"{c} bo‘yicha asosiy nazariy qoida.",
+                })
+            for r_idx, q_item in enumerate(bucket[:5]):
+                q_item["cat"] = c
+                q_item["pts"] = (r_idx + 1) * 100
+                final_questions.append(q_item)
+
+        with LOCK:
+            room.topic_title = topic or "AI Viktorina"
+            room.cats = cats
+            room.questions = final_questions
             room.used = [False] * 25
             room.cur = None
             room.revealed = False
             room.answers = {}
             room.text_answers = {}
             room.ai_grades = {}
-            room.ai_note = ""
             room.clear_subgames()
             room.ai_busy = False
+            room.ai_status = ""
             room.ai_error = ""
-            room.ai_status = f"✔ «{topic}» bo‘yicha 25 ta savol tayyor!"
+            room.ai_note = f"✅ «{room.topic_title}» bo‘yicha 25 ta savol tayyor!"
             room.touch()
-    except Exception as e:
+    except Exception as ex:
         with LOCK:
             room.ai_busy = False
-            room.ai_error = str(e)
             room.ai_status = ""
+            room.ai_error = str(ex)
+            room.touch()
 
 
-def _build_fallback_slides(room, topic, slide_count, style, extra_text=""):
-    items = [
-        normalize_slide_item({
-            "layout": "cover",
-            "badge": "01 / KIRISH",
-            "title": topic,
-            "subtitle": f"{style} • Chuqurlashtirilgan ilmiy-tahliliy taqdimot",
-            "bullets": [
-                f"«{topic}» mavzusining kelib chiqishi, mohiyati va asosiy tushunchalari",
-                "Asosiy qonuniyatlar, maktablar va tarixiy rivojlanish bosqichlari",
-                "Zamonaviy fanda tutgan o‘rni va amaliy ahamiyati",
-            ],
-            "highlight": "Jeo Quiz Pro — Vizual Taqdimot",
-            "image_query": topic,
-            "notes": f"Assalomu alaykum! Bugun «{topic}» mavzusini batafsil ko‘rib chiqamiz.",
-        }, 0)
-    ]
-
-    if extra_text.strip():
-        sents = [s.strip() for s in re.split(r"[.!?\n]+", extra_text) if len(s.strip()) > 35]
-        chunk_size = max(3, len(sents) // max(1, slide_count - 2))
-        for i in range(1, slide_count - 1):
-            chunk = sents[(i - 1) * chunk_size : i * chunk_size][:4]
-            if not chunk:
-                chunk = [
-                    f"{topic} doirasidagi asosiy tushunchalar va ilmiy ta’riflar",
-                    "Asosiy tamoyillar va ularning o‘zaro mantiqiy bog‘liqligi",
-                    "Amaliy misollar va tahliliy xulosalar",
-                ]
-            items.append(normalize_slide_item({
-                "layout": "split_image" if i % 2 == 1 else "diagram_flow",
-                "badge": f"{i + 1:02d} / TAHLIL",
-                "title": f"{topic}: {i}-yo‘nalish",
-                "subtitle": "Yuklangan manba asosida tizimli tahlil",
-                "bullets": chunk,
-                "diagram_steps": [{"label": f"{j+1}-qadam", "desc": c[:75]} for j, c in enumerate(chunk[:4])],
-                "image_query": topic,
-                "highlight": chunk[0][:140],
-                "notes": "Ushbu slayddagi har bir bandni misollar bilan izohlang.",
-            }, i))
-    else:
-        templates = [
-            {
-                "layout": "split_image",
-                "badge": "02 / MOHIYAT",
-                "title": f"«{topic}» tushunchasi va tarixiy ildizlari",
-                "subtitle": "Asosiy ta’riflar, obyekt va predmeti",
-                "bullets": [
-                    f"Ilmiy ta’rif: «{topic}» — inson tafakkuri, bilish jarayoni va olam qonuniyatlarini o‘rganuvchi muhim yo‘nalish.",
-                    "Tarixiy shakllanishi: Qadimgi Sharq (Forobiy, Ibn Sino) va Yunon (Arastu, Aflotun) mutafakkirlarining qo‘shgan hissasi.",
-                    "O‘rganish predmeti: asosiy kategoriyalar, tushunchalar tizimi va ularni tahlil qilish metodlari.",
-                    "Zamonaviy talqin: klassik qarashlar va bugungi ilmiy yondashuvlar uyg‘unligi.",
-                ],
-                "image_query": f"{topic} philosophy history",
-                "highlight": f"«{topic}» — tizimli va tanqidiy fikrlashning asosiy poydevori.",
-            },
-            {
-                "layout": "diagram_flow",
-                "badge": "03 / BOSQICHLAR",
-                "title": f"{topic}: Rivojlanish va bilish bosqichlari",
-                "subtitle": "Oddiydan murakkabga tomon mantiqiy ketma-ketlik",
-                "bullets": [
-                    "1-bosqich: Kuzatish va dastlabki faktlarni to‘plash",
-                    "2-bosqich: Tushuncha va hukmlarni shakllantirish",
-                    "3-bosqich: Mantiqiy xulosa chiqarish va isbotlash",
-                    "4-bosqich: Amaliyotda tekshirish va nazariy umumlashtirish",
-                ],
-                "diagram_steps": [
-                    {"label": "1. Kuzatish", "desc": "Hodisa va faktlarni dastlabki o‘rganish"},
-                    {"label": "2. Tahlil", "desc": "Asosiy belgi va qonuniyatlarni ajratish"},
-                    {"label": "3. Xulosa", "desc": "Mantiqiy isbot va nazariy asoslash"},
-                    {"label": "4. Amaliyot", "desc": "Real hayot va fanda qo‘llash"},
-                ],
-                "highlight": "Har bir ilmiy xulosa izchil mantiqiy zanjirga tayanadi.",
-            },
-            {
-                "layout": "comparison",
-                "badge": "04 / TAQQOSLASH",
-                "title": "Klassik va Zamonaviy Yondashuvlar Qiyosi",
-                "subtitle": f"{topic} sohasidagi ikki asosiy yo‘nalish tahlili",
-                "bullets": [
-                    "Klassik yondashuv: qat’iy qoidalar, deduktiv isbotlash va o‘zgarmas aksiomalarga asoslanadi.",
-                    "Klassik maktab vakillari: asosiy e’tiborni shakl va nazariy mukammallikka qaratgan.",
-                    "Zamonaviy yondashuv: ko‘p qirrali tahlil, ehtimollik va amaliy natijadorlikni ustun qo‘yadi.",
-                    "Zamonaviy metodlar: fanlararo integratsiya va raqamli texnologiyalar bilan boyitilgan.",
-                ],
-                "highlight": "Ikkala yondashuv bir-birini to‘ldirib, yaxlit ilmiy manzarani yaratadi.",
-            },
-            {
-                "layout": "stats_chart",
-                "badge": "05 / KO‘RSATKICHLAR",
-                "title": f"{topic}ning Fanlararo Ta’siri",
-                "subtitle": "Zamonaviy ta’lim va tadqiqotlardagi ahamiyat ulushi",
-                "bullets": [
-                    "Tanqidiy fikrlash va argumentatsiya ko‘nikmalarini shakllantirishda asosiy o‘rin tutadi.",
-                    "Ilmiy tadqiqot metodologiyasi va to‘g‘ri xulosa chiqarish madaniyatini rivojlantiradi.",
-                    "Sun’iy intellekt, huquq va gumanitar fanlar bilan uzviy bog‘langan.",
-                ],
-                "stats": [
-                    {"label": "Tanqidiy fikrlash", "value": "92%", "pct": 92},
-                    {"label": "Ilmiy metodologiya", "value": "85%", "pct": 85},
-                    {"label": "Fanlararo bog‘liqlik", "value": "78%", "pct": 78},
-                    {"label": "Amaliy qo‘llanilish", "value": "70%", "pct": 70},
-                ],
-                "highlight": "Nazariy bilim va mantiqiy tahlil har qanday sohaning muvaffaqiyat kalitidir.",
-            },
-            {
-                "layout": "split_image",
-                "badge": "06 / AMALIYOT",
-                "title": f"{topic}: Hayotiy Misollar va Qo‘llanilishi",
-                "subtitle": "Nazariy qoidalarning real vaziyatlarda namoyon bo‘lishi",
-                "bullets": [
-                    "Ilmiy bahslarda: to‘g‘ri dalil keltirish va mantiqiy xatolarni (sofizmlarni) aniqlash.",
-                    "Ta’lim jarayonida: murakkab matnlarni tahlil qilish va mustaqil fikr bildirish.",
-                    "Kundalik hayotda: asosli qaror qabul qilish va axborotlarni tanqidiy saralash.",
-                ],
-                "image_query": "Aristotle logic library books",
-                "highlight": "Bilimning haqiqiy kuchi uning amaliyotda to‘g‘ri qo‘llanilishidadir.",
-            },
-        ]
-        for i in range(1, slide_count - 1):
-            tpl = copy.deepcopy(templates[(i - 1) % len(templates)])
-            tpl["badge"] = f"{i + 1:02d} / BO‘LIM"
-            items.append(normalize_slide_item(tpl, i))
-
-    items.append(normalize_slide_item({
-        "layout": "summary",
-        "badge": f"{len(items) + 1:02d} / XULOSA",
-        "title": "Yakuniy Xulosalar va Mustahkamlash",
-        "subtitle": f"«{topic}» mavzusi bo‘yicha asosiy natijalar",
-        "bullets": [
-            f"«{topic}»ning nazariy asoslari va tarixiy rivojlanishi o‘rganildi",
-            "Asosiy bosqichlar va mantiqiy bog‘liqliklar diagramma asosida tahlil qilindi",
-            "Klassik va zamonaviy yondashuvlarning o‘ziga xos jihatlari solishtirildi",
-            "Bilimlarni mustahkamlash uchun Oddiy Test yoki Viktorina o‘yinini boshlang",
-        ],
-        "highlight": "E’tiboringiz uchun rahmat! Savollar bormi?",
-        "notes": "Mavzuni yakunlang.",
-    }, len(items)))
-    return items[:slide_count]
-
-
-def run_ai_slides_worker(room, topic, slide_count, style, theme, file_part=None, extra_text="", preferred=None):
+def run_ai_slides_worker(room, topic, level, slide_count=10, theme="royal", file_part=None, extra_text="", preferred=None):
     try:
+        count = max(5, min(16, int(slide_count or 10)))
+        allow_econ = is_economics_topic(topic)
+
+        if allow_econ:
+            domain_instruction = (
+                "MAVZU IQTISODIYOT/MOLIYA/BIZNESGA OID:\n"
+                "- Akademik ma'ruza slaydlaridek chuqur, tizimli va formulalar bilan boyitilgan holda tuz.\n"
+                "- Kerakli slaydlarda 'formula' va 'formula_desc' maydonlarini aniq iqtisodiy formulalar bilan to‘ldir "
+                "(masalan: xarajatlar, tannarx, foyda massasi va normasi, nominal/real ish haqi yoki mavzuga mos formulalar).\n"
+                "- Har bir bo‘limda ta'rif, tarkibiy qismlar, omillar, jadval va xulosa shiorini ber."
+            )
+            layout_hint = (
+                "Slayd turlari ('layout') xilma-xil almashib kelsin: "
+                "1-slayd albatta 'cover' (MAVZU va REJA), o‘rta slaydlar 'split_image', 'formula_model', 'table_matrix', "
+                "'diagram_flow', 'comparison', 'stats_chart', oxirgi slayd albatta 'summary'."
+            )
+        else:
+            domain_instruction = (
+                f"QAT'IY CHEKLOV — '{topic}' MAVZUSI IQTISODIYOTGA OID EMAS:\n"
+                "- Hech qanday iqtisodiy formula, belgi yoki atama (masalan: UX = DX + O'X, Pc = s + v, Sv = C + v + m, "
+                "F_ich = Nu - T, R' = R / W, VP = VH / R, tannarx, ulgurji narx, avanslangan mablag', rentabellik, "
+                "foyda normasi, ish haqi tarif setkasi va h.k.) MUTLAQO ISHLATILMASIN!\n"
+                "- Barcha matnlar, ta'riflar, jadvallar, bosqichlar va sxemalar faqat '{topic}' fanining o‘z mazmunidan tuzilsin.\n"
+                "- Agar '{topic}' fanida haqiqiy ilmiy/matematik formula bo‘lsa (masalan fizika, kimyo, matematika), "
+                "faqat o‘sha fanning o‘z formulasini yoz. Agar mavzu gumanitar yoki formulasi yo‘q soha bo‘lsa "
+                "(tarix, adabiyot, geografiya, biologiya, til va h.k.), 'formula_model' o‘rniga 'diagram_flow', "
+                "'comparison', 'table_matrix' yoki 'split_image' ishlat va 'formula' maydonini bo‘sh (\"\") qoldir!"
+            )
+            layout_hint = (
+                "Slayd turlari ('layout') akademik va infografik tarzda almashib kelsin: "
+                "1-slayd albatta 'cover' (MAVZU va REJA), o‘rta slaydlar 'split_image', 'diagram_flow', 'table_matrix', "
+                "'comparison', 'stats_chart' (va faqat mavzuda haqiqiy formula bo‘lsagina 'formula_model'), "
+                "oxirgi slayd albatta 'summary'."
+            )
+
         prompt = (
-            f"Sen universitet professori va vizual taqdimot dizaynerisan. O‘zbek tilida '{topic}' mavzusida "
-            f"({style} uslubida) aynan {slide_count} ta VIZUAL, BATAFSIL va ILMIY taqdimot slaydi yarat.\n\n"
-            f"ENG MUHIM QOIDA: '{topic}' qaysi fanga tegishli bo‘lsa (falsafa, mantiq, tarix, fizika, IT, adabiyot yoki iqtisodiyot), "
-            f"FAQAT o‘sha fanning asl tushunchalari, olimlari, qonunlari va real misollarini yoz! Boshqa fan atamalarini umuman aralashtirma!\n\n"
-            f"MAKETLAR (layout) VA VIZUAL ELEMENTLAR:\n"
-            f"- 1-slayd: layout='cover' (inglizcha 'image_query' yoz, masalan: 'Aristotle philosophy' yoki 'Solar system')\n"
-            f"- 2-slayd: layout='split_image' (chapda 4 ta mazmunli bullet, o‘ngda rasm uchun inglizcha 'image_query')\n"
-            f"- 3-slayd: layout='diagram_flow' (4 bosqichli sxema uchun 'diagram_steps': [{{'label': 'Bosqich nomi', 'desc': 'Qisqa izoh'}}])\n"
-            f"- 4-slayd: layout='comparison' (2 tomonni solishtirish uchun aynan 4 ta bullet: 1-2-si chap karta, 3-4-si o‘ng karta)\n"
-            f"- 5-slayd: layout='stats_chart' (diagramma uchun 4 ta 'stats': [{{'label': 'Ko‘rsatkich', 'value': '85%', 'pct': 85}}])\n"
-            f"- Keyingi slaydlar: 'split_image', 'diagram_flow', 'comparison' larni navbat bilan ishlat, oxirgi slayd: layout='summary' (4 ta xulosa bullet).\n"
-            f"- Har bir slaydda 'image_query' maydoniga Wikipedia'dan rasm topish uchun 2–3 ta INGLIZCHA kalit so‘z yoz.\n\n"
-            f"Faqat sof JSON obyekt qaytar:\n"
-            f'{{"title": "To‘liq sarlavha", "slides": ['
-            f'{{"layout": "cover", "badge": "01 / KIRISH", "title": "Sarlavha", "subtitle": "Taglavha", '
-            f'"bullets": ["1-fikr", "2-fikr", "3-fikr", "4-fikr"], '
-            f'"diagram_steps": [{{"label": "1-qadam", "desc": "Izoh"}}], '
+            f"O‘zbek tilida '{topic}' mavzusida ({level} darajasi uchun) {count} ta yuqori sifatli, "
+            f"akademik-infografik taqdimot slaydlarini tuz.\n"
+            f"{domain_instruction}\n"
+            f"{layout_hint}\n\n"
+            f"Har bir slayd tuzilmasi (namunaviy akademik taqdimot uslubida):\n"
+            f"- 1-slayd ('cover'): 'title' = MAVZU nomi, 'subtitle' = 'REJA:' va qisqa tavsif, 'bullets' = 4-5 ta reja bandi, 'highlight' = mavzu shiori.\n"
+            f"- Ichki slaydlar: aniq sarlavha ('title'), qisqa ta'rif ('subtitle'), 3-5 ta lo‘nda tahliliy band ('bullets'), "
+            f"taqqoslash/tasnif jadvali ('table_headers' + 'table_rows'), 3-4 bosqichli jarayon sxemasi ('diagram_steps'), "
+            f"ko‘rsatkichlar ('stats'), ingliz tilida rasm qidirish kalit so‘zi ('image_query') va pastki xulosa shiori ('highlight').\n"
+            f"- Oxirgi slayd ('summary'): 'Asosiy xulosalar' va yakuniy shior.\n\n"
+            f"Faqat quyidagi JSON formatida javob qaytar:\n"
+            f'{{"title": "{topic}", "slides": ['
+            f'{{"layout": "cover", "badge": "01 / REJA", "title": "{topic}", "subtitle": "REJA: Asosiy yo‘nalishlar", '
+            f'"bullets": ["1-reja", "2-reja", "3-reja", "4-reja"], "formula": "", "formula_desc": "", '
+            f'"table_headers": [], "table_rows": [], '
+            f'"diagram_steps": [{{"label": "1-bosqich", "desc": "Qisqa izoh"}}], '
             f'"stats": [{{"label": "Ko‘rsatkich", "value": "85%", "pct": 85}}], '
-            f'"image_query": "English keywords", "highlight": "Asosiy xulosa", "notes": "Nutq"}}'
+            f'"highlight": "Xulosa shiori!", "image_query": "english keywords for topic", "notes": "Ma’ruzachi izohi"}}'
             f"]}}"
         )
         if extra_text:
-            prompt += f"\n\nManba matnidagi faktlarga asoslan:\n{extra_text[:22000]}"
-
-        raw = call_gemini(prompt, file_part=file_part, json_mode=True, preferred=preferred)
-        parsed = extract_json_block(raw)
-        raw_slides = parsed.get("slides") or []
-        if not raw_slides:
-            raise RuntimeError("503: AI bo‘sh ro‘yxat qaytardi.")
-
-        items = [normalize_slide_item(it, i) for i, it in enumerate(raw_slides[:16])]
-        deck_title = str(parsed.get("title") or topic).strip()
+            prompt += f"\n\nQuyidagi yuklangan hujjat matni asosida slaydlar tayyorla:\n{extra_text[:20000]}"
 
         with LOCK:
-            room.topic_title = deck_title
-            room.slides = {"title": deck_title, "theme": theme, "cur_idx": 0, "items": items}
+            room.ai_status = f"AI «{topic}» mavzusida {count} ta Pro Slayd yaratmoqda..."
+
+        raw = call_gemini(prompt, file_part=file_part, json_mode=True, preferred=preferred)
+        data = extract_json_block(raw)
+        raw_slides = data.get("slides") or data.get("items") or []
+        if not raw_slides:
+            raise RuntimeError("AI slaydlar ro‘yxatini bo‘sh qaytardi.")
+
+        items = []
+        for idx, rs in enumerate(raw_slides[:16]):
+            if not isinstance(rs, dict):
+                continue
+            norm = normalize_slide_item(rs, idx, allow_econ=allow_econ)
+            if not allow_econ:
+                if ECON_LEAK_RE.search(norm["formula"]) or ECON_LEAK_RE.search(norm["formula_desc"]):
+                    norm["formula"] = ""
+                    norm["formula_desc"] = ""
+                if norm["layout"] == "formula_model" and not norm["formula"]:
+                    norm["layout"] = "diagram_flow" if norm["diagram_steps"] else "split_image"
+            items.append(norm)
+
+        if not items:
+            raise RuntimeError("Slaydlarni formatlashda xatolik yuz berdi.")
+
+        items[0]["layout"] = "cover"
+        if len(items) > 1 and items[-1]["layout"] not in ("summary", "quote"):
+            items[-1]["layout"] = "summary"
+
+        with LOCK:
+            room.topic_title = str(data.get("title") or topic).strip()
+            room.slides = {
+                "title": room.topic_title,
+                "theme": theme or "royal",
+                "cur_idx": 0,
+                "items": items,
+            }
             room.mode = "slides"
             room.ai_busy = False
+            room.ai_status = ""
             room.ai_error = ""
-            room.ai_status = f"✔ «{deck_title}» bo‘yicha {len(items)} ta rasmli va diagrammali slayd tayyor!"
+            room.ai_note = f"✅ «{room.topic_title}» bo‘yicha {len(items)} ta Pro Slayd tayyor!"
             room.touch()
-    except Exception as e:
-        err_msg = str(e)
-        if "503" in err_msg or "band" in err_msg.lower():
-            items = _build_fallback_slides(room, topic, slide_count, style, extra_text)
-            with LOCK:
-                room.topic_title = topic
-                room.slides = {"title": topic, "theme": theme, "cur_idx": 0, "items": items}
-                room.mode = "slides"
-                room.ai_busy = False
-                room.ai_error = ""
-                room.ai_status = f"⚠ AI band — «{topic}» bo‘yicha {len(items)} ta diagrammali slayd tuzildi!"
-                room.touch()
-        else:
-            with LOCK:
-                room.ai_busy = False
-                room.ai_error = err_msg
-                room.ai_status = ""
+    except Exception as ex:
+        with LOCK:
+            room.ai_busy = False
+            room.ai_status = ""
+            room.ai_error = str(ex)
+            room.touch()
 
 
-THEME_PALETTES = {
-    "royal": ("0B132B", "FFFFFF", "F59E0B", "1C2541", "3B82F6", "2A3964"),
-    "emerald": ("022C22", "FFFFFF", "34D399", "064E3B", "10B981", "0B6E53"),
-    "sunset": ("230C2B", "FFFFFF", "FBBF24", "4A154B", "EC4899", "69216B"),
-    "obsidian": ("09090B", "FAFAFA", "FACC15", "18181B", "38BDF8", "27272A"),
-    "minimal": ("F8FAFC", "0F172A", "2563EB", "FFFFFF", "0EA5E9", "E2E8F0"),
-}
+def run_ai_grade_worker(room):
+    try:
+        with LOCK:
+            if room.cur is None or not (0 <= room.cur < len(room.questions)):
+                return
+            q = copy.deepcopy(room.questions[room.cur])
+            t_ans = copy.deepcopy(room.text_answers)
+            teams = list(room.teams)
+
+        if not t_ans:
+            return
+
+        correct_ref = q["opts"][q["c"]] if (q.get("opts") and q.get("c") is not None) else q.get("ans", "")
+        entries = []
+        for k, val in t_ans.items():
+            try:
+                t_idx = int(k)
+                t_name = teams[t_idx] if 0 <= t_idx < len(teams) else f"{t_idx+1}-jamoa"
+            except Exception:
+                t_name = str(k)
+            entries.append(f"- ID={k} ({t_name}): {val}")
+
+        prompt = (
+            f"Savol: {q['q']}\n"
+            f"To‘g‘ri javob namunasi: {correct_ref}\n"
+            f"Izoh: {q.get('exp', '')}\n\n"
+            f"Jamoalar yozgan javoblar:\n" + "\n".join(entries) + "\n\n"
+            f"Har bir jamoa javobini 0 dan 100 gacha ball bilan bahola va qisqa o‘zbekcha izoh yoz.\n"
+            f'Faqat JSON qaytar: {{"grades": {{"0": {{"score": 100, "ok": true, "comment": "To‘liq to‘g‘ri"}}}}}}'
+        )
+        raw = call_gemini(prompt, json_mode=True)
+        parsed = extract_json_block(raw)
+        grades = parsed.get("grades") or {}
+        with LOCK:
+            room.ai_grades = grades
+            room.touch()
+    except Exception as ex:
+        with LOCK:
+            room.ai_error = f"AI baholash xatosi: {ex}"
 
 
-def _clean_xml(val):
-    s = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", str(val or ""))
-    return xml_esc(s)
+def build_pptx_bytes(slides_data):
+    if not slides_data or not slides_data.get("items"):
+        raise RuntimeError("Eksport qilish uchun slaydlar mavjud emas.")
 
-
-def _sp_rect(sp_id, name, x, y, cx, cy, fill_hex=None, border_hex=None, prst="roundRect", paras_xml="<a:p/>", l_ins=150000, t_ins=110000):
-    fill_tag = f'<a:solidFill><a:srgbClr val="{fill_hex}"/></a:solidFill>' if fill_hex else "<a:noFill/>"
-    ln_tag = f'<a:ln w="12700"><a:solidFill><a:srgbClr val="{border_hex}"/></a:solidFill></a:ln>' if border_hex else "<a:ln><a:noFill/></a:ln>"
-    return f'''<p:sp>
-  <p:nvSpPr><p:cNvPr id="{sp_id}" name="{_clean_xml(name)}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
-  <p:spPr>
-    <a:xfrm><a:off x="{x}" y="{y}"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>
-    <a:prstGeom prst="{prst}"><a:avLst/></a:prstGeom>
-    {fill_tag}
-    {ln_tag}
-  </p:spPr>
-  <p:txBody>
-    <a:bodyPr wrap="square" lIns="{l_ins}" rIns="{l_ins}" tIns="{t_ins}" bIns="{t_ins}"/>
-    <a:lstStyle/>
-    {paras_xml}
-  </p:txBody>
-</p:sp>'''
-
-
-def _sp_pic(sp_id, r_id, x, y, cx, cy, border_hex="FFFFFF"):
-    return f'''<p:pic>
-  <p:nvPicPr>
-    <p:cNvPr id="{sp_id}" name="Picture{sp_id}"/>
-    <p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>
-    <p:nvPr/>
-  </p:nvPicPr>
-  <p:blipFill>
-    <a:blip r:embed="{r_id}"/>
-    <a:stretch><a:fillRect/></a:stretch>
-  </p:blipFill>
-  <p:spPr>
-    <a:xfrm><a:off x="{x}" y="{y}"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>
-    <a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>
-    <a:ln w="19050"><a:solidFill><a:srgbClr val="{border_hex}"/></a:solidFill></a:ln>
-  </p:spPr>
-</p:pic>'''
-
-
-def _para(text, sz=1600, color="FFFFFF", bold=False, italic=False, align="l", spc_after=900):
-    b_attr = ' b="1"' if bold else ""
-    i_attr = ' i="1"' if italic else ""
-    return (
-        f'<a:p><a:pPr algn="{align}"><a:spcAft><a:spcPts val="{spc_after}"/></a:spcAft></a:pPr>'
-        f'<a:r><a:rPr lang="uz-UZ" sz="{sz}"{b_attr}{i_attr}><a:solidFill><a:srgbClr val="{color}"/></a:solidFill></a:rPr>'
-        f'<a:t>{_clean_xml(text)}</a:t></a:r></a:p>'
-    )
-
-
-def build_pptx_bytes(slides_dict):
-    if not slides_dict or not slides_dict.get("items"):
-        slides_dict = {
-            "title": "Jeo Quiz Taqdimot",
-            "theme": "royal",
-            "items": [{"layout": "cover", "badge": "01", "title": "Taqdimot", "subtitle": "", "bullets": ["Ma’lumot mavjud emas"], "highlight": ""}],
-        }
-    items = slides_dict["items"]
-    bg_hex, fg_hex, acc_hex, card_hex, acc2_hex, track_hex = THEME_PALETTES.get(
-        slides_dict.get("theme", "royal"), THEME_PALETTES["royal"]
-    )
-    n = len(items)
+    theme_name = str(slides_data.get("theme") or "royal").lower()
+    palettes = {
+        "royal": {"bg": "F4F7FC", "primary": "1E3A8A", "accent": "2563EB", "card": "FFFFFF", "text": "0F172A", "muted": "475569", "banner": "DBEAFE"},
+        "emerald": {"bg": "F0FDF4", "primary": "065F46", "accent": "059669", "card": "FFFFFF", "text": "064E3B", "muted": "374151", "banner": "D1FAE5"},
+        "crimson": {"bg": "FEF2F2", "primary": "991B1B", "accent": "DC2626", "card": "FFFFFF", "text": "1F2937", "muted": "4B5563", "banner": "FEE2E2"},
+        "amber": {"bg": "FFFBEB", "primary": "92400E", "accent": "D97706", "card": "FFFFFF", "text": "1F2937", "muted": "4B5563", "banner": "FEF3C7"},
+        "dark": {"bg": "0F172A", "primary": "38BDF8", "accent": "6366F1", "card": "1E293B", "text": "F8FAFC", "muted": "CBD5E1", "banner": "1E293B"},
+    }
+    pal = palettes.get(theme_name, palettes["royal"])
+    items = slides_data["items"]
 
     images_map = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        fut_to_idx = {}
+        for idx, it in enumerate(items):
+            q_img = it.get("image_query") or it.get("title")
+            if q_img and idx < 12:
+                fut_to_idx[pool.submit(fetch_topic_image_bytes, q_img)] = idx
+        for fut in concurrent.futures.as_completed(fut_to_idx, timeout=14):
+            idx = fut_to_idx[fut]
+            try:
+                ibytes, ext = fut.result()
+                if ibytes and ext:
+                    images_map[idx] = (ibytes, ext)
+            except Exception:
+                pass
 
-    def _fetch_for_idx(idx_sl):
-        idx, sl = idx_sl
-        ly = sl.get("layout", "split_image")
-        if ly in ("cover", "split_image", "split", "bullets"):
-            q_str = sl.get("image_query") or sl.get("title") or slides_dict.get("title", "")
-            ibytes, ext = fetch_topic_image_bytes(q_str)
-            if ibytes:
-                return idx, (ibytes, ext)
-        return idx, None
+    def _shape_xml(sid, name, x, y, cx, cy, fill_hex, border_hex=None, text_runs=None, align="l", anchor="t"):
+        border_xml = (
+            f'<a:ln w="12700"><a:solidFill><a:srgbClr val="{border_hex}"/></a:solidFill></a:ln>'
+            if border_hex
+            else "<a:ln><a:noFill/></a:ln>"
+        )
+        paras_xml = ""
+        if text_runs:
+            for txt, sz, bold, col_hex in text_runs:
+                b_attr = ' b="1"' if bold else ""
+                paras_xml += (
+                    f'<a:p><a:pPr algn="{align}"/>'
+                    f'<a:r><a:rPr lang="uz-UZ" sz="{sz}"{b_attr} dirty="0">'
+                    f'<a:solidFill><a:srgbClr val="{col_hex}"/></a:solidFill>'
+                    f'<a:latin typeface="Calibri"/>'
+                    f'</a:rPr><a:t>{xml_esc(str(txt))}</a:t></a:r></a:p>'
+                )
+        else:
+            paras_xml = "<a:p/>"
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
-        for idx, res_img in ex.map(_fetch_for_idx, list(enumerate(items))):
-            if res_img:
-                images_map[idx] = res_img
+        return (
+            f'<p:sp><p:nvSpPr><p:cNvPr id="{sid}" name="{xml_esc(name)}"/>'
+            f"<p:cNvSpPr/><p:nvPr/></p:nvSpPr>"
+            f'<p:spPr><a:xfrm><a:off x="{x}" y="{y}"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+            f'<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val 3500"/></a:avLst></a:prstGeom>'
+            f'<a:solidFill><a:srgbClr val="{fill_hex}"/></a:solidFill>{border_xml}</p:spPr>'
+            f'<p:txBody><a:bodyPr wrap="square" lIns="140000" tIns="100000" rIns="140000" bIns="100000" anchor="{anchor}"/>'
+            f"<a:lstStyle/>{paras_xml}</p:txBody></p:sp>"
+        )
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        slide_overrides = "\n".join(
-            f'<Override PartName="/ppt/slides/slide{i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>'
-            for i in range(n)
-        )
-        zf.writestr("[Content_Types].xml", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="[http://schemas.openxmlformats.org/package/2006/content-types](http://schemas.openxmlformats.org/package/2006/content-types)">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Default Extension="jpg" ContentType="image/jpeg"/>
-  <Default Extension="jpeg" ContentType="image/jpeg"/>
-  <Default Extension="png" ContentType="image/png"/>
-  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
-  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
-  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
-  <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
-  {slide_overrides}
-</Types>''')
+        slide_overrides = []
+        sld_id_entries = []
+        pres_rels = [
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>',
+            '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>',
+        ]
+        media_exts = set()
 
-        zf.writestr("_rels/.rels", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="[http://schemas.openxmlformats.org/package/2006/relationships](http://schemas.openxmlformats.org/package/2006/relationships)">
-  <Relationship Id="rId1" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument](http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument)" Target="ppt/presentation.xml"/>
-</Relationships>''')
-
-        sld_ids = "\n".join(f'<p:sldId id="{256+i}" r:id="rId{i+2}"/>' for i in range(n))
-        zf.writestr("ppt/presentation.xml", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:presentation xmlns:a="[http://schemas.openxmlformats.org/drawingml/2006/main](http://schemas.openxmlformats.org/drawingml/2006/main)" xmlns:r="[http://schemas.openxmlformats.org/officeDocument/2006/relationships](http://schemas.openxmlformats.org/officeDocument/2006/relationships)" xmlns:p="[http://schemas.openxmlformats.org/presentationml/2006/main](http://schemas.openxmlformats.org/presentationml/2006/main)">
-  <p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>
-  <p:sldIdLst>{sld_ids}</p:sldIdLst>
-  <p:sldSz cx="12192000" cy="6858000"/>
-  <p:notesSz cx="6858000" cy="9144000"/>
-</p:presentation>''')
-
-        sld_rels = "\n".join(
-            f'<Relationship Id="rId{i+2}" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide](http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide)" Target="slides/slide{i+1}.xml"/>'
-            for i in range(n)
-        )
-        zf.writestr("ppt/_rels/presentation.xml.rels", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="[http://schemas.openxmlformats.org/package/2006/relationships](http://schemas.openxmlformats.org/package/2006/relationships)">
-  <Relationship Id="rId1" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster](http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster)" Target="slideMasters/slideMaster1.xml"/>
-  {sld_rels}
-  <Relationship Id="rId{n+2}" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme](http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme)" Target="theme/theme1.xml"/>
-</Relationships>''')
-
-        zf.writestr("ppt/slideMasters/slideMaster1.xml", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sldMaster xmlns:a="[http://schemas.openxmlformats.org/drawingml/2006/main](http://schemas.openxmlformats.org/drawingml/2006/main)" xmlns:r="[http://schemas.openxmlformats.org/officeDocument/2006/relationships](http://schemas.openxmlformats.org/officeDocument/2006/relationships)" xmlns:p="[http://schemas.openxmlformats.org/presentationml/2006/main](http://schemas.openxmlformats.org/presentationml/2006/main)">
-  <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>
-  <p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>
-  <p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>
-</p:sldMaster>''')
-
-        zf.writestr("ppt/slideMasters/_rels/slideMaster1.xml.rels", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="[http://schemas.openxmlformats.org/package/2006/relationships](http://schemas.openxmlformats.org/package/2006/relationships)">
-  <Relationship Id="rId1" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout](http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout)" Target="../slideLayouts/slideLayout1.xml"/>
-  <Relationship Id="rId2" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme](http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme)" Target="../theme/theme1.xml"/>
-</Relationships>''')
-
-        zf.writestr("ppt/slideLayouts/slideLayout1.xml", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sldLayout xmlns:a="[http://schemas.openxmlformats.org/drawingml/2006/main](http://schemas.openxmlformats.org/drawingml/2006/main)" xmlns:r="[http://schemas.openxmlformats.org/officeDocument/2006/relationships](http://schemas.openxmlformats.org/officeDocument/2006/relationships)" xmlns:p="[http://schemas.openxmlformats.org/presentationml/2006/main](http://schemas.openxmlformats.org/presentationml/2006/main)" type="blank">
-  <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>
-</p:sldLayout>''')
-
-        zf.writestr("ppt/slideLayouts/_rels/slideLayout1.xml.rels", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="[http://schemas.openxmlformats.org/officeDocument/2006/relationships](http://schemas.openxmlformats.org/officeDocument/2006/relationships)">
-  <Relationship Id="rId1" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster](http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster)" Target="../slideMasters/slideMaster1.xml"/>
-</Relationships>''')
-
-        zf.writestr("ppt/theme/theme1.xml", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<a:theme xmlns:a="[http://schemas.openxmlformats.org/drawingml/2006/main](http://schemas.openxmlformats.org/drawingml/2006/main)" name="JeoTheme">
-  <a:themeElements>
-    <a:clrScheme name="Jeo"><a:dk1><a:srgbClr val="000000"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="1E293B"/></a:dk2><a:lt2><a:srgbClr val="F1F5F9"/></a:lt2><a:accent1><a:srgbClr val="2563EB"/></a:accent1><a:accent2><a:srgbClr val="F59E0B"/></a:accent2><a:accent3><a:srgbClr val="10B981"/></a:accent3><a:accent4><a:srgbClr val="8B5CF6"/></a:accent4><a:accent5><a:srgbClr val="EC4899"/></a:accent5><a:accent6><a:srgbClr val="06B6D4"/></a:accent6><a:hlink><a:srgbClr val="3B82F6"/></a:hlink><a:folHlink><a:srgbClr val="6366F1"/></a:folHlink></a:clrScheme>
-    <a:fontScheme name="JeoFont"><a:majorFont><a:latin typeface="Calibri"/></a:majorFont><a:minorFont><a:latin typeface="Calibri"/></a:minorFont></a:fontScheme>
-    <a:fmtScheme name="JeoFmt"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="9525"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme>
-  </a:themeElements>
-</a:theme>''')
-
-        for i, sl in enumerate(items):
-            layout = sl.get("layout", "split_image")
-            badge_txt = sl.get("badge", f"{i+1:02d}-SLAYD")
-            title_txt = sl.get("title", "")
-            sub_txt = sl.get("subtitle", "")
-            bullets = sl.get("bullets") or []
-            hl_txt = sl.get("highlight", "")
-            img_info = images_map.get(i)
-
-            shapes = []
+        for idx, it in enumerate(items):
+            s_num = idx + 1
             sid = 2
+            shapes = []
 
-            shapes.append(_sp_rect(sid, "TopStripe", 0, 0, 12192000, 85000, fill_hex=acc_hex, prst="rect", l_ins=0, t_ins=0))
+            # Top accent bar
+            shapes.append(_shape_xml(sid, "TopBar", 0, 0, 12192000, 110000, pal["accent"]))
             sid += 1
 
-            if layout == "cover":
-                hero_w = 6650000 if img_info else 10900000
-                shapes.append(_sp_rect(sid, "Badge", 640000, 620000, 3200000, 420000, fill_hex=card_hex, border_hex=acc_hex, paras_xml=_para(badge_txt, sz=1300, color=acc_hex, bold=True, spc_after=0), t_ins=60000))
+            # Badge + Slide number
+            badge_txt = it.get("badge") or f"{s_num:02d}-SLAYD"
+            shapes.append(_shape_xml(
+                sid, "Badge", 450000, 240000, 2600000, 380000, pal["accent"],
+                text_runs=[(badge_txt, 1300, True, "FFFFFF")], align="ctr", anchor="ctr"
+            ))
+            sid += 1
+
+            shapes.append(_shape_xml(
+                sid, "PageNum", 11100000, 240000, 650000, 380000, pal["banner"],
+                text_runs=[(f"{s_num}/{len(items)}", 1300, True, pal["primary"])], align="ctr", anchor="ctr"
+            ))
+            sid += 1
+
+            # Title & Subtitle
+            title_runs = [(it.get("title") or f"Slayd {s_num}", 2400, True, pal["primary"])]
+            if it.get("subtitle"):
+                title_runs.append((it["subtitle"], 1400, False, pal["muted"]))
+            shapes.append(_shape_xml(
+                sid, "HeaderBox", 450000, 680000, 11292000, 1150000, pal["card"], pal["banner"],
+                text_runs=title_runs
+            ))
+            sid += 1
+
+            has_img = idx in images_map
+            left_w = 6850000 if has_img else 11292000
+            body_runs = []
+
+            if it.get("formula"):
+                body_runs.append((f"FORMULA: {it['formula']}", 1800, True, pal["accent"]))
+                if it.get("formula_desc"):
+                    body_runs.append((it["formula_desc"], 1300, False, pal["muted"]))
+
+            for b in (it.get("bullets") or [])[:5]:
+                body_runs.append((f"✔  {b}", 1450, False, pal["text"]))
+
+            for ds in (it.get("diagram_steps") or [])[:4]:
+                body_runs.append((f"[{ds.get('step', '01')}] {ds.get('label', '')}: {ds.get('desc', '')}", 1350, True, pal["primary"]))
+
+            if it.get("table_headers") and it.get("table_rows"):
+                body_runs.append((" | ".join(it["table_headers"]), 1350, True, pal["accent"]))
+                for rw in it["table_rows"][:5]:
+                    body_runs.append((" — ".join(rw), 1300, False, pal["text"]))
+
+            for st in (it.get("stats") or [])[:4]:
+                body_runs.append((f"• {st.get('label', '')}: {st.get('value', '')}", 1400, True, pal["primary"]))
+
+            if not body_runs:
+                body_runs.append((it.get("subtitle") or it.get("title") or "", 1500, False, pal["text"]))
+
+            shapes.append(_shape_xml(
+                sid, "MainContent", 450000, 1950000, left_w, 3950000, pal["card"], pal["banner"],
+                text_runs=body_runs
+            ))
+            sid += 1
+
+            pic_xml = ""
+            s_rels = [
+                '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>'
+            ]
+            if has_img:
+                ibytes, ext = images_map[idx]
+                media_exts.add(ext)
+                img_fname = f"image{s_num}.{ext}"
+                zf.writestr(f"ppt/media/{img_fname}", ibytes)
+                s_rels.append(
+                    f'<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/{img_fname}"/>'
+                )
+                pic_xml = (
+                    f'<p:pic><p:nvPicPr><p:cNvPr id="{sid}" name="Picture {s_num}"/>'
+                    f'<p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>'
+                    f'<p:blipFill><a:blip r:embed="rId2"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>'
+                    f'<p:spPr><a:xfrm><a:off x="7480000" y="1950000"/><a:ext cx="4262000" cy="3950000"/></a:xfrm>'
+                    f'<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val 3500"/></a:avLst></a:prstGeom></p:spPr></p:pic>'
+                )
                 sid += 1
-                shapes.append(_sp_rect(sid, "CoverTitle", 640000, 1180000, hero_w, 1650000, paras_xml=_para(title_txt, sz=3800, color=fg_hex, bold=True, spc_after=0), l_ins=0, t_ins=40000))
-                sid += 1
-                shapes.append(_sp_rect(sid, "Divider", 640000, 2920000, 2200000, 75000, fill_hex=acc_hex, prst="rect", l_ins=0, t_ins=0))
-                sid += 1
-                if sub_txt:
-                    shapes.append(_sp_rect(sid, "CoverSub", 640000, 3120000, hero_w, 950000, paras_xml=_para(sub_txt, sz=1700, color=acc2_hex, italic=True, spc_after=0), l_ins=0, t_ins=40000))
-                    sid += 1
 
-                if img_info:
-                    ibytes, ext = img_info
-                    zf.writestr(f"ppt/media/image{i+1}.{ext}", ibytes)
-                    shapes.append(_sp_pic(sid, "rId2", 7550000, 650000, 4000000, 3550000, border_hex=acc_hex))
-                    sid += 1
+            # Bottom slogan banner
+            slogan = it.get("highlight") or slides_data.get("title") or "Jeo Quiz Pro"
+            shapes.append(_shape_xml(
+                sid, "FooterBanner", 450000, 6050000, 11292000, 540000, pal["banner"], pal["accent"],
+                text_runs=[(f"★  {slogan}", 1450, True, pal["primary"])], align="ctr", anchor="ctr"
+            ))
 
-                plan_items = bullets[:3] if bullets else ["Nazariy asoslar", "Tahliliy diagrammalar", "Amaliy xulosalar"]
-                for k, p_txt in enumerate(plan_items):
-                    cx_k = 640000 + k * 3710000
-                    card_p = (
-                        _para(f"0{k+1} • YO‘NALISH", sz=1150, color=acc_hex, bold=True, spc_after=350)
-                        + _para(p_txt[:115], sz=1400, color=fg_hex, spc_after=0)
-                    )
-                    shapes.append(_sp_rect(sid, f"Plan{k}", cx_k, 4550000, 3480000, 1750000, fill_hex=card_hex, border_hex=track_hex, paras_xml=card_p))
-                    sid += 1
-            else:
-                shapes.append(_sp_rect(sid, "Badge", 640000, 240000, 3400000, 360000, fill_hex=card_hex, border_hex=acc_hex, paras_xml=_para(badge_txt, sz=1200, color=acc_hex, bold=True, spc_after=0), t_ins=45000))
-                sid += 1
-                shapes.append(_sp_rect(sid, "PageNum", 10200000, 240000, 1350000, 360000, paras_xml=_para(f"{i+1} / {n}", sz=1300, color=acc_hex, bold=True, align="r", spc_after=0), l_ins=0, t_ins=45000))
-                sid += 1
-                shapes.append(_sp_rect(sid, "SlideTitle", 640000, 650000, 10910000, 740000, paras_xml=_para(title_txt, sz=2600, color=fg_hex, bold=True, spc_after=0), l_ins=0, t_ins=20000))
-                sid += 1
-                if sub_txt:
-                    shapes.append(_sp_rect(sid, "SlideSub", 640000, 1390000, 10910000, 380000, paras_xml=_para(sub_txt, sz=1450, color=acc2_hex, italic=True, spc_after=0), l_ins=0, t_ins=10000))
-                    sid += 1
+            slide_xml = (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+                'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+                f'<p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val="{pal["bg"]}"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>'
+                f'<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+                f'<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
+                + "".join(shapes) + pic_xml +
+                "</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>"
+            )
+            zf.writestr(f"ppt/slides/slide{s_num}.xml", slide_xml)
+            zf.writestr(
+                f"ppt/slides/_rels/slide{s_num}.xml.rels",
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                + "".join(s_rels) + "</Relationships>"
+            )
+            slide_overrides.append(
+                f'<Override PartName="/ppt/slides/slide{s_num}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>'
+            )
+            r_id = f"rId{s_num + 2}"
+            pres_rels.append(
+                f'<Relationship Id="{r_id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide{s_num}.xml"/>'
+            )
+            sld_id_entries.append(f'<p:sldId id="{255 + s_num}" r:id="{r_id}"/>')
 
-                if layout == "diagram_flow":
-                    steps = sl.get("diagram_steps") or []
-                    if not steps:
-                        steps = [{"step": f"0{k+1}", "label": b.split(":")[0][:32], "desc": b[:85]} for k, b in enumerate(bullets[:4])]
-                    steps = steps[:4]
-                    cnt_s = max(1, len(steps))
-                    gap = 460000
-                    box_w = (10910000 - gap * (cnt_s - 1)) // cnt_s
-                    for k, st in enumerate(steps):
-                        bx = 640000 + k * (box_w + gap)
-                        st_paras = (
-                            _para(f"BOSQICH {st.get('step', f'0{k+1}')}", sz=1250, color=acc_hex, bold=True, align="ctr", spc_after=500)
-                            + _para(st.get("label", ""), sz=1650, color=fg_hex, bold=True, align="ctr", spc_after=600)
-                            + _para(st.get("desc", ""), sz=1350, color=fg_hex, align="ctr", spc_after=0)
-                        )
-                        shapes.append(_sp_rect(sid, f"FlowBox{k}", bx, 2020000, box_w, 3650000, fill_hex=card_hex, border_hex=acc_hex, paras_xml=st_paras))
-                        sid += 1
-                        if k < cnt_s - 1:
-                            ax = bx + box_w + 70000
-                            shapes.append(_sp_rect(sid, f"Arrow{k}", ax, 3620000, gap - 140000, 420000, fill_hex=acc_hex, prst="rightArrow", l_ins=0, t_ins=0))
-                            sid += 1
+        img_defaults = ""
+        if "png" in media_exts:
+            img_defaults += '<Default Extension="png" ContentType="image/png"/>'
+        if "jpg" in media_exts:
+            img_defaults += '<Default Extension="jpg" ContentType="image/jpeg"/>'
 
-                elif layout == "comparison":
-                    left_b = bullets[:2] if bullets else ["1-tomon xususiyatlari"]
-                    right_b = bullets[2:4] if len(bullets) > 2 else ["2-tomon xususiyatlari"]
-                    l_paras = _para("I. NAZARIY / KLASSIK JIHAT", sz=1450, color=acc_hex, bold=True, spc_after=700) + "".join(
-                        _para(f"▸ {b}", sz=1500, color=fg_hex, spc_after=750) for b in left_b
-                    )
-                    r_paras = _para("II. ZAMONAVIY / AMALIY JIHAT", sz=1450, color=acc2_hex, bold=True, spc_after=700) + "".join(
-                        _para(f"▸ {b}", sz=1500, color=fg_hex, spc_after=750) for b in right_b
-                    )
-                    shapes.append(_sp_rect(sid, "CompLeft", 640000, 1950000, 5280000, 3800000, fill_hex=card_hex, border_hex=acc_hex, paras_xml=l_paras))
-                    sid += 1
-                    shapes.append(_sp_rect(sid, "CompRight", 6270000, 1950000, 5280000, 3800000, fill_hex=card_hex, border_hex=acc2_hex, paras_xml=r_paras))
-                    sid += 1
-
-                elif layout == "stats_chart":
-                    l_paras = _para("TAHLILIY SHARH", sz=1400, color=acc_hex, bold=True, spc_after=650) + "".join(
-                        _para(f"▸ {b}", sz=1450, color=fg_hex, spc_after=700) for b in (bullets[:3] or ["Asosiy ko‘rsatkichlar diagrammada keltirilgan."])
-                    )
-                    shapes.append(_sp_rect(sid, "StatsNotes", 640000, 1950000, 5050000, 3800000, fill_hex=card_hex, border_hex=track_hex, paras_xml=l_paras))
-                    sid += 1
-
-                    st_list = sl.get("stats") or [
-                        {"label": "1-ko‘rsatkich", "value": "88%", "pct": 88},
-                        {"label": "2-ko‘rsatkich", "value": "74%", "pct": 74},
-                        {"label": "3-ko‘rsatkich", "value": "65%", "pct": 65},
-                    ]
-                    shapes.append(_sp_rect(sid, "ChartBg", 5920000, 1950000, 5630000, 3800000, fill_hex=card_hex, border_hex=acc_hex, paras_xml=_para("📊 VIZUAL DIAGRAMMA", sz=1350, color=acc_hex, bold=True, spc_after=0)))
-                    sid += 1
-                    for k, st in enumerate(st_list[:4]):
-                        ry = 2480000 + k * 790000
-                        lbl_line = f"{st.get('label', '')} — {st.get('value', '')}"
-                        shapes.append(_sp_rect(sid, f"BarLbl{k}", 6150000, ry, 5150000, 320000, paras_xml=_para(lbl_line, sz=1350, color=fg_hex, bold=True, spc_after=0), l_ins=0, t_ins=0))
-                        sid += 1
-                        shapes.append(_sp_rect(sid, f"BarTrk{k}", 6150000, ry + 340000, 5100000, 230000, fill_hex=track_hex, l_ins=0, t_ins=0))
-                        sid += 1
-                        pct_v = max(12, min(100, int(st.get("pct", 75))))
-                        bar_w = int(5100000 * pct_v / 100)
-                        bar_col = acc_hex if k % 2 == 0 else acc2_hex
-                        shapes.append(_sp_rect(sid, f"BarVal{k}", 6150000, ry + 340000, bar_w, 230000, fill_hex=bar_col, l_ins=0, t_ins=0))
-                        sid += 1
-
-                elif layout == "summary":
-                    sum_b = bullets[:4] if bullets else ["Mavzu bo‘yicha asosiy xulosalar shakllantirildi."]
-                    for k, b in enumerate(sum_b):
-                        col_i = k % 2
-                        row_i = k // 2
-                        gx = 640000 + col_i * 5630000
-                        gy = 1950000 + row_i * 1950000
-                        g_paras = (
-                            _para(f"0{k+1} • XULOSA", sz=1250, color=acc_hex, bold=True, spc_after=450)
-                            + _para(b, sz=1500, color=fg_hex, spc_after=0)
-                        )
-                        shapes.append(_sp_rect(sid, f"SumCard{k}", gx, gy, 5280000, 1800000, fill_hex=card_hex, border_hex=acc_hex if k % 2 == 0 else acc2_hex, paras_xml=g_paras))
-                        sid += 1
-
-                else:
-                    if img_info:
-                        ibytes, ext = img_info
-                        zf.writestr(f"ppt/media/image{i+1}.{ext}", ibytes)
-                        b_paras = "".join(_para(f"▸ {b}", sz=1500, color=fg_hex, spc_after=720) for b in (bullets[:4] or ["Asosiy ma’lumotlar"]))
-                        shapes.append(_sp_rect(sid, "SplitText", 640000, 1950000, 6420000, 3800000, fill_hex=card_hex, border_hex=track_hex, paras_xml=b_paras))
-                        sid += 1
-                        shapes.append(_sp_rect(sid, "ImgFrame", 7260000, 1950000, 4290000, 3800000, fill_hex=card_hex, border_hex=acc_hex, paras_xml="<a:p/>", l_ins=0, t_ins=0))
-                        sid += 1
-                        shapes.append(_sp_pic(sid, "rId2", 7380000, 2070000, 4050000, 3050000, border_hex=acc_hex))
-                        sid += 1
-                        cap = sl.get("image_query") or title_txt
-                        shapes.append(_sp_rect(sid, "ImgCap", 7380000, 5180000, 4050000, 460000, paras_xml=_para(f"🖼 {cap[:48]}", sz=1200, color=acc_hex, italic=True, align="ctr", spc_after=0), l_ins=40000, t_ins=40000))
-                        sid += 1
-                    else:
-                        grid_b = bullets[:4] if bullets else ["Asosiy tushunchalar"]
-                        for k, b in enumerate(grid_b):
-                            col_i = k % 2
-                            row_i = k // 2
-                            gx = 640000 + col_i * 5630000
-                            gy = 1950000 + row_i * 1950000
-                            g_paras = (
-                                _para(f"▸ 0{k+1}-ASOSIY FIKR", sz=1250, color=acc_hex, bold=True, spc_after=400)
-                                + _para(b, sz=1480, color=fg_hex, spc_after=0)
-                            )
-                            shapes.append(_sp_rect(sid, f"Concept{k}", gx, gy, 5280000, 1800000, fill_hex=card_hex, border_hex=track_hex, paras_xml=g_paras))
-                            sid += 1
-
-                if hl_txt:
-                    shapes.append(_sp_rect(sid, "HighlightBar", 640000, 5940000, 10910000, 580000, fill_hex=card_hex, border_hex=acc_hex, paras_xml=_para(f"💡 {hl_txt}", sz=1400, color=acc_hex, bold=True, spc_after=0), t_ins=95000))
-                    sid += 1
-
-            shapes_xml = "\n".join(shapes)
-            zf.writestr(f"ppt/slides/slide{i+1}.xml", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sld xmlns:a="[http://schemas.openxmlformats.org/drawingml/2006/main](http://schemas.openxmlformats.org/drawingml/2006/main)" xmlns:r="[http://schemas.openxmlformats.org/officeDocument/2006/relationships](http://schemas.openxmlformats.org/officeDocument/2006/relationships)" xmlns:p="[http://schemas.openxmlformats.org/presentationml/2006/main](http://schemas.openxmlformats.org/presentationml/2006/main)">
-  <p:cSld>
-    <p:bg><p:bgPr><a:solidFill><a:srgbClr val="{bg_hex}"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>
-    <p:spTree>
-      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
-      <p:grpSpPr/>
-      {shapes_xml}
-    </p:spTree>
-  </p:cSld>
-</p:sld>''')
-
-            rel_extra = ""
-            if img_info:
-                _, ext = img_info
-                rel_extra = f'\n  <Relationship Id="rId2" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/image](http://schemas.openxmlformats.org/officeDocument/2006/relationships/image)" Target="../media/image{i+1}.{ext}"/>'
-            zf.writestr(f"ppt/slides/_rels/slide{i+1}.xml.rels", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="[http://schemas.openxmlformats.org/package/2006/relationships](http://schemas.openxmlformats.org/package/2006/relationships)">
-  <Relationship Id="rId1" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout](http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout)" Target="../slideLayouts/slideLayout1.xml"/>{rel_extra}
-</Relationships>''')
-
+        zf.writestr(
+            "[Content_Types].xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            f"{img_defaults}"
+            '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>'
+            '<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>'
+            '<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>'
+            '<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
+            + "".join(slide_overrides) + "</Types>"
+        )
+        zf.writestr(
+            "_rels/.rels",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>'
+            "</Relationships>"
+        )
+        zf.writestr(
+            "ppt/presentation.xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+            'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+            '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>'
+            f"<p:sldIdLst>{''.join(sld_id_entries)}</p:sldIdLst>"
+            '<p:sldSz cx="12192000" cy="6858000" type="screen16x9"/>'
+            '<p:notesSz cx="6858000" cy="9144000"/></p:presentation>'
+        )
+        zf.writestr(
+            "ppt/_rels/presentation.xml.rels",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            + "".join(pres_rels) + "</Relationships>"
+        )
+        zf.writestr(
+            "ppt/slideMasters/slideMaster1.xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+            'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+            '<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+            '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
+            '</p:spTree></p:cSld><p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
+            '<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst></p:sldMaster>'
+        )
+        zf.writestr(
+            "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>'
+            '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>'
+            "</Relationships>"
+        )
+        zf.writestr(
+            "ppt/slideLayouts/slideLayout1.xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+            'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank">'
+            '<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+            '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
+            "</p:spTree></p:cSld></p:sldLayout>"
+        )
+        zf.writestr(
+            "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>'
+            "</Relationships>"
+        )
+        zf.writestr(
+            "ppt/theme/theme1.xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="JeoQuizTheme">'
+            '<a:themeElements><a:clrScheme name="Jeo">'
+            '<a:dk1><a:srgbClr val="0F172A"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1>'
+            '<a:dk2><a:srgbClr val="1E293B"/></a:dk2><a:lt2><a:srgbClr val="F1F5F9"/></a:lt2>'
+            '<a:accent1><a:srgbClr val="2563EB"/></a:accent1><a:accent2><a:srgbClr val="059669"/></a:accent2>'
+            '<a:accent3><a:srgbClr val="D97706"/></a:accent3><a:accent4><a:srgbClr val="DC2626"/></a:accent4>'
+            '<a:accent5><a:srgbClr val="7C3AED"/></a:accent5><a:accent6><a:srgbClr val="0891B2"/></a:accent6>'
+            '<a:hlink><a:srgbClr val="2563EB"/></a:hlink><a:folHlink><a:srgbClr val="7C3AED"/></a:folHlink>'
+            "</a:clrScheme>"
+            '<a:fontScheme name="JeoFont"><a:majorFont><a:latin typeface="Calibri"/></a:majorFont><a:minorFont><a:latin typeface="Calibri"/></a:minorFont></a:fontScheme>'
+            '<a:fmtScheme name="JeoFmt"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst>'
+            '<a:lnStyleLst><a:ln w="9525"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst>'
+            '<a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst>'
+            '<a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst>'
+            "</a:fmtScheme></a:themeElements></a:theme>"
+        )
     return buf.getvalue()
 
 
-def tg_api(method, payload):
+def _tg_request(method, payload=None):
     if not TELEGRAM_BOT_TOKEN:
         return None
-    url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_BOT_TOKEN}/{method}"
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}"
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
     req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
+        url, data=data,
+        headers={"Content-Type": "application/json"} if data else {},
+        method="POST" if data else "GET",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=25) as r:
-            return json.loads(r.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        err_txt = e.read().decode("utf-8", errors="ignore")
-        try:
-            err_json = json.loads(err_txt)
-            desc = err_json.get("description") or err_txt
-        except Exception:
-            desc = err_txt
-        raise RuntimeError(f"Telegram API xatosi: {desc}")
-
-
-def tg_send_document(chat_id, filename, file_bytes, caption=""):
-    if not TELEGRAM_BOT_TOKEN:
-        return None
-    boundary = f"----JeoBoundary{random.randint(100000, 999999)}"
-    body = (
-        f"--{boundary}\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n{chat_id}\r\n"
-        f"--{boundary}\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n{caption}\r\n"
-        f"--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; filename=\"{filename}\"\r\n"
-        f"Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation\r\n\r\n"
-    ).encode("utf-8") + file_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
-    url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_BOT_TOKEN}/sendDocument"
-    req = urllib.request.Request(
-        url,
-        data=body,
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=35) as r:
-            return json.loads(r.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        err_txt = e.read().decode("utf-8", errors="ignore")
-        try:
-            err_json = json.loads(err_txt)
-            desc = err_json.get("description") or err_txt
-        except Exception:
-            desc = err_txt
-        raise RuntimeError(f"Telegram fayl yuborish xatosi: {desc}")
-
-
-def _tg_generate_ai_pptx_task(chat_id, topic):
-    try:
-        slide_count = 8
-        prompt = (
-            f"Sen universitet professori va vizual taqdimot dizaynerisan. O‘zbek tilida '{topic}' mavzusida "
-            f"(Akademik ma’ruza uslubida) aynan {slide_count} ta VIZUAL va ILMIY taqdimot slaydi yarat.\n"
-            f"QOIDALAR:\n"
-            f"1. '{topic}' qaysi fanga oid bo‘lsa, FAQAT o‘sha fanning asl tushunchalari, olimlari va misollarini yoz.\n"
-            f"2. Maketlar: 1-slayd 'cover', 2-slayd 'split_image', 3-slayd 'diagram_flow' (4 ta diagram_steps), "
-            f"4-slayd 'comparison' (4 ta bullet), 5-slayd 'stats_chart' (4 ta stats pct bilan), 6-slayd 'split_image', "
-            f"7-slayd 'diagram_flow', 8-slayd 'summary' (4 ta xulosa).\n"
-            f"3. Har bir slaydda Wikipedia rasm qidiruvi uchun inglizcha 'image_query' yoz.\n"
-            f"Faqat sof JSON obyekt qaytar:\n"
-            f'{{"title": "Sarlavha", "slides": ['
-            f'{{"layout": "cover", "badge": "01 / KIRISH", "title": "Sarlavha", "subtitle": "Taglavha", '
-            f'"bullets": ["1-fikr", "2-fikr", "3-fikr", "4-fikr"], '
-            f'"diagram_steps": [{{"label": "1-qadam", "desc": "Izoh"}}], '
-            f'"stats": [{{"label": "Ko‘rsatkich", "value": "85%", "pct": 85}}], '
-            f'"image_query": "English keywords", "highlight": "Xulosa", "notes": ""}}'
-            f"]}}"
-        )
-        try:
-            raw = call_gemini(prompt, json_mode=True)
-            parsed = extract_json_block(raw)
-            raw_slides = parsed.get("slides") or []
-            if not raw_slides:
-                raise RuntimeError("Bo‘sh javob")
-            items = [normalize_slide_item(it, i) for i, it in enumerate(raw_slides[:16])]
-            deck_title = str(parsed.get("title") or topic).strip()
-        except Exception:
-            with LOCK:
-                items = _build_fallback_slides(DEFAULT_ROOM, topic, slide_count, "Akademik ma’ruza")
-            deck_title = topic
-
-        with LOCK:
-            cleanup_old_rooms()
-            code = generate_room_code()
-            pin = f"{random.randint(1000, 9999)}"
-            rm = Room(code, pin, "econ")
-            rm.topic_title = deck_title
-            rm.slides = {"title": deck_title, "theme": "royal", "cur_idx": 0, "items": items}
-            rm.mode = "slides"
-            ROOMS[code] = rm
-            sl_copy = copy.deepcopy(rm.slides)
-
-        pptx_data = build_pptx_bytes(sl_copy)
-        safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", deck_title)[:40] or "Taqdimot"
-        tg_send_document(
-            chat_id,
-            f"{safe_name}.pptx",
-            pptx_data,
-            caption=(
-                f"📊 {deck_title} ({len(items)} ta vizual slayd)\n"
-                f"🔑 Xona kodi: #{code} | Admin PIN: {pin}"
-            ),
-        )
-        tg_api("sendMessage", {
-            "chat_id": chat_id,
-            "text": "🌐 Slaydni saytda jonli ko‘rsatish yoki tahrirlash uchun:",
-            "reply_markup": {
-                "inline_keyboard": [
-                    [{"text": f"📺 Jonli taqdimot (#{code})", "url": f"{APP_PUBLIC_URL}/?room={code}"}],
-                    [{"text": "✏️ Admin panelda ochish", "url": f"{APP_PUBLIC_URL}/admin"}],
-                ]
-            },
-        })
-    except Exception as e:
-        tg_api("sendMessage", {
-            "chat_id": chat_id,
-            "text": f"❌ Slayd yaratishda xatolik: {str(e)[:200]}",
-        })
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
 def telegram_bot_worker():
+    global TG_BOT_INFO
     if not TELEGRAM_BOT_TOKEN:
-        print("DIQQAT: TELEGRAM_BOT_TOKEN topilmadi!", flush=True)
         return
     try:
-        me = tg_api("getMe", {})
+        me = _tg_request("getMe")
         if me and me.get("ok"):
-            uname = me["result"].get("username", "")
-            TG_BOT_INFO.update({"ok": True, "username": uname, "error": ""})
-            print(f"Telegram bot ulandi: @{uname}", flush=True)
-        tg_api("deleteWebhook", {"drop_pending_updates": False})
-        tg_api("setMyCommands", {
-            "commands": [
-                {"command": "start", "description": "Botni ishga tushirish va Chat ID olish"},
-                {"command": "yarat", "description": "AI orqali yangi slayd yaratish (/yarat Mavzu)"},
-                {"command": "slayd", "description": "Mavjud xona slaydini yuklash (/slayd 6519)"},
-                {"command": "xona", "description": "Xona holatini ko‘rish (/xona 6519)"},
-            ]
-        })
-    except Exception as e:
-        TG_BOT_INFO.update({"ok": False, "error": str(e)})
-        print(f"Telegram bot ulanish xatosi: {e}", flush=True)
+            TG_BOT_INFO = {"ok": True, "username": me["result"].get("username", ""), "error": ""}
+    except Exception as ex:
+        TG_BOT_INFO = {"ok": False, "username": "", "error": str(ex)}
+        return
 
     offset = 0
     while True:
         try:
-            res = tg_api("getUpdates", {"offset": offset, "timeout": 25})
-            if res and res.get("ok"):
-                TG_BOT_INFO["ok"] = True
-                TG_BOT_INFO["error"] = ""
-            for upd in (res or {}).get("result", []):
-                offset = upd["update_id"] + 1
-                msg = upd.get("message") or {}
+            upd = _tg_request("getUpdates", {"offset": offset, "timeout": 15})
+            for item in (upd or {}).get("result") or []:
+                offset = item["update_id"] + 1
+                msg = item.get("message") or {}
                 chat_id = (msg.get("chat") or {}).get("id")
-                text = (msg.get("text") or "").strip()
-                if not chat_id or not text:
+                txt = str(msg.get("text") or "").strip()
+                if not chat_id or not txt:
                     continue
-
-                if text.isdigit() and len(text) in (4, 5):
-                    cmd, arg = "/xona", text
-                elif not text.startswith("/"):
-                    cmd, arg = "/yarat", text
-                else:
-                    parts = text.split(maxsplit=1)
-                    cmd = parts[0].lower().split("@")[0]
-                    arg = parts[1].strip() if len(parts) > 1 else ""
-
-                if cmd == "/start":
-                    room_code = arg if arg.isdigit() else "0000"
-                    kb = {
-                        "inline_keyboard": [
-                            [{"text": f"🎮 Xonaga kirish (#{room_code})", "url": f"{APP_PUBLIC_URL}/?room={room_code}"}],
-                            [{"text": "👨‍🏫 O‘qituvchi (Admin) paneli", "url": f"{APP_PUBLIC_URL}/admin"}],
-                        ]
-                    }
-                    tg_api("sendMessage", {
-                        "chat_id": chat_id,
-                        "text": (
-                            f"⚡ <b>JEO QUIZ PRO</b> AI botiga xush kelibsiz!\n\n"
-                            f"✨ <b>AI Slayd yaratish:</b> shunchaki mavzu nomini yozing yoki "
-                            f"<code>/yarat Mantiq va falsafa</code> deb yuboring.\n\n"
-                            f"🆔 Sizning Chat ID: <code>{chat_id}</code>\n"
-                            f"📥 Mavjud xona slaydi: <code>/slayd {room_code}</code>\n"
-                            f"🔎 Xona holati: <code>/xona {room_code}</code>"
-                        ),
-                        "parse_mode": "HTML",
-                        "reply_markup": kb,
-                    })
-
-                elif cmd in ("/yarat", "/ai", "/generate"):
-                    if len(arg) < 2:
-                        tg_api("sendMessage", {
-                            "chat_id": chat_id,
-                            "text": "ℹ️ Mavzu nomini yozing. Masalan:\n<code>/yarat Mantiq va falsafa</code>",
-                            "parse_mode": "HTML",
-                        })
-                    else:
-                        tg_api("sendMessage", {
-                            "chat_id": chat_id,
-                            "text": f"⏳ <b>«{_clean_xml(arg)}»</b> mavzusida rasmli va diagrammali taqdimot tayyorlanmoqda...",
-                            "parse_mode": "HTML",
-                        })
-                        threading.Thread(
-                            target=_tg_generate_ai_pptx_task,
-                            args=(chat_id, arg),
-                            daemon=True,
-                        ).start()
-
-                elif cmd in ("/slayd", "/ppt"):
-                    room_code = arg if arg else "0000"
+                if txt.startswith("/start"):
+                    reply = (
+                        f"👋 Assalomu alaykum! <b>Jeo Quiz Pro</b> botiga xush kelibsiz.\n\n"
+                        f"🎮 O‘yinga kirish: {APP_PUBLIC_URL}\n"
+                        f"🛠 Admin panel: {APP_PUBLIC_URL}/admin\n"
+                        f"🔑 Standart xona kodi: <code>0000</code>"
+                    )
+                    _tg_request("sendMessage", {"chat_id": chat_id, "text": reply, "parse_mode": "HTML"})
+                elif txt.startswith("/room"):
                     with LOCK:
-                        rm = get_room(room_code)
-                        if not rm:
-                            sl_copy = None
-                            title = ""
-                        else:
-                            if not rm.slides:
-                                rm.build_slides_from_current_questions()
-                            sl_copy = copy.deepcopy(rm.slides)
-                            title = sl_copy.get("title") or rm.topic_title or "Taqdimot"
-                    if not sl_copy:
-                        tg_api("sendMessage", {"chat_id": chat_id, "text": f"❌ #{room_code} xonasi topilmadi."})
-                    else:
-                        pptx_data = build_pptx_bytes(sl_copy)
-                        safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", title)[:40] or "Taqdimot"
-                        tg_send_document(
-                            chat_id,
-                            f"{safe_name}.pptx",
-                            pptx_data,
-                            caption=f"📊 {title} ({len(sl_copy['items'])} ta slayd) — Jeo Quiz Pro",
-                        )
-
-                elif cmd == "/xona":
-                    room_code = arg if arg else "0000"
-                    with LOCK:
-                        rm = get_room(room_code)
-                        info = (rm.topic_title, rm.mode, len(rm.players)) if rm else None
-                    if not info:
-                        tg_api("sendMessage", {"chat_id": chat_id, "text": f"❌ #{room_code} xonasi topilmadi."})
-                    else:
-                        tg_api("sendMessage", {
-                            "chat_id": chat_id,
-                            "text": (
-                                f"🏫 <b>Xona #{room_code}</b>\n"
-                                f"📚 Mavzu: {info[0]}\n"
-                                f"🎯 Rejim: {info[1]}\n"
-                                f"👥 Talabalar: {info[2]} nafar\n\n"
-                                f"📥 Slaydni yuklash uchun: <code>/slayd {room_code}</code>"
-                            ),
-                            "parse_mode": "HTML",
-                            "reply_markup": {
-                                "inline_keyboard": [
-                                    [{"text": "🚀 O‘yinga qo‘shilish", "url": f"{APP_PUBLIC_URL}/?room={room_code}"}],
-                                ]
-                            },
-                        })
-        except Exception as e:
-            TG_BOT_INFO["error"] = str(e)
-            print(f"Telegram polling xatosi: {e}", flush=True)
-            time.sleep(3)
+                        code = generate_room_code()
+                        ROOMS[code] = Room(code, DEFAULT_ADMIN_PIN, "econ")
+                    reply = (
+                        f"✅ Yangi o‘yin xonasi ochildi!\n"
+                        f"🔢 Xona kodi: <code>{code}</code>\n"
+                        f"🔐 Admin PIN: <code>{DEFAULT_ADMIN_PIN}</code>\n"
+                        f"🌐 Havola: {APP_PUBLIC_URL}/?room={code}"
+                    )
+                    _tg_request("sendMessage", {"chat_id": chat_id, "text": reply, "parse_mode": "HTML"})
+        except Exception:
+            time.sleep(5)
 
 
-ADMIN_EXPORT_WIDGET = r"""
-<div id="jeo-export-dock" style="position:fixed;right:14px;bottom:14px;z-index:9999;font-family:system-ui,-apple-system,sans-serif;">
-  <button id="jeo-dock-toggle" onclick="window.__jeoToggleDock()" style="background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none;border-radius:999px;padding:10px 16px;font-weight:700;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.35);cursor:pointer;display:flex;align-items:center;gap:6px;">
-    📥 .pptx / 📲 Telegram
-  </button>
-  <div id="jeo-dock-box" style="display:none;margin-top:8px;width:312px;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:16px;padding:14px;box-shadow:0 14px 36px rgba(0,0,0,.55);">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <strong style="font-size:13px;color:#fbbf24;">📊 Vizual Slayd & Multi-AI</strong>
-      <button onclick="window.__jeoToggleDock(false)" style="background:transparent;border:none;color:#94a3b8;font-size:16px;cursor:pointer;">✕</button>
-    </div>
-    <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #1e293b;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
-        <span style="font-size:11px;color:#94a3b8;">🤖 AI Dvigatel:</span>
-        <span id="jeo-ai-active-list" style="font-size:10px;color:#34d399;">Tekshirilmoqda...</span>
-      </div>
-      <select id="jeo-ai-select" style="width:100%;background:#1e293b;border:1px solid #334155;color:#fff;border-radius:8px;padding:7px 8px;font-size:12px;margin-bottom:8px;outline:none;">
-        <option value="auto">⚡ Auto (Gemini → OpenRouter → Groq)</option>
-        <option value="openrouter">🌐 OpenRouter (Bepul modellar)</option>
-        <option value="groq">🚀 Groq (Llama 3.3 70B — Tezkor)</option>
-        <option value="gemini">✨ Google Gemini</option>
-      </select>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:5px;">✨ Istalgan mavzuda rasmli slayd:</div>
-      <div style="display:flex;gap:6px;">
-        <input id="jeo-quick-topic" type="text" placeholder="Masalan: Mantiq va falsafa..." style="flex:1;background:#1e293b;border:1px solid #334155;color:#fff;border-radius:8px;padding:8px 10px;font-size:12px;outline:none;">
-        <button onclick="window.__jeoQuickSlide()" style="background:#8b5cf6;color:#fff;border:none;border-radius:8px;padding:8px 11px;font-weight:700;font-size:12px;cursor:pointer;">
-          Yaratish
-        </button>
-      </div>
-    </div>
-    <button onclick="window.__jeoDownloadPptx()" style="width:100%;background:#10b981;color:#052e16;border:none;border-radius:10px;padding:10px;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:10px;">
-      📥 PowerPoint (.pptx) Yuklab olish
-    </button>
-    <div style="border-top:1px solid #1e293b;padding-top:10px;">
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:6px;" id="jeo-tg-status">🤖 Bot holati tekshirilmoqda...</div>
-      <div style="display:flex;gap:6px;">
-        <input id="jeo-tg-chatid" type="text" placeholder="Telegram Chat ID" style="flex:1;background:#1e293b;border:1px solid #334155;color:#fff;border-radius:8px;padding:8px 10px;font-size:12px;outline:none;">
-        <button onclick="window.__jeoSendTg()" style="background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:700;font-size:12px;cursor:pointer;">
-          📲 Yuborish
-        </button>
-      </div>
-      <div id="jeo-tg-msg" style="font-size:11px;margin-top:6px;min-height:14px;"></div>
-    </div>
-  </div>
-</div>
-<script>
-(function(){
-  let curRoom = new URLSearchParams(location.search).get("room") || "0000";
-  let curPin = new URLSearchParams(location.search).get("pin") || "";
-  let autoOpened = false;
-  let typedTopic = "";
-
-  document.addEventListener("input", function(e) {
-    const el = e.target;
-    if (!el || el.tagName !== "INPUT") return;
-    if (el.closest("#jeo-export-dock")) return;
-    if (el.type === "text" || !el.type) {
-      const v = (el.value || "").trim();
-      if (v && v !== "Iqtisodiyot va Moliya") typedTopic = v;
-    }
-  }, true);
-
-  setInterval(function() {
-    if (!typedTopic) return;
-    document.querySelectorAll("input").forEach(function(inp) {
-      if (inp.closest("#jeo-export-dock")) return;
-      if ((inp.type === "text" || !inp.type) && inp.value === "Iqtisodiyot va Moliya") {
-        inp.value = typedTopic;
-      }
-    });
-  }, 300);
-
-  const savedId = localStorage.getItem("jeo_tg_chat_id") || "";
-  const savedAi = localStorage.getItem("jeo_ai_pref") || "auto";
-  setTimeout(() => {
-    const inp = document.getElementById("jeo-tg-chatid");
-    if (inp && savedId) inp.value = savedId;
-    const sel = document.getElementById("jeo-ai-select");
-    if (sel) {
-      sel.value = savedAi;
-      sel.addEventListener("change", () => localStorage.setItem("jeo_ai_pref", sel.value));
-    }
-  }, 200);
-
-  function refreshStatuses(d) {
-    const el = document.getElementById("jeo-tg-status");
-    if (el && typeof d.tg_ready === "boolean") {
-      if (d.tg_ready) {
-        const uname = (d.tg_bot && d.tg_bot.username) ? (" (@" + d.tg_bot.username + ")") : "";
-        el.innerHTML = '<span style="color:#34d399;">● Bot faol' + uname + '</span> — /start bosib Chat ID oling';
-      } else {
-        el.innerHTML = '<span style="color:#f87171;">● Bot ulanmagan</span>';
-      }
-    }
-    const aiEl = document.getElementById("jeo-ai-active-list");
-    if (aiEl && Array.isArray(d.ai_providers)) {
-      aiEl.textContent = d.ai_providers.length ? ("Faol: " + d.ai_providers.join(" + ")) : "AI kaliti yo‘q";
-      aiEl.style.color = d.ai_providers.length ? "#34d399" : "#f87171";
-    }
-  }
-
-  const origFetch = window.fetch;
-  window.fetch = async function(input, init) {
-    try {
-      const u = typeof input === "string" ? input : (input && input.url) || "";
-      if (u.includes("/api/state")) {
-        const uo = new URL(u, location.origin);
-        if (uo.searchParams.get("room")) curRoom = uo.searchParams.get("room");
-        if (uo.searchParams.get("pin")) curPin = uo.searchParams.get("pin");
-      }
-      if (u.includes("/api/admin") && init && typeof init.body === "string") {
-        const parsed = JSON.parse(init.body);
-        const sel = document.getElementById("jeo-ai-select");
-        if (sel && sel.value && sel.value !== "auto" && !parsed.ai_provider) {
-          parsed.ai_provider = sel.value;
-        }
-        if (parsed && parsed.action === "ai_generate_slides" && typedTopic && (!parsed.topic || parsed.topic === "Iqtisodiyot va Moliya")) {
-          parsed.topic = typedTopic;
-        }
-        init = Object.assign({}, init, {body: JSON.stringify(parsed)});
-      }
-    } catch(e) {}
-    const resp = await origFetch.call(this, input, init);
-    try {
-      const u = typeof input === "string" ? input : (input && input.url) || "";
-      if (u.includes("/api/state") || u.includes("/api/admin") || u.includes("/api/create_room")) {
-        resp.clone().json().then(d => {
-          if (!d) return;
-          if (d.room) curRoom = d.room;
-          if (d.pin) curPin = d.pin;
-          refreshStatuses(d);
-          if (d.mode === "slides" && !autoOpened) {
-            autoOpened = true;
-            window.__jeoToggleDock(true);
-          }
-        }).catch(()=>{});
-      }
-    } catch(e) {}
-    return resp;
-  };
-
-  window.__jeoToggleDock = function(force) {
-    const box = document.getElementById("jeo-dock-box");
-    if (!box) return;
-    box.style.display = (typeof force === "boolean") ? (force ? "block" : "none") : (box.style.display === "none" ? "block" : "none");
-  };
-
-  window.__jeoQuickSlide = async function() {
-    const inp = document.getElementById("jeo-quick-topic");
-    const sel = document.getElementById("jeo-ai-select");
-    const msg = document.getElementById("jeo-tg-msg");
-    const topic = (inp && inp.value || "").trim();
-    if (!topic) {
-      msg.style.color = "#fbbf24";
-      msg.textContent = "Avval mavzu nomini yozing.";
-      return;
-    }
-    typedTopic = topic;
-    const prefAi = sel ? sel.value : "auto";
-    msg.style.color = "#93c5fd";
-    msg.textContent = "«" + topic + "» bo‘yicha vizual slayd yaratilmoqda...";
-    try {
-      const r = await origFetch("/api/admin", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          room: curRoom, pin: curPin, action: "ai_generate_slides",
-          topic: topic, slide_count: 8, style: "Akademik ma’ruza",
-          theme: "royal", ai_provider: prefAi
-        })
-      });
-      const d = await r.json();
-      if (!r.ok || d.error) {
-        msg.style.color = "#f87171";
-        msg.textContent = "Xato: " + (d.error || "Yaratilmadi");
-      } else {
-        msg.style.color = "#34d399";
-        msg.textContent = "✔ Rasmli va diagrammali slayd tayyorlanmoqda...";
-      }
-    } catch(e) {
-      msg.style.color = "#f87171";
-      msg.textContent = "Tarmoq xatosi.";
-    }
-  };
-
-  window.__jeoDownloadPptx = function() {
-    window.open("/api/export_pptx?room=" + encodeURIComponent(curRoom), "_blank");
-  };
-
-  window.__jeoSendTg = async function() {
-    const inp = document.getElementById("jeo-tg-chatid");
-    const msg = document.getElementById("jeo-tg-msg");
-    const chatId = (inp && inp.value || "").trim();
-    if (!chatId) {
-      msg.style.color = "#fbbf24";
-      msg.textContent = "Avval botga /start yozib Chat ID ni kiriting.";
-      return;
-    }
-    localStorage.setItem("jeo_tg_chat_id", chatId);
-    msg.style.color = "#93c5fd";
-    msg.textContent = "Telegramga yuborilmoqda...";
-    try {
-      const r = await origFetch("/api/admin", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({room: curRoom, pin: curPin, action: "tg_send_slides", chat_id: chatId})
-      });
-      const data = await r.json();
-      if (!r.ok || data.error) {
-        msg.style.color = "#f87171";
-        msg.textContent = "Xato: " + (data.error || "Yuborilmadi");
-      } else {
-        msg.style.color = "#34d399";
-        msg.textContent = "✔ Vizual slaydlar Telegramga yuborildi!";
-      }
-    } catch(e) {
-      msg.style.color = "#f87171";
-      msg.textContent = "Tarmoq xatosi.";
-    }
-  };
-})();
-</script>
-"""
+def _prepare_uploaded_file(body):
+    b64 = str(body.get("file_b64") or body.get("b64") or "").strip()
+    mime = str(body.get("file_mime") or body.get("mime") or "").strip()
+    fname = str(body.get("file_name") or body.get("filename") or "").strip().lower()
+    if not b64:
+        return None, ""
+    if "," in b64 and b64.startswith("data:"):
+        b64 = b64.split(",", 1)[1]
+    if fname.endswith(".docx") or "wordprocessingml" in mime:
+        return None, extract_docx_text(b64)
+    if fname.endswith(".txt") or mime.startswith("text/"):
+        raw_txt = base64.b64decode(b64).decode("utf-8", errors="ignore")
+        return None, raw_txt[:28000]
+    if not mime:
+        mime = "application/pdf" if fname.endswith(".pdf") else "image/jpeg"
+    return {"mime": mime, "b64": b64}, ""
 
 
-class Handler(BaseHTTPRequestHandler):
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+class QuizHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
-    def send_json(self, obj, status=200):
-        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+    def _send_json(self, obj, status=200):
+        raw = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.end_headers()
-        self.wfile.write(body)
+        self.wfile.write(raw)
 
-    def send_file(self, filename):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        fpath = os.path.join(base_dir, filename)
-        if not os.path.exists(fpath):
-            self.send_json({"error": f"{filename} topilmadi"}, 404)
+    def _send_html_file(self, filename):
+        fpath = os.path.join(BASE_DIR, filename)
+        if not os.path.isfile(fpath):
+            self._send_json({"ok": False, "error": f"{filename} topilmadi"}, 404)
             return
         with open(fpath, "rb") as f:
             data = f.read()
-        if filename == "admin.html":
-            html_txt = data.decode("utf-8", errors="ignore")
-            if "</body>" in html_txt:
-                html_txt = html_txt.replace("</body>", ADMIN_EXPORT_WIDGET + "\n</body>")
-            else:
-                html_txt += ADMIN_EXPORT_WIDGET
-            data = html_txt.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(data)
 
-    def read_json(self):
-        ln = int(self.headers.get("Content-Length", 0))
-        if ln <= 0:
-            return {}
-        return json.loads(self.rfile.read(ln).decode("utf-8"))
-
-    def do_HEAD(self):
+    def _send_pptx(self, room):
+        with LOCK:
+            sl_copy = copy.deepcopy(room.slides)
+        if not sl_copy:
+            self._send_json({"ok": False, "error": "Avval slayd yarating"}, 400)
+            return
+        pptx_bytes = build_pptx_bytes(sl_copy)
+        safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", sl_copy.get("title") or "JeoQuiz_Slides")[:40] or "Slides"
         self.send_response(200)
-        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+        self.send_header("Content-Disposition", f'attachment; filename="{safe_name}.pptx"')
+        self.send_header("Content-Length", str(len(pptx_bytes)))
         self.end_headers()
+        self.wfile.write(pptx_bytes)
+
+    def do_OPTIONS(self):
+        self._send_json({"ok": True})
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         qs = urllib.parse.parse_qs(parsed.query)
 
-        if path in ("/ping", "/health"):
-            self.send_json({
-                "ok": True,
-                "alive": True,
-                "ai": get_active_ai_list(),
-                "tg": TG_BOT_INFO.get("ok", False),
-            })
-            return
-
         if path in ("/", "/index.html"):
-            self.send_file("index.html")
-            return
+            return self._send_html_file("index.html")
         if path in ("/admin", "/admin.html"):
-            self.send_file("admin.html")
-            return
+            return self._send_html_file("admin.html")
+        if path in ("/health", "/ping"):
+            return self._send_json({"ok": True, "rooms": len(ROOMS)})
 
-        if path == "/api/check_room":
-            code = (qs.get("room") or [""])[0].strip()
+        room_code = (qs.get("room") or ["0000"])[0]
+        is_admin = (qs.get("admin") or ["0"])[0] in ("1", "true", "yes")
+
+        if path in ("/api/pptx", "/api/export_pptx", "/api/slides/pptx"):
             with LOCK:
-                room = get_room(code)
-                if not room:
-                    self.send_json({"error": "Bunday xona topilmadi. Kodni tekshiring."}, 404)
-                    return
-                self.send_json({"ok": True, "room": room.code, "topic_title": room.topic_title})
-            return
+                room = get_room(room_code)
+            if not room:
+                return self._send_json({"ok": False, "error": "Xona topilmadi"}, 404)
+            try:
+                return self._send_pptx(room)
+            except Exception as ex:
+                return self._send_json({"ok": False, "error": str(ex)}, 500)
 
         if path == "/api/state":
-            code = (qs.get("room") or ["0000"])[0]
-            is_admin = (qs.get("admin") or ["0"])[0] == "1"
-            pin = (qs.get("pin") or [""])[0]
             with LOCK:
-                room = get_room(code)
+                room = get_room(room_code)
                 if not room:
-                    self.send_json({"error": "Xona topilmadi"}, 404)
-                    return
-                if is_admin and pin != room.pin:
-                    self.send_json({"error": "Noto‘g‘ri PIN kod"}, 403)
-                    return
-                self.send_json(room.serialize(is_admin=is_admin))
-            return
+                    return self._send_json({"ok": False, "error": "Xona topilmadi"}, 404)
+                return self._send_json({"ok": True, **room.serialize(is_admin=is_admin)})
 
-        if path == "/api/export_pptx":
-            code = (qs.get("room") or ["0000"])[0]
-            with LOCK:
-                room = get_room(code)
-                if not room:
-                    self.send_json({"error": "Xona topilmadi"}, 404)
-                    return
-                if not room.slides:
-                    room.build_slides_from_current_questions()
-                sl_copy = copy.deepcopy(room.slides)
-                title = sl_copy.get("title") or room.topic_title or "Taqdimot"
-            pptx_bytes = build_pptx_bytes(sl_copy)
-            safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", title)[:40] or "Taqdimot"
-            self.send_response(200)
-            self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
-            self.send_header("Content-Disposition", f'attachment; filename="{safe_name}.pptx"')
-            self.send_header("Content-Length", str(len(pptx_bytes)))
-            self.end_headers()
-            self.wfile.write(pptx_bytes)
-            return
-
-        if path == "/api/questions":
-            code = (qs.get("room") or ["0000"])[0]
-            pin = (qs.get("pin") or [""])[0]
-            with LOCK:
-                room = get_room(code)
-                if not room:
-                    self.send_json({"error": "Xona topilmadi"}, 404)
-                    return
-                if pin != room.pin:
-                    self.send_json({"error": "Noto‘g‘ri PIN kod"}, 403)
-                    return
-                self.send_json(room.questions)
-            return
-
-        self.send_json({"error": "Topilmadi"}, 404)
+        return self._send_json({"ok": False, "error": "Yo‘nalish topilmadi"}, 404)
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         try:
-            data = self.read_json()
+            length = int(self.headers.get("Content-Length", 0))
+            raw_body = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
+            body = json.loads(raw_body) if raw_body.strip() else {}
         except Exception:
-            self.send_json({"error": "Noto‘g‘ri JSON"}, 400)
-            return
+            return self._send_json({"ok": False, "error": "Noto‘g‘ri JSON"}, 400)
 
-        if path == "/api/create_room":
-            preset = str(data.get("preset") or "econ")
-            teams = data.get("teams")
+        action = str(body.get("action") or "").strip()
+        room_code = str(body.get("room") or "0000").strip()
+
+        if path == "/api/create_room" or action == "create_room":
             with LOCK:
                 cleanup_old_rooms()
                 code = generate_room_code()
-                pin = f"{random.randint(1000, 9999)}"
-                room = Room(code, pin, preset_id=preset, teams=teams)
-                ROOMS[code] = room
-                st = room.serialize(is_admin=True)
-            self.send_json({"ok": True, "room": code, "pin": pin, "state": st})
-            return
+                pin = str(body.get("pin") or DEFAULT_ADMIN_PIN).strip() or DEFAULT_ADMIN_PIN
+                preset = str(body.get("preset") or "econ").strip()
+                teams = body.get("teams")
+                rm = Room(code, pin, preset, teams=teams)
+                ROOMS[code] = rm
+                return self._send_json({"ok": True, "room": code, "pin": pin, **rm.serialize(is_admin=True)})
 
-        code = str(data.get("room") or "0000")
-
-        if path == "/api/login":
-            name = str(data.get("name") or "").strip()
-            if not name:
-                self.send_json({"error": "Ismingizni kiriting"}, 400)
-                return
-            tv = data.get("team")
-            team = int(tv) if (tv is not None and tv != "" and 0 <= int(tv) < 4) else None
+        if path in ("/api/pptx", "/api/export_pptx", "/api/slides/pptx") or action == "export_pptx":
             with LOCK:
-                room = get_room(code)
-                if not room:
-                    self.send_json({"error": "Xona topilmadi"}, 404)
-                    return
+                room = get_room(room_code)
+            if not room:
+                return self._send_json({"ok": False, "error": "Xona topilmadi"}, 404)
+            try:
+                return self._send_pptx(room)
+            except Exception as ex:
+                return self._send_json({"ok": False, "error": str(ex)}, 500)
+
+        with LOCK:
+            room = get_room(room_code)
+            if not room:
+                return self._send_json({"ok": False, "error": "Xona topilmadi"}, 404)
+
+            if path == "/api/check_pin" or action == "check_pin":
+                pin = str(body.get("pin") or "").strip()
+                if pin != room.pin:
+                    return self._send_json({"ok": False, "error": "Admin PIN kodi noto‘g‘ri!"}, 403)
+                return self._send_json({"ok": True, **room.serialize(is_admin=True)})
+
+            # Player join
+            if path in ("/api/join", "/api/player/join") or action == "join":
+                name = str(body.get("name") or "").strip()[:28]
+                team = max(0, min(3, int(body.get("team", 0))))
+                if not name:
+                    return self._send_json({"ok": False, "error": "Ismingizni kiriting"}, 400)
                 room.players[name] = team
                 if room.kahoot and name not in room.kahoot["records"]:
                     room.kahoot["records"][name] = {"team": team, "pts": 0, "streak": 0, "correct": 0}
                 room.touch()
-            self.send_json({"ok": True})
-            return
+                return self._send_json({"ok": True, **room.serialize(is_admin=False)})
 
-        if path == "/api/answer":
-            team = data.get("team")
-            with LOCK:
-                room = get_room(code)
-                if not room or team is None or not (0 <= int(team) < 4):
-                    self.send_json({"error": "Jamoa tanlanmagan"}, 400)
-                    return
-                t = int(team)
-                if "choice" in data and data["choice"] is not None:
-                    room.answers[t] = int(data["choice"])
-                if "text" in data and data["text"] is not None:
-                    room.text_answers[t] = str(data["text"]).strip()
+            # AI Board generation
+            if path in ("/api/ai_generate", "/api/generate") or action == "ai_generate":
+                if room.ai_busy:
+                    return self._send_json({"ok": False, "error": "AI hozir band, kuting..."}, 409)
+                topic = str(body.get("topic") or "Umumiy bilimlar").strip()
+                level = str(body.get("level") or "Talabalar").strip()
+                preferred = body.get("provider")
+                file_part, extra_text = _prepare_uploaded_file(body)
+                room.ai_busy = True
+                room.ai_error = ""
+                room.ai_status = "AI ishga tushmoqda..."
                 room.touch()
-            self.send_json({"ok": True})
-            return
+                threading.Thread(
+                    target=run_ai_board_worker,
+                    args=(room, topic, level, file_part, extra_text, preferred),
+                    daemon=True,
+                ).start()
+                return self._send_json({"ok": True, **room.serialize(is_admin=True)})
 
-        if path == "/api/classic_test_submit":
-            name = str(data.get("name") or "").strip()
-            tv = data.get("team")
-            team = int(tv) if (tv is not None and tv != "" and 0 <= int(tv) < 4) else None
-            answers = data.get("answers") or []
-            dur_sec = max(1, int(data.get("duration_sec") or 0))
-            with LOCK:
-                room = get_room(code)
-                if not room or not room.classic_test:
-                    self.send_json({"error": "Oddiy test faol emas"}, 400)
-                    return
-                ct = room.classic_test
-                if not ct["active"]:
-                    self.send_json({"error": "Test yakunlangan, javob qabul qilinmaydi"}, 400)
-                    return
-                if not name:
-                    self.send_json({"error": "Ismingizni kiriting"}, 400)
-                    return
+            # AI Pro Slides generation
+            if path in ("/api/ai_slides", "/api/slides/generate") or action == "ai_slides":
+                if room.ai_busy:
+                    return self._send_json({"ok": False, "error": "AI hozir band, kuting..."}, 409)
+                topic = str(body.get("topic") or room.topic_title or "Taqdimot").strip()
+                level = str(body.get("level") or "Talabalar").strip()
+                slide_count = int(body.get("slide_count") or body.get("count") or 10)
+                theme = str(body.get("theme") or "royal").strip()
+                preferred = body.get("provider")
+                file_part, extra_text = _prepare_uploaded_file(body)
+                room.ai_busy = True
+                room.ai_error = ""
+                room.ai_status = "AI Pro Slaydlar tayyorlamoqda..."
+                room.touch()
+                threading.Thread(
+                    target=run_ai_slides_worker,
+                    args=(room, topic, level, slide_count, theme, file_part, extra_text, preferred),
+                    daemon=True,
+                ).start()
+                return self._send_json({"ok": True, **room.serialize(is_admin=True)})
 
-                pool = ct["pool"]
-                correct_cnt = 0
-                total_score = 0
-                review = []
-                for idx, q in enumerate(pool):
-                    uch = answers[idx] if idx < len(answers) and answers[idx] is not None else -1
-                    uch = int(uch)
-                    is_ok = (uch == q["c"])
-                    if is_ok:
-                        correct_cnt += 1
-                        total_score += int(q.get("pts") or 100)
-                    review.append({
-                        "idx": idx,
-                        "cat": q["cat"],
-                        "q": q["q"],
-                        "opts": list(q["opts"]),
-                        "user_choice": uch,
-                        "correct_choice": q["c"],
-                        "is_correct": is_ok,
-                        "exp": q.get("exp", "") if ct["show_explanations"] else "",
-                    })
+            # --- Game & Admin State Actions ---
+            act = action or path.split("/")[-1]
+            is_adm = bool(body.get("is_admin", True))
 
-                total_q = max(1, len(pool))
-                pct = int(round(correct_cnt * 100 / total_q))
-                prev = ct["submissions"].get(name)
-                sub_obj = {
-                    "name": name,
-                    "team": team,
-                    "correct": correct_cnt,
-                    "total": len(pool),
-                    "percent": pct,
-                    "score": total_score,
-                    "duration_sec": dur_sec,
-                    "submitted_at": time.time(),
-                    "review": review,
+            if act == "set_mode":
+                mode = str(body.get("mode") or "jeopardy").strip()
+                room.mode = mode
+                if mode == "slides" and not room.slides:
+                    room.build_slides_from_current_questions()
+                elif mode == "classic_test" and not room.classic_test:
+                    pool = room.get_mc_pool()[:15]
+                    room.classic_test = {
+                        "active": True,
+                        "title": room.topic_title or "Oddiy Test",
+                        "time_limit": 600,
+                        "show_explanations": True,
+                        "pool": pool,
+                        "submissions": {},
+                        "team_pts": [0, 0, 0, 0],
+                    }
+                elif mode == "auction" and not room.auc:
+                    pool = room.get_mc_pool()[:5]
+                    start_bank = [s if s > 0 else 1000 for s in room.scores]
+                    room.auc = {
+                        "round": 1, "total_rounds": len(pool), "pool": pool,
+                        "phase": "betting", "bank": start_bank, "bets": {}, "answers": {}, "deltas": {},
+                    }
+                elif mode == "bomb" and not room.bomb:
+                    pool = room.get_mc_pool()
+                    room.bomb = {
+                        "holder": 0, "lives": [3, 3, 3, 3], "time_limit": 20,
+                        "deadline": time.time() + 20, "time_left": 20, "status": "playing",
+                        "last_choice": None, "last_msg": "💣 Bomba 1-jamoa qo‘lida!",
+                        "pool": pool, "q_idx": 0, "cur_q": pool[0],
+                    }
+                elif mode == "kahoot" and not room.kahoot:
+                    pool = room.get_mc_pool()[:10]
+                    recs = {nm: {"team": tm, "pts": 0, "streak": 0, "correct": 0} for nm, tm in room.players.items()}
+                    room.kahoot = {
+                        "phase": "question", "q_num": 1, "pool": pool, "cur_q": pool[0],
+                        "deadline": time.time() + 20, "time_left": 20,
+                        "round_results": {}, "records": recs, "team_pts": [0, 0, 0, 0],
+                    }
+
+            elif act == "load_preset":
+                room.load_preset(str(body.get("preset") or "econ"))
+
+            elif act == "set_teams":
+                tms = body.get("teams") or []
+                if len(tms) == 4:
+                    room.teams = [str(t).strip() or f"{i+1}-jamoa" for i, t in enumerate(tms)]
+
+            elif act in ("set_score", "add_score"):
+                t_idx = max(0, min(3, int(body.get("team", 0))))
+                val = int(body.get("delta") if act == "add_score" else body.get("score", 0))
+                if act == "add_score":
+                    room.scores[t_idx] += val
+                else:
+                    room.scores[t_idx] = val
+
+            elif act == "reset_scores":
+                room.scores = [0, 0, 0, 0]
+
+            elif act == "reset_board":
+                room.used = [False] * 25
+                room.cur = None
+                room.revealed = False
+                room.answers = {}
+                room.text_answers = {}
+                room.ai_grades = {}
+
+            # Jeopardy controls
+            elif act in ("select_q", "open_q"):
+                idx = int(body.get("idx", 0))
+                if 0 <= idx < len(room.questions):
+                    room.cur = idx
+                    room.revealed = False
+                    room.answers = {}
+                    room.text_answers = {}
+                    room.ai_grades = {}
+
+            elif act == "reveal_q":
+                if room.cur is not None:
+                    room.revealed = True
+                    room.used[room.cur] = True
+
+            elif act == "close_q":
+                if room.cur is not None and body.get("mark_used", True):
+                    room.used[room.cur] = True
+                room.cur = None
+                room.revealed = False
+
+            elif act in ("answer", "player_answer"):
+                t_key = str(body.get("team", 0))
+                if "text" in body and str(body.get("text") or "").strip():
+                    room.text_answers[t_key] = str(body["text"]).strip()[:400]
+                elif "choice" in body and not room.revealed:
+                    room.answers[t_key] = int(body["choice"])
+
+            elif act == "award_team":
+                t_idx = max(0, min(3, int(body.get("team", 0))))
+                pts = int(body.get("pts", 0))
+                room.scores[t_idx] += pts
+                if room.cur is not None:
+                    room.used[room.cur] = True
+                    room.revealed = True
+
+            elif act == "ai_grade":
+                threading.Thread(target=run_ai_grade_worker, args=(room,), daemon=True).start()
+
+            # Slides controls
+            elif act == "slide_nav" and room.slides:
+                total = len(room.slides["items"])
+                direction = str(body.get("dir") or "next")
+                cur = room.slides["cur_idx"]
+                if direction == "next":
+                    room.slides["cur_idx"] = min(total - 1, cur + 1)
+                elif direction == "prev":
+                    room.slides["cur_idx"] = max(0, cur - 1)
+                elif direction == "goto":
+                    room.slides["cur_idx"] = max(0, min(total - 1, int(body.get("idx", 0))))
+
+            elif act == "slide_theme" and room.slides:
+                room.slides["theme"] = str(body.get("theme") or "royal").strip()
+
+            elif act == "slide_from_quiz":
+                room.build_slides_from_current_questions(theme=str(body.get("theme") or "royal"))
+                room.mode = "slides"
+
+            elif act == "slide_update" and room.slides:
+                idx = int(body.get("idx", room.slides["cur_idx"]))
+                if 0 <= idx < len(room.slides["items"]):
+                    it = room.slides["items"][idx]
+                    for fld in ("title", "subtitle", "formula", "formula_desc", "highlight", "notes"):
+                        if fld in body:
+                            it[fld] = str(body[fld] or "").strip()
+                    if "bullets" in body and isinstance(body["bullets"], list):
+                        it["bullets"] = [str(x).strip() for x in body["bullets"] if str(x).strip()][:5]
+
+            # Classic / Simple Test controls
+            elif act == "ctest_start":
+                q_cnt = max(5, min(25, int(body.get("count") or 15)))
+                t_lim = max(60, int(body.get("time_limit") or 600))
+                pool = room.get_mc_pool()[:q_cnt]
+                room.classic_test = {
+                    "active": True,
+                    "title": str(body.get("title") or room.topic_title or "Oddiy Test").strip(),
+                    "time_limit": t_lim,
+                    "show_explanations": bool(body.get("show_explanations", True)),
+                    "pool": pool,
+                    "submissions": {},
+                    "team_pts": [0, 0, 0, 0],
                 }
-                ct["submissions"][name] = sub_obj
-                if not prev and team is not None and 0 <= team < 4:
-                    ct["team_pts"][team] += total_score
-                room.touch()
-            self.send_json({"ok": True, "result": sub_obj})
-            return
+                room.mode = "classic_test"
 
-        if path == "/api/kahoot_play":
-            name = str(data.get("name") or "").strip()
-            tv = data.get("team")
-            team = int(tv) if (tv is not None and tv != "" and 0 <= int(tv) < 4) else None
-            choice = int(data.get("choice", -1))
-            with LOCK:
-                room = get_room(code)
-                if not room or not room.kahoot:
-                    self.send_json({"error": "Jonli TEST o‘yini faol emas"}, 400)
-                    return
-                room.tick_timers()
-                k = room.kahoot
-                if k["phase"] != "question":
-                    self.send_json({"error": "Savol vaqti tugagan"}, 400)
-                    return
-                if not name:
-                    self.send_json({"error": "Ism kiritilmagan"}, 400)
-                    return
-                if name in k["round_results"]:
-                    self.send_json({"ok": True})
-                    return
-                if name not in k["records"]:
-                    k["records"][name] = {"team": team, "pts": 0, "streak": 0, "correct": 0}
-                rec = k["records"][name]
-                if team is not None:
-                    rec["team"] = team
-                q = k["cur_q"]
-                is_ok = (choice == q["c"])
-                gained = 0
-                if is_ok:
-                    dur = max(1, k["duration"])
-                    rem = max(0.0, k["deadline"] - time.time())
-                    speed_pts = int(round(500 + 500 * (rem / dur)))
-                    rec["streak"] += 1
-                    rec["correct"] += 1
-                    streak_bonus = min(500, (rec["streak"] - 1) * 100)
-                    gained = speed_pts + streak_bonus
-                    rec["pts"] += gained
-                    if rec["team"] is not None and 0 <= rec["team"] < 4:
-                        k["team_pts"][rec["team"]] += gained
-                else:
-                    rec["streak"] = 0
-                k["round_results"][name] = {"choice": choice, "ok": is_ok, "gained": gained}
-                total_known = max(len(room.players), len(k["records"]))
-                if total_known > 0 and len(k["round_results"]) >= total_known:
-                    room.kahoot_do_reveal()
-                room.touch()
-            self.send_json({"ok": True})
-            return
+            elif act == "ctest_submit" and room.classic_test:
+                ct = room.classic_test
+                name = str(body.get("name") or "Ishtirokchi").strip()[:28]
+                team = max(0, min(3, int(body.get("team", room.players.get(name, 0)))))
+                ans_map = body.get("answers") or {}
+                dur = max(1, int(body.get("duration_sec") or 1))
+                correct = 0
+                details = []
+                for idx, q in enumerate(ct["pool"]):
+                    picked = ans_map.get(str(idx)) if isinstance(ans_map, dict) else (ans_map[idx] if idx < len(ans_map) else None)
+                    ok = (picked is not None and int(picked) == q["c"])
+                    if ok:
+                        correct += 1
+                    details.append({"idx": idx, "picked": picked, "correct_idx": q["c"], "ok": ok, "exp": q.get("exp", "")})
+                total = max(1, len(ct["pool"]))
+                pct = round(correct * 100 / total)
+                score = correct * 100
+                ct["submissions"][name] = {
+                    "team": team, "correct": correct, "total": total,
+                    "percent": pct, "score": score, "duration_sec": dur, "details": details,
+                }
+                ct["team_pts"][team] += score
+                room.scores[team] += score
 
-        if path == "/api/mil_play":
-            action = data.get("action")
-            with LOCK:
-                room = get_room(code)
-                if not room or not room.mil:
-                    self.send_json({"error": "Millioner o‘yini faol emas"}, 400)
-                    return
+            elif act == "ctest_stop" and room.classic_test:
+                room.classic_test["active"] = False
+
+            # Millionaire controls
+            elif act == "mil_start":
+                pool = room.get_mc_pool()[:15]
+                while len(pool) < 15:
+                    pool.extend(copy.deepcopy(PRESET_DATA["econ"]["questions"]))
+                pool = pool[:15]
+                room.mil = {
+                    "active": True,
+                    "player": str(body.get("player") or "Ishtirokchi").strip(),
+                    "team": max(0, min(3, int(body.get("team", 0)))),
+                    "step": 0, "pool": pool, "won": 0, "status": "playing",
+                    "revealed": False, "selected": None, "hidden_opts": [],
+                    "lifelines": {"5050": True, "audience": True, "ai": True},
+                    "audience_open": False, "votes": {}, "ai_hint": "", "credited": False,
+                }
+                room.mode = "millionaire"
+
+            elif act == "mil_select" and room.mil and not room.mil["revealed"]:
+                room.mil["selected"] = int(body.get("choice", 0))
+
+            elif act == "mil_reveal" and room.mil and room.mil["selected"] is not None:
                 m = room.mil
-                mq = m["pool"][m["step"]]
-                if action == "select" and m["active"] and not m["revealed"]:
-                    m["selected"] = int(data.get("choice"))
-                elif action == "5050" and m["active"] and not m["revealed"] and m["lifelines"]["fifty"]:
-                    wrong = [i for i in range(4) if i != mq["c"]]
-                    m["hidden_opts"] = random.sample(wrong, 2)
-                    m["lifelines"]["fifty"] = False
-                elif action == "audience" and m["active"] and not m["revealed"] and m["lifelines"]["audience"]:
-                    m["audience_open"] = True
-                    m["lifelines"]["audience"] = False
-                elif action == "ai" and m["active"] and not m["revealed"] and m["lifelines"]["ai"]:
-                    m["lifelines"]["ai"] = False
-                    if get_active_ai_list():
-                        try:
-                            m["ai_hint"] = call_gemini(
-                                f"«Kim millioner bo‘lishni xohlaydi?» o‘yinida yordam ber. Savol: {mq['q']}. "
-                                f"Variantlar: A){mq['opts'][0]}, B){mq['opts'][1]}, C){mq['opts'][2]}, D){mq['opts'][3]}. "
-                                f"2 jumlada qisqa maslahat ber."
-                            )
-                        except Exception:
-                            m["ai_hint"] = f"Eng ishonchli javob: {['A','B','C','D'][mq['c']]} varianti."
-                    else:
-                        m["ai_hint"] = f"Eng to‘g‘ri yo‘nalish: {['A','B','C','D'][mq['c']]} varianti."
-                elif action == "reveal" and m["active"] and not m["revealed"] and m["selected"] is not None:
-                    m["revealed"] = True
-                    m["audience_open"] = False
-                    if m["selected"] == mq["c"]:
-                        m["won"] = MIL_PRIZES[m["step"]]
-                        if m["step"] >= len(MIL_PRIZES) - 1:
-                            m["active"] = False
-                            m["status"] = "won"
-                    else:
-                        safe_won = 0
-                        for s_idx in MIL_SAFES:
-                            if m["step"] > s_idx:
-                                safe_won = MIL_PRIZES[s_idx]
-                        m["won"] = safe_won
+                m["revealed"] = True
+                q = m["pool"][m["step"]]
+                if m["selected"] == q["c"]:
+                    m["won"] = MIL_PRIZES[m["step"]]
+                    if m["step"] == len(MIL_PRIZES) - 1:
+                        m["status"] = "won"
                         m["active"] = False
-                        m["status"] = "lost"
-                elif action == "next" and m["active"] and m["revealed"] and m["status"] == "playing":
-                    m["step"] += 1
-                    m["revealed"] = False
-                    m["selected"] = None
-                    m["hidden_opts"] = []
-                    m["audience_open"] = False
-                    m["votes"] = {}
-                    m["ai_hint"] = ""
-                elif action == "walk" and m["active"] and m["won"] > 0:
-                    m["active"] = False
-                    m["status"] = "walked"
-                room.touch()
-            self.send_json({"ok": True})
-            return
-
-        if path == "/api/mil_vote":
-            voter = str(data.get("voter") or "mehmon")
-            choice = int(data.get("choice", 0))
-            with LOCK:
-                room = get_room(code)
-                if room and room.mil and room.mil["audience_open"]:
-                    room.mil["votes"][voter] = choice
-                    room.touch()
-            self.send_json({"ok": True})
-            return
-
-        if path == "/api/auc_play":
-            action = data.get("action")
-            team = int(data.get("team", -1))
-            with LOCK:
-                room = get_room(code)
-                if not room or not room.auc or not (0 <= team < 4):
-                    self.send_json({"error": "Auksion faol emas"}, 400)
-                    return
-                a = room.auc
-                if action == "bet" and a["phase"] == "betting":
-                    amt = max(10, min(a["bank"][team], int(data.get("amount", 50))))
-                    a["bets"][str(team)] = amt
-                elif action == "answer" and a["phase"] == "question":
-                    a["answers"][str(team)] = int(data.get("choice", 0))
-                room.touch()
-            self.send_json({"ok": True})
-            return
-
-        if path == "/api/bomb_play":
-            team = int(data.get("team", -1))
-            choice = int(data.get("choice", -1))
-            with LOCK:
-                room = get_room(code)
-                if not room or not room.bomb:
-                    self.send_json({"error": "Bomba o‘yini faol emas"}, 400)
-                    return
-                room.tick_timers()
-                b = room.bomb
-                if b["status"] != "playing" or team != b["holder"]:
-                    self.send_json({"ok": True})
-                    return
-                b["last_choice"] = choice
-                if choice == b["cur_q"]["c"]:
-                    alive = [i for i in range(4) if b["lives"][i] > 0]
-                    nxt = (team + 1) % 4
-                    for _ in range(4):
-                        if b["lives"][nxt] > 0:
-                            break
-                        nxt = (nxt + 1) % 4
-                    b["holder"] = nxt
-                    b["pool_idx"] = (b["pool_idx"] + 1) % len(b["pool"])
-                    b["cur_q"] = b["pool"][b["pool_idx"]]
-                    b["deadline"] = time.time() + b["sec"]
-                    b["time_left"] = b["sec"]
-                    b["last_choice"] = None
-                    if len(alive) <= 1:
-                        b["status"] = "win"
-                        b["last_msg"] = f"👑 G‘OLIB: {room.teams[alive[0]]}!"
-                    else:
-                        b["last_msg"] = f"✅ {room.teams[team]} to‘g‘ri topdi! Bomba {room.teams[nxt]} ga o‘tdi!"
                 else:
-                    b["lives"][team] = max(0, b["lives"][team] - 1)
+                    safe = 0
+                    for s_idx in MIL_SAFES:
+                        if m["step"] > s_idx:
+                            safe = MIL_PRIZES[s_idx]
+                    m["won"] = safe
+                    m["status"] = "lost"
+                    m["active"] = False
+
+            elif act == "mil_next" and room.mil and room.mil["revealed"] and room.mil["status"] == "playing":
+                m = room.mil
+                m["step"] = min(len(MIL_PRIZES) - 1, m["step"] + 1)
+                m["selected"] = None
+                m["revealed"] = False
+                m["hidden_opts"] = []
+                m["audience_open"] = False
+                m["votes"] = {}
+                m["ai_hint"] = ""
+
+            elif act == "mil_walk" and room.mil:
+                room.mil["status"] = "walked"
+                room.mil["active"] = False
+
+            elif act == "mil_lifeline" and room.mil:
+                m = room.mil
+                kind = str(body.get("kind") or "")
+                q = m["pool"][m["step"]]
+                if kind == "5050" and m["lifelines"]["5050"]:
+                    m["lifelines"]["5050"] = False
+                    wrongs = [i for i in range(4) if i != q["c"]]
+                    random.shuffle(wrongs)
+                    m["hidden_opts"] = wrongs[:2]
+                elif kind == "audience" and m["lifelines"]["audience"]:
+                    m["lifelines"]["audience"] = False
+                    m["audience_open"] = True
+                    m["votes"] = {}
+                elif kind == "ai" and m["lifelines"]["ai"]:
+                    m["lifelines"]["ai"] = False
+                    m["ai_hint"] = q.get("exp") or f"To‘g‘ri javob {['A','B','C','D'][q['c']]} variantga yaqin."
+
+            elif act == "mil_vote" and room.mil and room.mil["audience_open"]:
+                voter = str(body.get("name") or random.randint(1, 99999))
+                room.mil["votes"][voter] = max(0, min(3, int(body.get("choice", 0))))
+
+            elif act == "mil_credit" and room.mil and not room.mil["credited"]:
+                room.scores[room.mil["team"]] += room.mil["won"]
+                room.mil["credited"] = True
+
+            # Auction controls
+            elif act == "auc_bet" and room.auc and room.auc["phase"] == "betting":
+                t_idx = max(0, min(3, int(body.get("team", 0))))
+                max_b = room.auc["bank"][t_idx]
+                bet = max(0, min(max_b, int(body.get("bet", 0))))
+                room.auc["bets"][str(t_idx)] = bet
+
+            elif act == "auc_open_q" and room.auc:
+                room.auc["phase"] = "answering"
+
+            elif act == "auc_answer" and room.auc and room.auc["phase"] == "answering":
+                t_idx = max(0, min(3, int(body.get("team", 0))))
+                room.auc["answers"][str(t_idx)] = max(0, min(3, int(body.get("choice", 0))))
+
+            elif act == "auc_reveal" and room.auc:
+                a = room.auc
+                q = a["pool"][a["round"] - 1]
+                deltas = {}
+                for t_idx in range(4):
+                    tk = str(t_idx)
+                    bet = int(a["bets"].get(tk, 0))
+                    if tk in a["answers"] and bet > 0:
+                        if int(a["answers"][tk]) == q["c"]:
+                            a["bank"][t_idx] += bet
+                            room.scores[t_idx] += bet
+                            deltas[tk] = bet
+                        else:
+                            a["bank"][t_idx] = max(0, a["bank"][t_idx] - bet)
+                            room.scores[t_idx] = max(0, room.scores[t_idx] - bet)
+                            deltas[tk] = -bet
+                    else:
+                        deltas[tk] = 0
+                a["deltas"] = deltas
+                a["phase"] = "revealed"
+
+            elif act == "auc_next" and room.auc:
+                a = room.auc
+                if a["round"] < a["total_rounds"]:
+                    a["round"] += 1
+                    a["phase"] = "betting"
+                    a["bets"] = {}
+                    a["answers"] = {}
+                    a["deltas"] = {}
+                else:
+                    a["phase"] = "finished"
+
+            # Chain Bomb controls
+            elif act == "bomb_answer" and room.bomb and room.bomb["status"] == "playing":
+                b = room.bomb
+                choice = max(0, min(3, int(body.get("choice", 0))))
+                b["last_choice"] = choice
+                h = b["holder"]
+                if choice == b["cur_q"]["c"]:
+                    room.scores[h] += 100
+                    alive = [i for i, lv in enumerate(b["lives"]) if lv > 0]
+                    if len(alive) > 1:
+                        nxt = alive[(alive.index(h) + 1) % len(alive)] if h in alive else alive[0]
+                    else:
+                        nxt = h
+                    b["holder"] = nxt
+                    b["q_idx"] = (b["q_idx"] + 1) % len(b["pool"])
+                    b["cur_q"] = b["pool"][b["q_idx"]]
+                    b["deadline"] = time.time() + b["time_limit"]
+                    b["time_left"] = b["time_limit"]
+                    b["last_msg"] = f"✅ To‘g‘ri! Bomba {room.teams[nxt]} ga o‘tdi!"
+                else:
+                    b["lives"][h] = max(0, b["lives"][h] - 1)
                     b["status"] = "boom"
-                    b["last_msg"] = f"💥 XATO! Bomba {room.teams[team]} qo‘lida portladi (−1 jon)!"
-                room.touch()
-            self.send_json({"ok": True})
-            return
+                    b["last_msg"] = f"💥 Xato javob! {room.teams[h]} 1 ta jon yo‘qotdi!"
 
-        if path == "/api/admin":
-            pin = str(data.get("pin") or "")
-            action = str(data.get("action") or "")
-            pref_ai = str(data.get("ai_provider") or "").strip().lower() or None
-            try:
-                with LOCK:
-                    room = get_room(code)
-                    if not room:
-                        self.send_json({"error": "Xona topilmadi"}, 404)
-                        return
-                    if pin != room.pin:
-                        self.send_json({"error": "Noto‘g‘ri PIN kod"}, 403)
-                        return
+            elif act == "bomb_next" and room.bomb:
+                b = room.bomb
+                alive = [i for i, lv in enumerate(b["lives"]) if lv > 0]
+                if len(alive) <= 1:
+                    b["status"] = "gameover"
+                    if alive:
+                        room.scores[alive[0]] += 500
+                        b["last_msg"] = f"🏆 G‘olib: {room.teams[alive[0]]}!"
+                else:
+                    nxt = alive[(alive.index(b["holder"]) + 1) % len(alive)] if b["holder"] in alive else alive[0]
+                    b["holder"] = nxt
+                    b["q_idx"] = (b["q_idx"] + 1) % len(b["pool"])
+                    b["cur_q"] = b["pool"][b["q_idx"]]
+                    b["deadline"] = time.time() + b["time_limit"]
+                    b["time_left"] = b["time_limit"]
+                    b["status"] = "playing"
+                    b["last_choice"] = None
+                    b["last_msg"] = f"💣 Navbat {room.teams[nxt]} da!"
 
-                    if action == "load_preset":
-                        room.load_preset(str(data.get("preset") or "econ"))
-
-                    elif action == "set_mode":
-                        mode = str(data.get("mode") or "jeopardy")
-                        if mode in ("jeopardy", "millionaire", "auction", "bomb", "kahoot", "slides", "classic_test"):
-                            room.mode = mode
-                            if mode == "slides" and not room.slides:
-                                room.build_slides_from_current_questions()
-                            elif mode == "classic_test" and not room.classic_test:
-                                pool = room.get_mc_pool()
-                                room.classic_test = {
-                                    "active": True,
-                                    "title": room.topic_title or "Oddiy Test",
-                                    "time_limit": 0,
-                                    "show_explanations": True,
-                                    "pool": pool,
-                                    "submissions": {},
-                                    "team_pts": [0, 0, 0, 0],
-                                }
-
-                    elif action == "open":
-                        idx = int(data.get("idx", 0))
-                        room.cur = idx
-                        room.revealed = False
-                        room.answers = {}
-                        room.text_answers = {}
-                        room.ai_grades = {}
-                        room.ai_note = ""
-
-                    elif action == "reveal":
-                        room.revealed = True
-                        if room.cur is not None:
-                            room.used[room.cur] = True
-
-                    elif action == "close":
-                        if room.cur is not None:
-                            room.used[room.cur] = True
-                        room.cur = None
-                        room.revealed = False
-                        room.ai_note = ""
-
-                    elif action == "award":
-                        t = int(data.get("team", 0))
-                        sign = int(data.get("sign", 1))
-                        if room.cur is not None and 0 <= t < 4:
-                            room.scores[t] += sign * room.questions[room.cur]["pts"]
-
-                    elif action == "score":
-                        t = int(data.get("team", 0))
-                        delta = int(data.get("delta", 0))
-                        if 0 <= t < 4:
-                            room.scores[t] += delta
-
-                    elif action == "rename":
-                        tms = data.get("teams") or []
-                        for i in range(min(4, len(tms))):
-                            if str(tms[i]).strip():
-                                room.teams[i] = str(tms[i]).strip()
-
-                    elif action == "reset":
-                        room.scores = [0, 0, 0, 0]
-                        room.used = [False] * 25
-                        room.cur = None
-                        room.revealed = False
-                        room.answers = {}
-                        room.text_answers = {}
-                        room.ai_grades = {}
-                        room.ai_note = ""
-                        room.clear_subgames()
-
-                    elif action == "save":
-                        idx = int(data.get("idx", 0))
-                        q_in = data.get("q") or {}
-                        if 0 <= idx < 25:
-                            old = room.questions[idx]
-                            short = bool(q_in.get("short"))
-                            opts = [] if short else [str(x) for x in (q_in.get("opts") or ["", "", "", ""])][:4]
-                            c_val = None if short else (int(q_in["c"]) if q_in.get("c") is not None else 0)
-                            room.questions[idx] = {
-                                "cat": old["cat"], "pts": old["pts"], "q": str(q_in.get("q") or ""),
-                                "opts": opts, "c": c_val,
-                                "ans": str(q_in.get("ans") or "") if short else (opts[c_val] if opts else ""),
-                                "exp": str(q_in.get("exp") or ""),
-                            }
-
-                    elif action == "ai_generate_board":
-                        if room.ai_busy:
-                            self.send_json({"error": "AI hozir band, biroz kuting"}, 400)
-                            return
-                        topic = str(data.get("topic") or "").strip()
-                        level = str(data.get("level") or "universitet talabalari")
-                        if topic:
-                            room.topic_title = topic
-                        room.ai_busy = True
-                        room.ai_error = ""
-                        room.ai_status = f"«{topic}» mavzusida 25 ta savol tuzilmoqda..."
-                        threading.Thread(
-                            target=run_ai_board_worker,
-                            args=(room, topic, level, None, "", pref_ai),
-                            daemon=True,
-                        ).start()
-
-                    elif action == "ai_generate_from_file":
-                        if room.ai_busy:
-                            self.send_json({"error": "AI hozir band"}, 400)
-                            return
-                        fname = str(data.get("filename") or "fayl")
-                        mime = str(data.get("mime") or "")
-                        b64 = str(data.get("data_b64") or "")
-                        hint = str(data.get("hint") or "").strip()
-                        level = str(data.get("level") or "universitet talabalari")
-                        topic_lbl = hint if hint else fname
-                        room.topic_title = topic_lbl
-                        room.ai_busy = True
-                        room.ai_error = ""
-                        room.ai_status = f"«{fname}» fayli tahlil qilinmoqda..."
-                        file_part = None
-                        extra_txt = ""
-                        if fname.lower().endswith(".docx"):
-                            extra_txt = extract_docx_text(b64)
-                        elif fname.lower().endswith((".txt", ".md", ".csv")):
-                            extra_txt = base64.b64decode(b64).decode("utf-8", errors="ignore")[:28000]
-                        else:
-                            if not mime:
-                                mime = "application/pdf" if fname.lower().endswith(".pdf") else "image/jpeg"
-                            file_part = {"mime": mime, "b64": b64}
-                        threading.Thread(
-                            target=run_ai_board_worker,
-                            args=(room, topic_lbl, level, file_part, extra_txt, pref_ai),
-                            daemon=True,
-                        ).start()
-
-                    elif action == "ai_generate_slot":
-                        idx = int(data.get("idx", 0))
-                        hint = str(data.get("hint") or "").strip()
-                        old = room.questions[idx]
-                        raw = call_gemini(
-                            f"O‘zbek tilida '{old['cat']}' bo‘limi uchun {old['pts']} ballik 1 ta test savol tuz. "
-                            f"Qo‘shimcha ko‘rsatma: {hint}. JSON qaytar: "
-                            f'{{"q": "...", "opts": ["A", "B", "C", "D"], "c": 0, "exp": "..."}}',
-                            json_mode=True,
-                            preferred=pref_ai,
-                        )
-                        parsed = extract_json_block(raw)
-                        room.touch()
-                        self.send_json({"ok": True, "question": parsed})
-                        return
-
-                    elif action == "ai_explain":
-                        if room.cur is not None:
-                            q = room.questions[room.cur]
-                            ans_s = q["opts"][q["c"]] if q["opts"] else q["ans"]
-                            room.ai_note = call_gemini(
-                                f"Ushbu savol va to‘g‘ri javobga talabalar uchun 3 jumlada amaliy misol va tushuntirish ber (o‘zbek tilida):\n"
-                                f"Savol: {q['q']}\nJavob: {ans_s}",
-                                preferred=pref_ai,
-                            )
-
-                    elif action == "ai_grade":
-                        if room.cur is not None:
-                            q = room.questions[room.cur]
-                            lines = [f"{i}: {room.text_answers.get(i, '')}" for i in range(4) if room.text_answers.get(i)]
-                            if lines:
-                                raw = call_gemini(
-                                    f"Savol: {q['q']}\nEtalon javob: {q['ans']}\nJamoalar javobi:\n" + "\n".join(lines) +
-                                    '\nHar bir jamoa uchun JSON qaytar: {"0": {"percent": 85, "verdict": "To‘g‘ri", "comment": "Qisqa izoh"}}',
-                                    json_mode=True,
-                                    preferred=pref_ai,
-                                )
-                                room.ai_grades = extract_json_block(raw)
-
-                    elif action == "ai_generate_slides":
-                        if room.ai_busy:
-                            self.send_json({"error": "AI hozir band, biroz kuting"}, 400)
-                            return
-                        topic = str(data.get("topic") or room.topic_title or "Taqdimot").strip()
-                        if topic:
-                            room.topic_title = topic
-                        slide_count = max(4, min(16, int(data.get("slide_count") or 8)))
-                        style = str(data.get("style") or "Akademik ma’ruza").strip()
-                        theme = str(data.get("theme") or "royal").strip()
-                        fname = str(data.get("filename") or "").strip()
-                        mime = str(data.get("mime") or "").strip()
-                        b64 = str(data.get("data_b64") or "").strip()
-
-                        file_part = None
-                        extra_txt = ""
-                        if b64 and fname:
-                            if fname.lower().endswith(".docx"):
-                                extra_txt = extract_docx_text(b64)
-                            elif fname.lower().endswith((".txt", ".md", ".csv")):
-                                extra_txt = base64.b64decode(b64).decode("utf-8", errors="ignore")[:28000]
-                            else:
-                                if not mime:
-                                    mime = "application/pdf" if fname.lower().endswith(".pdf") else "image/jpeg"
-                                file_part = {"mime": mime, "b64": b64}
-
-                        room.ai_busy = True
-                        room.ai_error = ""
-                        room.ai_status = f"«{topic}» bo‘yicha {slide_count} ta vizual slayd tayyorlanmoqda..."
-                        threading.Thread(
-                            target=run_ai_slides_worker,
-                            args=(room, topic, slide_count, style, theme, file_part, extra_txt, pref_ai),
-                            daemon=True,
-                        ).start()
-
-                    elif action == "slides_from_questions":
-                        theme = str(data.get("theme") or (room.slides["theme"] if room.slides else "royal"))
-                        room.build_slides_from_current_questions(theme=theme)
-                        room.mode = "slides"
-
-                    elif action == "slides_nav" and room.slides:
-                        idx = int(data.get("idx", 0))
-                        total = len(room.slides["items"])
-                        if total > 0:
-                            room.slides["cur_idx"] = max(0, min(total - 1, idx))
-
-                    elif action == "slides_theme" and room.slides:
-                        theme = str(data.get("theme") or "royal")
-                        room.slides["theme"] = theme
-
-                    elif action == "slides_save_item" and room.slides:
-                        idx = int(data.get("idx", 0))
-                        s_in = data.get("slide") or {}
-                        if 0 <= idx < len(room.slides["items"]):
-                            room.slides["items"][idx] = normalize_slide_item(s_in, idx)
-
-                    elif action == "slides_add_item" and room.slides:
-                        new_idx = len(room.slides["items"])
-                        room.slides["items"].append(
-                            normalize_slide_item({
-                                "layout": "split_image",
-                                "badge": f"{new_idx + 1:02d} / YANGI",
-                                "title": "Yangi slayd sarlavhasi",
-                                "subtitle": "Qo‘shimcha ma’lumot",
-                                "bullets": ["Birinchi muhim fikr", "Ikkinchi muhim fikr"],
-                                "highlight": "Asosiy xulosa",
-                                "notes": "",
-                            }, new_idx)
-                        )
-                        room.slides["cur_idx"] = new_idx
-
-                    elif action == "slides_delete_item" and room.slides:
-                        idx = int(data.get("idx", 0))
-                        if len(room.slides["items"]) > 1 and 0 <= idx < len(room.slides["items"]):
-                            room.slides["items"].pop(idx)
-                            room.slides["cur_idx"] = min(room.slides["cur_idx"], len(room.slides["items"]) - 1)
-
-                    elif action == "tg_send_slides":
-                        chat_id = str(data.get("chat_id") or "").strip()
-                        if not TELEGRAM_BOT_TOKEN:
-                            self.send_json({"error": "Serverda TELEGRAM_BOT_TOKEN sozlanmagan"}, 400)
-                            return
-                        if not chat_id:
-                            self.send_json({"error": "Telegram Chat ID kiriting"}, 400)
-                            return
-                        if not room.slides:
-                            room.build_slides_from_current_questions()
-                        sl_copy = copy.deepcopy(room.slides)
-                        title = sl_copy.get("title") or room.topic_title or "Taqdimot"
-                        pptx_data = build_pptx_bytes(sl_copy)
-                        safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", title)[:40] or "Taqdimot"
-                        tg_send_document(
-                            chat_id,
-                            f"{safe_name}.pptx",
-                            pptx_data,
-                            caption=f"📊 {title} ({len(sl_copy['items'])} ta vizual slayd) — Jeo Quiz Pro",
-                        )
-
-                    elif action == "ctest_start":
-                        q_count = max(1, min(25, int(data.get("q_count") or 25)))
-                        time_limit = max(0, min(180, int(data.get("time_limit") or 0)))
-                        shuffle_q = bool(data.get("shuffle", False))
-                        show_exp = bool(data.get("show_explanations", True))
-                        title = str(data.get("title") or room.topic_title or "Oddiy Test").strip()
-
-                        pool = [copy.deepcopy(q) for q in room.questions if len(q.get("opts") or []) == 4 and q.get("c") is not None]
-                        if not pool:
-                            pool = copy.deepcopy(PRESET_DATA["econ"]["questions"])
-                        if shuffle_q:
-                            random.shuffle(pool)
-                        pool = pool[:q_count]
-
-                        room.classic_test = {
-                            "active": True,
-                            "title": title,
-                            "time_limit": time_limit,
-                            "show_explanations": show_exp,
-                            "pool": pool,
-                            "submissions": {},
-                            "team_pts": [0, 0, 0, 0],
-                        }
-                        room.mode = "classic_test"
-
-                    elif action == "ctest_toggle" and room.classic_test:
-                        room.classic_test["active"] = not room.classic_test["active"]
-
-                    elif action == "ctest_sync_scores" and room.classic_test:
-                        for i in range(4):
-                            room.scores[i] += room.classic_test["team_pts"][i]
-                        room.classic_test["team_pts"] = [0, 0, 0, 0]
-
-                    elif action == "mil_start":
-                        pname = str(data.get("player") or "").strip() or "Ishtirokchi"
-                        tv = data.get("team")
-                        t_idx = int(tv) if (tv is not None and tv != "") else None
-                        pool = room.get_mc_pool()
-                        while len(pool) < len(MIL_PRIZES):
-                            pool.extend(room.get_mc_pool())
-                        room.mil = {
-                            "active": True, "player": pname, "team": t_idx,
-                            "pool": pool[:len(MIL_PRIZES)], "step": 0, "won": 0,
-                            "status": "playing", "revealed": False, "selected": None,
-                            "hidden_opts": [], "lifelines": {"fifty": True, "audience": True, "ai": True},
-                            "audience_open": False, "votes": {}, "ai_hint": "", "credited": False,
-                        }
-
-                    elif action == "mil_select" and room.mil:
-                        room.mil["selected"] = int(data.get("choice"))
-
-                    elif action == "mil_5050" and room.mil and room.mil["lifelines"]["fifty"]:
-                        mq = room.mil["pool"][room.mil["step"]]
-                        wrong = [i for i in range(4) if i != mq["c"]]
-                        room.mil["hidden_opts"] = random.sample(wrong, 2)
-                        room.mil["lifelines"]["fifty"] = False
-
-                    elif action == "mil_audience" and room.mil and room.mil["lifelines"]["audience"]:
-                        room.mil["audience_open"] = True
-                        room.mil["lifelines"]["audience"] = False
-
-                    elif action == "mil_ai" and room.mil and room.mil["lifelines"]["ai"]:
-                        mq = room.mil["pool"][room.mil["step"]]
-                        room.mil["lifelines"]["ai"] = False
-                        if get_active_ai_list():
-                            try:
-                                room.mil["ai_hint"] = call_gemini(
-                                    f"Savol: {mq['q']}. Variantlar: {mq['opts']}. 2 jumlada qisqa maslahat ber (o‘zbek tilida).",
-                                    preferred=pref_ai,
-                                )
-                            except Exception:
-                                room.mil["ai_hint"] = f"Eng mantiqiy variant: {['A','B','C','D'][mq['c']]}."
-                        else:
-                            room.mil["ai_hint"] = f"Eng mantiqiy variant: {['A','B','C','D'][mq['c']]}."
-
-                    elif action == "mil_reveal" and room.mil and room.mil["selected"] is not None:
-                        m = room.mil
-                        mq = m["pool"][m["step"]]
-                        m["revealed"] = True
-                        m["audience_open"] = False
-                        if m["selected"] == mq["c"]:
-                            m["won"] = MIL_PRIZES[m["step"]]
-                            if m["step"] >= len(MIL_PRIZES) - 1:
-                                m["active"] = False
-                                m["status"] = "won"
-                        else:
-                            safe_won = 0
-                            for s_idx in MIL_SAFES:
-                                if m["step"] > s_idx:
-                                    safe_won = MIL_PRIZES[s_idx]
-                            m["won"] = safe_won
-                            m["active"] = False
-                            m["status"] = "lost"
-
-                    elif action == "mil_next" and room.mil:
-                        m = room.mil
-                        m["step"] += 1
-                        m["revealed"] = False
-                        m["selected"] = None
-                        m["hidden_opts"] = []
-                        m["audience_open"] = False
-                        m["votes"] = {}
-                        m["ai_hint"] = ""
-
-                    elif action == "mil_walk" and room.mil:
-                        room.mil["active"] = False
-                        room.mil["status"] = "walked"
-
-                    elif action == "mil_credit" and room.mil and not room.mil["credited"]:
-                        t_idx = room.mil["team"]
-                        if t_idx is not None and 0 <= t_idx < 4:
-                            room.scores[t_idx] += room.mil["won"]
-                            room.mil["credited"] = True
-
-                    elif action == "auc_start":
-                        pool = room.get_mc_pool()[:8]
-                        room.auc = {
-                            "round": 1, "total_rounds": len(pool), "pool": pool,
-                            "phase": "betting", "bank": [1000, 1000, 1000, 1000],
-                            "bets": {}, "answers": {}, "deltas": [0, 0, 0, 0],
-                        }
-
-                    elif action == "auc_open_q" and room.auc:
-                        a = room.auc
-                        for i in range(4):
-                            if str(i) not in a["bets"]:
-                                a["bets"][str(i)] = min(100, a["bank"][i])
-                        a["phase"] = "question"
-
-                    elif action == "auc_reveal" and room.auc:
-                        a = room.auc
-                        aq = a["pool"][a["round"] - 1]
-                        deltas = [0, 0, 0, 0]
-                        for i in range(4):
-                            bet = int(a["bets"].get(str(i), 0))
-                            ans = a["answers"].get(str(i))
-                            if ans is not None and int(ans) == aq["c"]:
-                                a["bank"][i] += bet
-                                deltas[i] = bet
-                            else:
-                                a["bank"][i] = max(100, a["bank"][i] - bet)
-                                deltas[i] = -bet
-                        a["deltas"] = deltas
-                        a["phase"] = "revealed"
-
-                    elif action == "auc_next" and room.auc:
-                        a = room.auc
-                        if a["round"] < a["total_rounds"]:
-                            a["round"] += 1
-                            a["phase"] = "betting"
-                            a["bets"] = {}
-                            a["answers"] = {}
-                            a["deltas"] = [0, 0, 0, 0]
-
-                    elif action == "auc_sync_scores" and room.auc:
-                        for i in range(4):
-                            room.scores[i] += room.auc["bank"][i]
-
-                    elif action == "bomb_start":
-                        sec = int(data.get("sec", 20))
-                        pool = room.get_mc_pool()
-                        room.bomb = {
-                            "holder": 0, "lives": [3, 3, 3, 3], "sec": sec,
-                            "deadline": time.time() + sec, "time_left": sec,
-                            "status": "playing", "last_choice": None,
-                            "last_msg": f"💣 Bomba {room.teams[0]} qo‘lida! Tez javob bering!",
-                            "pool": pool, "pool_idx": 0, "cur_q": pool[0],
-                        }
-
-                    elif action == "bomb_resume" and room.bomb:
-                        b = room.bomb
-                        alive = [i for i in range(4) if b["lives"][i] > 0]
-                        if len(alive) <= 1:
-                            b["status"] = "win"
-                            winner = room.teams[alive[0]] if alive else "Hech kim"
-                            b["last_msg"] = f"👑 G‘OLIB: {winner}!"
-                        else:
-                            nxt = (b["holder"] + 1) % 4
-                            for _ in range(4):
-                                if b["lives"][nxt] > 0:
-                                    break
-                                nxt = (nxt + 1) % 4
-                            b["holder"] = nxt
-                            b["pool_idx"] = (b["pool_idx"] + 1) % len(b["pool"])
-                            b["cur_q"] = b["pool"][b["pool_idx"]]
-                            b["deadline"] = time.time() + b["sec"]
-                            b["time_left"] = b["sec"]
-                            b["last_choice"] = None
-                            b["status"] = "playing"
-                            b["last_msg"] = f"💣 Bomba {room.teams[nxt]} ga uzatildi!"
-
-                    elif action == "kahoot_start":
-                        dur = int(data.get("duration", 20))
-                        pool = room.get_mc_pool()[:15]
-                        recs = {nm: {"team": tm, "pts": 0, "streak": 0, "correct": 0} for nm, tm in room.players.items()}
-                        room.kahoot = {
-                            "phase": "lobby", "duration": dur, "pool": pool,
-                            "q_num": -1, "cur_q": None, "deadline": 0,
-                            "time_left": dur, "round_results": {}, "records": recs,
-                            "team_pts": [0, 0, 0, 0],
-                        }
-
-                    elif action == "kahoot_next" and room.kahoot:
-                        k = room.kahoot
-                        if k["q_num"] + 1 < len(k["pool"]):
-                            k["q_num"] += 1
-                            k["cur_q"] = k["pool"][k["q_num"]]
-                            k["phase"] = "question"
-                            k["deadline"] = time.time() + k["duration"]
-                            k["time_left"] = k["duration"]
-                            k["round_results"] = {}
-
-                    elif action == "kahoot_reveal" and room.kahoot:
+            # Kahoot controls
+            elif act == "kahoot_answer" and room.kahoot and room.kahoot["phase"] == "question":
+                k = room.kahoot
+                name = str(body.get("name") or "").strip()
+                if name and name not in k["round_results"]:
+                    team = max(0, min(3, int(body.get("team", room.players.get(name, 0)))))
+                    rec = k["records"].setdefault(name, {"team": team, "pts": 0, "streak": 0, "correct": 0})
+                    choice = max(0, min(3, int(body.get("choice", 0))))
+                    ok = (choice == k["cur_q"]["c"])
+                    rem = max(0, k["deadline"] - time.time())
+                    gained = 0
+                    if ok:
+                        rec["streak"] += 1
+                        rec["correct"] += 1
+                        gained = 500 + int(500 * min(1.0, rem / 20.0)) + min(300, (rec["streak"] - 1) * 100)
+                        rec["pts"] += gained
+                        k["team_pts"][team] += gained
+                    k["round_results"][name] = {"choice": choice, "ok": ok, "gained": gained}
+                    if room.players and len(k["round_results"]) >= len(room.players):
                         room.kahoot_do_reveal()
 
-                    elif action == "kahoot_podium" and room.kahoot:
-                        room.kahoot["phase"] = "podium"
+            elif act == "kahoot_reveal" and room.kahoot:
+                room.kahoot_do_reveal()
 
-                    elif action == "kahoot_sync_scores" and room.kahoot:
-                        for i in range(4):
-                            room.scores[i] += room.kahoot["team_pts"][i]
-                        room.kahoot["team_pts"] = [0, 0, 0, 0]
+            elif act == "kahoot_next" and room.kahoot:
+                k = room.kahoot
+                if k["q_num"] < len(k["pool"]):
+                    k["q_num"] += 1
+                    k["cur_q"] = k["pool"][k["q_num"] - 1]
+                    k["phase"] = "question"
+                    k["deadline"] = time.time() + 20
+                    k["time_left"] = 20
+                    k["round_results"] = {}
+                else:
+                    k["phase"] = "podium"
+                    for i in range(4):
+                        room.scores[i] += k["team_pts"][i]
 
-                    room.touch()
-                    st = room.serialize(is_admin=True)
-                self.send_json(st)
-            except Exception as e:
-                self.send_json({"error": str(e)}, 502)
-            return
+            room.touch()
+            return self._send_json({"ok": True, **room.serialize(is_admin=is_adm)})
 
-        self.send_json({"error": "Noma’lum so‘rov"}, 404)
+
+def main():
+    if TELEGRAM_BOT_TOKEN:
+        threading.Thread(target=telegram_bot_worker, daemon=True).start()
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), QuizHandler)
+    print(f"Jeo Quiz Pro server running on port {PORT}")
+    server.serve_forever()
 
 
 if __name__ == "__main__":
-    print(f"Faol AI provayderlar: {get_active_ai_list()}", flush=True)
-    if TELEGRAM_BOT_TOKEN:
-        threading.Thread(target=telegram_bot_worker, daemon=True).start()
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"JEO QUIZ universal server ishga tushdi: port {PORT}", flush=True)
-    server.serve_forever()
+    main()
