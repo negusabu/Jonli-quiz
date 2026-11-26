@@ -533,6 +533,7 @@ def normalize_slide_item(raw_item, idx):
         "notes": str(raw_item.get("notes") or "").strip(),}
     
     
+    
     class Room:
     def __init__(self, code, pin, preset_id="econ", teams=None):
         self.code = code
