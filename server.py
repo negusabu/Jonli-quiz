@@ -530,9 +530,11 @@ def normalize_slide_item(raw_item, idx):
         "stats": stats,
         "diagram_steps": d_steps,
         "image_query": str(raw_item.get("image_query") or "").strip(),
-        "notes": str(raw_item.get("notes") or "").strip(),}
-    
-   class Room:
+        "notes": str(raw_item.get("notes") or "").strip(),
+    }
+
+
+class Room:
     def __init__(self, code, pin, preset_id="econ", teams=None):
         self.code = code
         self.pin = pin
@@ -1214,7 +1216,6 @@ def build_pptx_bytes(slides_dict):
     )
     n = len(items)
 
-    # Mavzuga mos rasmlarni parallel yuklab olish (1-slayd va split_image slaydlar uchun)
     images_map = {}
 
     def _fetch_for_idx(idx_sl):
@@ -1239,8 +1240,8 @@ def build_pptx_bytes(slides_dict):
             for i in range(n)
         )
         zf.writestr("[Content_Types].xml", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-officedocument.package.relationships+xml"/>
+<Types xmlns="[http://schemas.openxmlformats.org/package/2006/content-types](http://schemas.openxmlformats.org/package/2006/content-types)">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   <Default Extension="jpg" ContentType="image/jpeg"/>
   <Default Extension="jpeg" ContentType="image/jpeg"/>
@@ -1253,13 +1254,13 @@ def build_pptx_bytes(slides_dict):
 </Types>''')
 
         zf.writestr("_rels/.rels", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+<Relationships xmlns="[http://schemas.openxmlformats.org/package/2006/relationships](http://schemas.openxmlformats.org/package/2006/relationships)">
+  <Relationship Id="rId1" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument](http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument)" Target="ppt/presentation.xml"/>
 </Relationships>''')
 
         sld_ids = "\n".join(f'<p:sldId id="{256+i}" r:id="rId{i+2}"/>' for i in range(n))
         zf.writestr("ppt/presentation.xml", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+<p:presentation xmlns:a="[http://schemas.openxmlformats.org/drawingml/2006/main](http://schemas.openxmlformats.org/drawingml/2006/main)" xmlns:r="[http://schemas.openxmlformats.org/officeDocument/2006/relationships](http://schemas.openxmlformats.org/officeDocument/2006/relationships)" xmlns:p="[http://schemas.openxmlformats.org/presentationml/2006/main](http://schemas.openxmlformats.org/presentationml/2006/main)">
   <p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>
   <p:sldIdLst>{sld_ids}</p:sldIdLst>
   <p:sldSz cx="12192000" cy="6858000"/>
@@ -1267,41 +1268,41 @@ def build_pptx_bytes(slides_dict):
 </p:presentation>''')
 
         sld_rels = "\n".join(
-            f'<Relationship Id="rId{i+2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide{i+1}.xml"/>'
+            f'<Relationship Id="rId{i+2}" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide](http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide)" Target="slides/slide{i+1}.xml"/>'
             for i in range(n)
         )
         zf.writestr("ppt/_rels/presentation.xml.rels", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
+<Relationships xmlns="[http://schemas.openxmlformats.org/package/2006/relationships](http://schemas.openxmlformats.org/package/2006/relationships)">
+  <Relationship Id="rId1" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster](http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster)" Target="slideMasters/slideMaster1.xml"/>
   {sld_rels}
-  <Relationship Id="rId{n+2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
+  <Relationship Id="rId{n+2}" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme](http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme)" Target="theme/theme1.xml"/>
 </Relationships>''')
 
         zf.writestr("ppt/slideMasters/slideMaster1.xml", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+<p:sldMaster xmlns:a="[http://schemas.openxmlformats.org/drawingml/2006/main](http://schemas.openxmlformats.org/drawingml/2006/main)" xmlns:r="[http://schemas.openxmlformats.org/officeDocument/2006/relationships](http://schemas.openxmlformats.org/officeDocument/2006/relationships)" xmlns:p="[http://schemas.openxmlformats.org/presentationml/2006/main](http://schemas.openxmlformats.org/presentationml/2006/main)">
   <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>
   <p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>
   <p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>
 </p:sldMaster>''')
 
         zf.writestr("ppt/slideMasters/_rels/slideMaster1.xml.rels", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>
+<Relationships xmlns="[http://schemas.openxmlformats.org/package/2006/relationships](http://schemas.openxmlformats.org/package/2006/relationships)">
+  <Relationship Id="rId1" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout](http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout)" Target="../slideLayouts/slideLayout1.xml"/>
+  <Relationship Id="rId2" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme](http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme)" Target="../theme/theme1.xml"/>
 </Relationships>''')
 
         zf.writestr("ppt/slideLayouts/slideLayout1.xml", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank">
+<p:sldLayout xmlns:a="[http://schemas.openxmlformats.org/drawingml/2006/main](http://schemas.openxmlformats.org/drawingml/2006/main)" xmlns:r="[http://schemas.openxmlformats.org/officeDocument/2006/relationships](http://schemas.openxmlformats.org/officeDocument/2006/relationships)" xmlns:p="[http://schemas.openxmlformats.org/presentationml/2006/main](http://schemas.openxmlformats.org/presentationml/2006/main)" type="blank">
   <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>
 </p:sldLayout>''')
 
         zf.writestr("ppt/slideLayouts/_rels/slideLayout1.xml.rels", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>
+<Relationships xmlns="[http://schemas.openxmlformats.org/officeDocument/2006/relationships](http://schemas.openxmlformats.org/officeDocument/2006/relationships)">
+  <Relationship Id="rId1" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster](http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster)" Target="../slideMasters/slideMaster1.xml"/>
 </Relationships>''')
 
         zf.writestr("ppt/theme/theme1.xml", '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="JeoTheme">
+<a:theme xmlns:a="[http://schemas.openxmlformats.org/drawingml/2006/main](http://schemas.openxmlformats.org/drawingml/2006/main)" name="JeoTheme">
   <a:themeElements>
     <a:clrScheme name="Jeo"><a:dk1><a:srgbClr val="000000"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="1E293B"/></a:dk2><a:lt2><a:srgbClr val="F1F5F9"/></a:lt2><a:accent1><a:srgbClr val="2563EB"/></a:accent1><a:accent2><a:srgbClr val="F59E0B"/></a:accent2><a:accent3><a:srgbClr val="10B981"/></a:accent3><a:accent4><a:srgbClr val="8B5CF6"/></a:accent4><a:accent5><a:srgbClr val="EC4899"/></a:accent5><a:accent6><a:srgbClr val="06B6D4"/></a:accent6><a:hlink><a:srgbClr val="3B82F6"/></a:hlink><a:folHlink><a:srgbClr val="6366F1"/></a:folHlink></a:clrScheme>
     <a:fontScheme name="JeoFont"><a:majorFont><a:latin typeface="Calibri"/></a:majorFont><a:minorFont><a:latin typeface="Calibri"/></a:minorFont></a:fontScheme>
@@ -1321,7 +1322,6 @@ def build_pptx_bytes(slides_dict):
             shapes = []
             sid = 2
 
-            # Yuqori dekorativ chiziq
             shapes.append(_sp_rect(sid, "TopStripe", 0, 0, 12192000, 85000, fill_hex=acc_hex, prst="rect", l_ins=0, t_ins=0))
             sid += 1
 
@@ -1343,7 +1343,6 @@ def build_pptx_bytes(slides_dict):
                     shapes.append(_sp_pic(sid, "rId2", 7550000, 650000, 4000000, 3550000, border_hex=acc_hex))
                     sid += 1
 
-                # Pastki 3 ta reja kartochkasi
                 plan_items = bullets[:3] if bullets else ["Nazariy asoslar", "Tahliliy diagrammalar", "Amaliy xulosalar"]
                 for k, p_txt in enumerate(plan_items):
                     cx_k = 640000 + k * 3710000
@@ -1354,7 +1353,6 @@ def build_pptx_bytes(slides_dict):
                     shapes.append(_sp_rect(sid, f"Plan{k}", cx_k, 4550000, 3480000, 1750000, fill_hex=card_hex, border_hex=track_hex, paras_xml=card_p))
                     sid += 1
             else:
-                # Barcha ichki slaydlar uchun umumiy sarlavha va nishon
                 shapes.append(_sp_rect(sid, "Badge", 640000, 240000, 3400000, 360000, fill_hex=card_hex, border_hex=acc_hex, paras_xml=_para(badge_txt, sz=1200, color=acc_hex, bold=True, spc_after=0), t_ins=45000))
                 sid += 1
                 shapes.append(_sp_rect(sid, "PageNum", 10200000, 240000, 1350000, 360000, paras_xml=_para(f"{i+1} / {n}", sz=1300, color=acc_hex, bold=True, align="r", spc_after=0), l_ins=0, t_ins=45000))
@@ -1443,7 +1441,6 @@ def build_pptx_bytes(slides_dict):
                         sid += 1
 
                 else:
-                    # split_image: chapda tahliliy fikrlar, o‘ngda mavzuga oid haqiqiy rasm (yoki 2x2 infografika kartalar)
                     if img_info:
                         ibytes, ext = img_info
                         zf.writestr(f"ppt/media/image{i+1}.{ext}", ibytes)
@@ -1471,14 +1468,13 @@ def build_pptx_bytes(slides_dict):
                             shapes.append(_sp_rect(sid, f"Concept{k}", gx, gy, 5280000, 1800000, fill_hex=card_hex, border_hex=track_hex, paras_xml=g_paras))
                             sid += 1
 
-                # Pastki xulosa chizig‘i
                 if hl_txt:
                     shapes.append(_sp_rect(sid, "HighlightBar", 640000, 5940000, 10910000, 580000, fill_hex=card_hex, border_hex=acc_hex, paras_xml=_para(f"💡 {hl_txt}", sz=1400, color=acc_hex, bold=True, spc_after=0), t_ins=95000))
                     sid += 1
 
             shapes_xml = "\n".join(shapes)
             zf.writestr(f"ppt/slides/slide{i+1}.xml", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+<p:sld xmlns:a="[http://schemas.openxmlformats.org/drawingml/2006/main](http://schemas.openxmlformats.org/drawingml/2006/main)" xmlns:r="[http://schemas.openxmlformats.org/officeDocument/2006/relationships](http://schemas.openxmlformats.org/officeDocument/2006/relationships)" xmlns:p="[http://schemas.openxmlformats.org/presentationml/2006/main](http://schemas.openxmlformats.org/presentationml/2006/main)">
   <p:cSld>
     <p:bg><p:bgPr><a:solidFill><a:srgbClr val="{bg_hex}"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>
     <p:spTree>
@@ -1492,10 +1488,10 @@ def build_pptx_bytes(slides_dict):
             rel_extra = ""
             if img_info:
                 _, ext = img_info
-                rel_extra = f'\n  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image{i+1}.{ext}"/>'
+                rel_extra = f'\n  <Relationship Id="rId2" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/image](http://schemas.openxmlformats.org/officeDocument/2006/relationships/image)" Target="../media/image{i+1}.{ext}"/>'
             zf.writestr(f"ppt/slides/_rels/slide{i+1}.xml.rels", f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>{rel_extra}
+<Relationships xmlns="[http://schemas.openxmlformats.org/package/2006/relationships](http://schemas.openxmlformats.org/package/2006/relationships)">
+  <Relationship Id="rId1" Type="[http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout](http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout)" Target="../slideLayouts/slideLayout1.xml"/>{rel_extra}
 </Relationships>''')
 
     return buf.getvalue()
@@ -1504,7 +1500,7 @@ def build_pptx_bytes(slides_dict):
 def tg_api(method, payload):
     if not TELEGRAM_BOT_TOKEN:
         return None
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}"
+    url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_BOT_TOKEN}/{method}"
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -1534,7 +1530,7 @@ def tg_send_document(chat_id, filename, file_bytes, caption=""):
         f"--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; filename=\"{filename}\"\r\n"
         f"Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation\r\n\r\n"
     ).encode("utf-8") + file_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+    url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_BOT_TOKEN}/sendDocument"
     req = urllib.request.Request(
         url,
         data=body,
@@ -2610,7 +2606,6 @@ class Handler(BaseHTTPRequestHandler):
                                 )
                                 room.ai_grades = extract_json_block(raw)
 
-                    # --- PRO SLAYD STUDIO ---
                     elif action == "ai_generate_slides":
                         if room.ai_busy:
                             self.send_json({"error": "AI hozir band, biroz kuting"}, 400)
@@ -2709,7 +2704,6 @@ class Handler(BaseHTTPRequestHandler):
                             caption=f"📊 {title} ({len(sl_copy['items'])} ta vizual slayd) — Jeo Quiz Pro",
                         )
 
-                    # --- ODDIY TEST ---
                     elif action == "ctest_start":
                         q_count = max(1, min(25, int(data.get("q_count") or 25)))
                         time_limit = max(0, min(180, int(data.get("time_limit") or 0)))
@@ -2743,7 +2737,6 @@ class Handler(BaseHTTPRequestHandler):
                             room.scores[i] += room.classic_test["team_pts"][i]
                         room.classic_test["team_pts"] = [0, 0, 0, 0]
 
-                    # --- MILLIONAIRE ---
                     elif action == "mil_start":
                         pname = str(data.get("player") or "").strip() or "Ishtirokchi"
                         tv = data.get("team")
@@ -2825,7 +2818,6 @@ class Handler(BaseHTTPRequestHandler):
                             room.scores[t_idx] += room.mil["won"]
                             room.mil["credited"] = True
 
-                    # --- AUCTION ---
                     elif action == "auc_start":
                         pool = room.get_mc_pool()[:8]
                         room.auc = {
@@ -2870,7 +2862,6 @@ class Handler(BaseHTTPRequestHandler):
                         for i in range(4):
                             room.scores[i] += room.auc["bank"][i]
 
-                    # --- BOMB ---
                     elif action == "bomb_start":
                         sec = int(data.get("sec", 20))
                         pool = room.get_mc_pool()
@@ -2904,7 +2895,6 @@ class Handler(BaseHTTPRequestHandler):
                             b["status"] = "playing"
                             b["last_msg"] = f"💣 Bomba {room.teams[nxt]} ga uzatildi!"
 
-                    # --- JONLI TEST (KAHOOT) ---
                     elif action == "kahoot_start":
                         dur = int(data.get("duration", 20))
                         pool = room.get_mc_pool()[:15]
