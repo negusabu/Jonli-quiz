@@ -1261,6 +1261,75 @@ def tg_send_document(chat_id, filename, file_bytes, caption=""):
         raise RuntimeError(f"Telegram fayl yuborish xatosi: {desc}")
 
 
+def _tg_generate_ai_pptx_task(chat_id, topic):
+    try:
+        slide_count = 8
+        prompt = (
+            f"Sen universitet professori va ekspert taqdimot dizaynerisan. O‘zbek tilida '{topic}' mavzusida "
+            f"(Akademik ma’ruza uslubida) aynan {slide_count} ta CHUQUR, MAZMUNLI va BATAFSIL taqdimot slaydi yarat.\n"
+            f"QOIDALAR:\n"
+            f"1. Har bir bullet punkt 2 ta to‘liq, mazmunli jumladan iborat bo‘lsin (ta’riflar, sanalar, formulalar, raqamlar va misollar bilan).\n"
+            f"2. 1-slayd 'cover', oxirgi slayd 'summary', oraliqlarda 'bullets', 'split', 'stats' maketlarini ishlat.\n"
+            f"3. Har bir slaydda 4 tadan boy bullet punkt va 1 ta 'highlight' xulosa bo‘lsin.\n"
+            f"Faqat toza JSON qaytar:\n"
+            f'{{"title": "To‘liq taqdimot sarlavhasi", "slides": ['
+            f'{{"layout": "cover", "badge": "01 / KIRISH", "title": "Sarlavha", "subtitle": "Taglavha", '
+            f'"bullets": ["1-fikr...", "2-fikr...", "3-fikr...", "4-fikr..."], '
+            f'"highlight": "Asosiy xulosa", "notes": ""}}'
+            f"]}}"
+        )
+        try:
+            raw = call_gemini(prompt, json_mode=True)
+            parsed = extract_json_block(raw)
+            raw_slides = parsed.get("slides") or []
+            if not raw_slides:
+                raise RuntimeError("Bo‘sh javob")
+            items = [normalize_slide_item(it, i) for i, it in enumerate(raw_slides[:16])]
+            deck_title = str(parsed.get("title") or topic).strip()
+        except Exception:
+            with LOCK:
+                items = _build_fallback_slides(DEFAULT_ROOM, topic, slide_count, "Akademik ma’ruza")
+            deck_title = topic
+
+        with LOCK:
+            cleanup_old_rooms()
+            code = generate_room_code()
+            pin = f"{random.randint(1000, 9999)}"
+            rm = Room(code, pin, "econ")
+            rm.topic_title = deck_title
+            rm.slides = {"title": deck_title, "theme": "royal", "cur_idx": 0, "items": items}
+            rm.mode = "slides"
+            ROOMS[code] = rm
+            sl_copy = copy.deepcopy(rm.slides)
+
+        pptx_data = build_pptx_bytes(sl_copy)
+        safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", deck_title)[:40] or "Taqdimot"
+        tg_send_document(
+            chat_id,
+            f"{safe_name}.pptx",
+            pptx_data,
+            caption=(
+                f"📊 {deck_title} ({len(items)} ta slayd)\n"
+                f"🔑 Xona kodi: #{code} | Admin PIN: {pin}"
+            ),
+        )
+        tg_api("sendMessage", {
+            "chat_id": chat_id,
+            "text": f"🌐 Slaydni saytda jonli ko‘rsatish yoki tahrirlash uchun:",
+            "reply_markup": {
+                "inline_keyboard": [
+                    [{"text": f"📺 Jonli taqdimot (#{code})", "url": f"{APP_PUBLIC_URL}/?room={code}"}],
+                    [{"text": "✏️ Admin panelda ochish", "url": f"{APP_PUBLIC_URL}/admin"}],
+                ]
+            },
+        })
+    except Exception as e:
+        tg_api("sendMessage", {
+            "chat_id": chat_id,
+            "text": f"❌ Slayd yaratishda xatolik: {str(e)[:200]}",
+        })
+
+
 def telegram_bot_worker():
     if not TELEGRAM_BOT_TOKEN:
         print("DIQQAT: TELEGRAM_BOT_TOKEN topilmadi!", flush=True)
@@ -1275,7 +1344,8 @@ def telegram_bot_worker():
         tg_api("setMyCommands", {
             "commands": [
                 {"command": "start", "description": "Botni ishga tushirish va Chat ID olish"},
-                {"command": "slayd", "description": "Taqdimotni .pptx yuklash (/slayd 6519)"},
+                {"command": "yarat", "description": "AI orqali yangi slayd yaratish (/yarat Mavzu)"},
+                {"command": "slayd", "description": "Mavjud xona slaydini yuklash (/slayd 6519)"},
                 {"command": "xona", "description": "Xona holatini ko‘rish (/xona 6519)"},
             ]
         })
@@ -1298,13 +1368,14 @@ def telegram_bot_worker():
                 if not chat_id or not text:
                     continue
 
-                parts = text.split()
-                cmd = parts[0].lower().split("@")[0]
-                arg = parts[1].strip() if len(parts) > 1 else ""
-
-                if cmd.isdigit() and len(cmd) in (4, 5):
-                    arg = cmd
-                    cmd = "/xona"
+                if text.isdigit() and len(text) in (4, 5):
+                    cmd, arg = "/xona", text
+                elif not text.startswith("/"):
+                    cmd, arg = "/yarat", text
+                else:
+                    parts = text.split(maxsplit=1)
+                    cmd = parts[0].lower().split("@")[0]
+                    arg = parts[1].strip() if len(parts) > 1 else ""
 
                 if cmd == "/start":
                     room_code = arg if arg.isdigit() else "0000"
@@ -1317,15 +1388,35 @@ def telegram_bot_worker():
                     tg_api("sendMessage", {
                         "chat_id": chat_id,
                         "text": (
-                            f"⚡ <b>JEO QUIZ PRO</b> botiga xush kelibsiz!\n\n"
+                            f"⚡ <b>JEO QUIZ PRO</b> AI botiga xush kelibsiz!\n\n"
+                            f"✨ <b>AI Slayd yaratish:</b> shunchaki mavzu nomini yozing yoki "
+                            f"<code>/yarat Mikroiqtisodiyot asoslari</code> deb yuboring.\n\n"
                             f"🆔 Sizning Chat ID: <code>{chat_id}</code>\n"
-                            f"<i>(Ushbu raqamni saytdagi Telegram maydoniga kiritsangiz, slaydlar shu yerga keladi)</i>\n\n"
-                            f"📥 Slaydni .pptx yuklash: <code>/slayd {room_code}</code>\n"
-                            f"🔎 Xona holatini ko‘rish: <code>/xona {room_code}</code>"
+                            f"📥 Mavjud xona slaydi: <code>/slayd {room_code}</code>\n"
+                            f"🔎 Xona holati: <code>/xona {room_code}</code>"
                         ),
                         "parse_mode": "HTML",
                         "reply_markup": kb,
                     })
+
+                elif cmd in ("/yarat", "/ai", "/generate"):
+                    if len(arg) < 2:
+                        tg_api("sendMessage", {
+                            "chat_id": chat_id,
+                            "text": "ℹ️ Mavzu nomini yozing. Masalan:\n<code>/yarat O‘zbekiston bank tizimi</code>",
+                            "parse_mode": "HTML",
+                        })
+                    else:
+                        tg_api("sendMessage", {
+                            "chat_id": chat_id,
+                            "text": f"⏳ <b>«{xml_esc(arg)}»</b> mavzusida AI taqdimot tayyorlanmoqda (5–10 soniya)...",
+                            "parse_mode": "HTML",
+                        })
+                        threading.Thread(
+                            target=_tg_generate_ai_pptx_task,
+                            args=(chat_id, arg),
+                            daemon=True,
+                        ).start()
 
                 elif cmd in ("/slayd", "/ppt"):
                     room_code = arg if arg else "0000"
